@@ -126,6 +126,19 @@
           <input #knowledgeInput type="file" (change)="onFileSelected($event, 'knowledge')" style="display: none">
         </div>
 
+        <!-- Visibility Selector for Knowledge -->
+        <div class="visibility-orchestrator" *ngIf="!knowledgeState.loading && !knowledgeState.successMessage">
+          <label class="visibility-label">KNOWLEDGE SOVEREIGNTY</label>
+          <div class="visibility-options">
+            <button class="opt-btn" [class.active]="knowledgeState.visibilityScope === 'exclusive'" (click)="knowledgeState.visibilityScope = 'exclusive'">
+              <span class="opt-dot"></span> EXCLUSIVE
+            </button>
+            <button class="opt-btn" [class.active]="knowledgeState.visibilityScope === 'public'" (click)="knowledgeState.visibilityScope = 'public'; knowledgeState.selectedBrandId = null">
+              <span class="opt-dot"></span> PUBLIC
+            </button>
+          </div>
+        </div>
+
         <div class="synthesis-console" *ngIf="knowledgeState.loading">
           <div class="console-header">
             <span class="console-title">INTELLIGENCE LOG</span>

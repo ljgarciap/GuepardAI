@@ -13,7 +13,11 @@ REGION_LANG_MAP = {
     "Global": "INTERNATIONAL ENGLISH"
 }
 
-def search_rag(query, client_name="Internal", k=15):
+def search_rag(query, brand_id=None, k=15):
+    """
+    Búsqueda Semántica Soberana (v11.0).
+    Filtra estrictamente por el brand_id oficial.
+    """
     try:
         query_embedding = get_embedding(query)
     except Exception as e:
@@ -24,14 +28,15 @@ def search_rag(query, client_name="Internal", k=15):
     try:
         with psycopg.connect(DB_CONN) as conn:
             with conn.cursor() as cur:
+                # v11.0: Filtro por Brand ID formal
                 cur.execute(
                     """
                     SELECT content FROM corporate_knowledge
-                    WHERE metadata->>'source' = %s
+                    WHERE brand_id = %s
                     ORDER BY embedding <=> %s::vector
                     LIMIT %s
                     """,
-                    (client_name, str(query_embedding), k)
+                    (brand_id, str(query_embedding), k)
                 )
                 for row in cur.fetchall():
                     results.append(row[0])
@@ -40,14 +45,13 @@ def search_rag(query, client_name="Internal", k=15):
         return ""
     return "\n---\n".join(results)
 
-def synthesize_strategic_content(topic, client_name, region="Global", knowledge_source=None):
-    source = knowledge_source or client_name
-    print(f"[ContentEngine] Fetching RAG for: {topic} | source: {source}", flush=True)
-    rag_context = search_rag(topic, source)
+def synthesize_strategic_content(topic, brand_id, region="Global"):
+    print(f"[ContentEngine] Fetching RAG for: {topic} | Brand ID: {brand_id}", flush=True)
+    rag_context = search_rag(topic, brand_id)
 
     if not rag_context:
-        raise ValueError(f"No RAG content found for source '{source}'. "
-                         "Please ensure the knowledge file has been ingested first.")
+        raise ValueError(f"No RAG content found for Brand ID '{brand_id}'. "
+                         "Please ensure the strategic documents have been ingested for this brand first.")
 
     target_lang = REGION_LANG_MAP.get(region, "NEUTRAL ENGLISH")
 

@@ -40,7 +40,13 @@ app = FastAPI(title="PowerAI API — Clean Architecture")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:4200",
+        "http://127.0.0.1:4200",
+        "http://localhost:3000",
+        "*"
+    ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -55,7 +61,9 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 class BrandCreate(BaseModel):
     name: str
-    description: Optional[str] = None
+    about: Optional[str] = None
+    core_value: Optional[str] = None
+    logo_path: Optional[str] = None
 
 class PresentationRequest(BaseModel):
     style_filename: str        
@@ -126,17 +134,66 @@ def list_brands(db: Session = Depends(get_db)):
     return db.query(models.Brand).all()
 
 @app.post("/api/brands", tags=["Governance"])
-def create_brand(brand: BrandCreate, db: Session = Depends(get_db)):
-    """Registra una nueva marca oficial para evitar duplicados."""
-    existing = db.query(models.Brand).filter(models.Brand.name == brand.name).first()
+async def create_brand(
+    name: str = Form(...),
+    about: Optional[str] = Form(None),
+    core_value: Optional[str] = Form(None),
+    logo: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db)
+):
+    """Registra una nueva marca con carga física de logo."""
+    existing = db.query(models.Brand).filter(models.Brand.name == name).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Brand already exists in the directory.")
+        raise HTTPException(status_code=400, detail="Brand already exists.")
     
-    new_brand = models.Brand(name=brand.name, description=brand.description)
+    logo_path = None
+    if logo:
+        # Guardar logo físicamente
+        safe_logo_name = f"logo_{int(time.time())}_{logo.filename}"
+        logo_path = os.path.join(UPLOAD_DIR, safe_logo_name)
+        with open(logo_path, "wb") as buffer:
+            buffer.write(await logo.read())
+
+    new_brand = models.Brand(
+        name=name, 
+        about=about,
+        core_value=core_value,
+        logo_path=logo_path
+    )
     db.add(new_brand)
     db.commit()
     db.refresh(new_brand)
     return new_brand
+
+@app.put("/api/brands/{brand_id}", tags=["Governance"])
+async def update_brand(
+    brand_id: int,
+    name: str = Form(...),
+    about: Optional[str] = Form(None),
+    core_value: Optional[str] = Form(None),
+    logo: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db)
+):
+    """Actualiza un dossier de marca existente."""
+    brand = db.query(models.Brand).filter(models.Brand.id == brand_id).first()
+    if not brand:
+        raise HTTPException(status_code=404, detail="Brand not found.")
+    
+    brand.name = name
+    brand.about = about
+    brand.core_value = core_value
+    
+    if logo:
+        # Reemplazar logo físicamente
+        safe_logo_name = f"logo_{int(time.time())}_{logo.filename}"
+        logo_path = os.path.join(UPLOAD_DIR, safe_logo_name)
+        with open(logo_path, "wb") as buffer:
+            buffer.write(await logo.read())
+        brand.logo_path = logo_path
+
+    db.commit()
+    db.refresh(brand)
+    return brand
 
 
 # ──────────────────────────────────────────────
@@ -279,13 +336,14 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
         set_job_status(job_key, "artistic", "error")
 
 
-def task_ingest_knowledge(job_key: str, file_path: str, source_filename: str):
-    """Ingesta RAG — sin cambios en lógica."""
-    logger.info(f"[Task] Knowledge Ingest started: {source_filename}")
+def task_ingest_knowledge(job_key: str, file_path: str, source_filename: str, brand_id: int = None, visibility_scope: str = "exclusive"):
+    """Ingesta RAG con Soberanía de Marca y Visibilidad (v11.0)."""
+    logger.info(f"[Task] Knowledge Ingest started: {source_filename} (Brand: {brand_id}, Scope: {visibility_scope})")
     cb = lambda msg, p=0: update_job_step(job_key, "knowledge", msg, p)
 
     try:
-        ingest_rag(file_path, source_filename, update_callback=cb)
+        is_public = (visibility_scope == "public")
+        ingest_rag(file_path, client_name=source_filename, update_callback=cb, brand_id=brand_id, is_public=is_public)
         set_job_status(job_key, "knowledge", "completed")
     except Exception as e:
         logger.error(f"[Task] Knowledge error: {e}")
@@ -427,7 +485,8 @@ async def upload_asset(
     elif ingestion_type == "pure_assets":
         background_tasks.add_task(task_extract_pure_assets, job_key, file_path, source_filename, visibility_scope, brand_id, tag_list)
     else:
-        background_tasks.add_task(task_ingest_knowledge, job_key, file_path, source_filename)
+        # v11.0: Knowledge Bank now follows Brand Governance & Visibility
+        background_tasks.add_task(task_ingest_knowledge, job_key, file_path, source_filename, brand_id, visibility_scope)
 
     return {
         "status": "accepted",
@@ -554,12 +613,11 @@ async def generate_presentation(
     pptx_path = os.path.join(UPLOAD_DIR, f"presentation_{timestamp}.pptx")
 
     try:
-        # 5. Síntesis de contenido
+        # 5. Síntesis de contenido (v11.0: Brand Sovereign RAG)
         content_manifest, full_prompt = synthesize_strategic_content(
             req.prompt,
-            req.style_filename,
-            region=req.region,
-            knowledge_source=req.knowledge_filename
+            dna.brand_id, # Usamos el ID de la marca dueña del estilo
+            region=req.region
         )
         
         # Guardar auditoría
@@ -653,14 +711,21 @@ def health_check():
 
 
 @app.delete("/api/admin/reset-db", tags=["Admin"])
-def reset_all_data(db: Session = Depends(get_db)):
-    """DEV ONLY: Trunca todas las tablas de datos (Gobernanza + ADN + RAG + Jobs)."""
-    with engine.connect() as conn:
-        conn.execute(text(
-            "TRUNCATE TABLE corporate_knowledge, brand_visual_dna, brand_artistic_essence, "
-            "brand_styles, ingestion_jobs, generation_jobs, brand_assets, brands RESTART IDENTITY CASCADE"
-        ))
-        conn.commit()
+def reset_database(db: Session = Depends(get_db)):
+    """Limpia y RECONSTRUYE físicamente la base de datos para aplicar cambios de esquema."""
+    try:
+        # 1. Borrado físico de tablas para aplicar nuevos esquemas
+        Base.metadata.drop_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
+        
+        # 2. Limpieza de archivos
+        for filename in os.listdir(UPLOAD_DIR):
+            file_path = os.path.join(UPLOAD_DIR, filename)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+    except Exception as e:
+        logger.error(f"Error resetting database: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     return {"status": "reset_complete"}
 
 

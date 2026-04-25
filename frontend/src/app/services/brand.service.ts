@@ -28,8 +28,24 @@ export class BrandService {
     return this.http.get<any[]>(`${this.apiUrl}/brands`);
   }
 
-  createBrand(name: string, description: string = ''): Observable<any> {
-    return this.http.post(`${this.apiUrl}/brands`, { name, description });
+  createBrand(name: string, about?: string, coreValue?: string, logo?: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('name', name);
+    if (about) formData.append('about', about);
+    if (coreValue) formData.append('core_value', coreValue);
+    if (logo) formData.append('logo', logo);
+    
+    return this.http.post(`${this.apiUrl}/brands`, formData);
+  }
+
+  updateBrand(brandId: number, name: string, about?: string, coreValue?: string, logo?: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('name', name);
+    if (about) formData.append('about', about);
+    if (coreValue) formData.append('core_value', coreValue);
+    if (logo) formData.append('logo', logo);
+    
+    return this.http.put(`${this.apiUrl}/brands/${brandId}`, formData);
   }
 
   getIngestionStatus(filename: string, type: string): Observable<any> {

@@ -7,19 +7,23 @@ from database import Base
 
 class Brand(Base):
     """
-    MAESTRO DE MARCAS.
-    El Directorio Oficial para evitar duplicados y errores de ortografía.
+    MAESTRO DE MARCAS (Directorio Oficial).
+    Contiene la metadata estratégica que guía el tono de la IA.
     """
     __tablename__ = "brands"
 
     id          = Column(Integer, primary_key=True, index=True)
-    name        = Column(String, unique=True, index=True, nullable=False) # "Castrol", "Tesco", etc.
-    description = Column(Text, nullable=True)
+    name        = Column(String, unique=True, index=True, nullable=False)
+    logo_path   = Column(String, nullable=True) # Logo oficial de referencia
+    about       = Column(Text, nullable=True)      # Resumen estratégico / Quiénes somos
+    core_value  = Column(String, nullable=True)  # Valor central / Slogan
+    
     created_at  = Column(DateTime, default=datetime.datetime.utcnow)
 
     # Relaciones
     visual_dna = relationship("BrandVisualDna", back_populates="brand", uselist=False)
     assets     = relationship("BrandAsset", back_populates="brand")
+    knowledge  = relationship("CorporateKnowledge", back_populates="brand")
 
 
 class BrandVisualDna(Base):
@@ -30,8 +34,7 @@ class BrandVisualDna(Base):
     source_filename  = Column(String, index=True, nullable=False)
     
     brand = relationship("Brand", back_populates="visual_dna")
-    assets = relationship("BrandAsset", back_populates="brand_dna") # legacy link if needed or remove
-
+    
     # Paleta de colores
     primary_color    = Column(String, default="#000000")
     secondary_color  = Column(String, default="#404040")
@@ -43,18 +46,14 @@ class BrandVisualDna(Base):
     primary_font     = Column(String, default="Arial")
     secondary_font   = Column(String, nullable=True)
 
-    # Assets físicos extraídos del documento (logos, imágenes de marca)
-    # Lista de basenames: ["logo_abc.png", "brand_photo.jpg"]
+    # Assets físicos extraídos del documento
     extracted_assets = Column(JSONB, nullable=True)
 
-    # Captura completa del LLM para auditoría y debugging
+    # Captura completa del LLM para auditoría
     raw_extraction   = Column(JSONB, nullable=True)
 
     created_at       = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at       = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
-
-    # Relación con la nueva Biblioteca de Activos
-    assets = relationship("BrandAsset", back_populates="brand", cascade="all, delete-orphan")
 
 
 class BrandAsset(Base):
@@ -204,3 +203,26 @@ class BrandStyle(Base):
     visual_strategy  = Column(JSON, nullable=True)
 
     updated_at       = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
+class CorporateKnowledge(Base):
+    """
+    BANCO DE CONOCIMIENTO (RAG).
+    Datos estratégicos blindados por marca.
+    """
+    __tablename__ = "corporate_knowledge"
+
+    id = Column(Integer, primary_key=True)
+    brand_id = Column(Integer, ForeignKey("brands.id"), nullable=True)
+    
+    source_filename = Column(String(255))
+    content = Column(Text)
+    
+    # Metadata para RAG (embedding se maneja vía raw SQL o tipo vector si está disponible)
+    # is_public: 0 = Exclusive, 1 = Public
+    is_public = Column(Integer, default=0)
+    
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    # Relación inversa
+    brand = relationship("Brand", back_populates="knowledge")

@@ -42,15 +42,15 @@ def chunk_text(text, chunk_size=1500, overlap=250):
         start += chunk_size - overlap
     return chunks
 
-def ingest_document(file_path, client_name="Internal", update_callback=None):
+def ingest_document(file_path, client_name="Internal", update_callback=None, brand_id=None, is_public=False):
     """
-    STABLE INGESTION WITH BATCH EMBEDDINGS AND AUDIT LOGS.
+    STABLE INGESTION WITH BRAND SOVEREIGNTY & VISIBILITY (v11.0).
     """
     ext = os.path.splitext(file_path)[1].lower()
     if ext not in [".pdf", ".pptx"]:
          raise ValueError(f"Format {ext} not supported.")
          
-    print(f"[Worker] Starting ingestion for {client_name}. Path: {file_path}", flush=True)
+    print(f"[Worker] Starting ingestion for {client_name} (Brand ID: {brand_id}). Path: {file_path}", flush=True)
          
     if update_callback:
         update_callback(f"Reading document: {os.path.basename(file_path)}", 5)
@@ -62,7 +62,7 @@ def ingest_document(file_path, client_name="Internal", update_callback=None):
         full_text = extract_text_from_pptx(file_path)
         
     chunks = chunk_text(full_text)
-    valid_chunks = [c for c in chunks if len(c.strip()) >= 5] # More lenient
+    valid_chunks = [c for c in chunks if len(c.strip()) >= 5] 
     total_chunks = len(valid_chunks)
     
     print(f"[Worker] Extracted {len(full_text)} chars. Chunks: {total_chunks}", flush=True)
@@ -103,17 +103,24 @@ def ingest_document(file_path, client_name="Internal", update_callback=None):
                         
                         conn.execute(
                             text("""
-                            INSERT INTO corporate_knowledge (content, metadata, embedding)
-                            VALUES (:content, :metadata, cast(:embedding as vector))
+                            INSERT INTO corporate_knowledge (content, metadata, embedding, brand_id, is_public)
+                            VALUES (:content, :metadata, cast(:embedding as vector), :brand_id, :is_public)
                             """),
                             {
                                 "content": text_fragment,
-                                "metadata": json.dumps({"source": os.path.basename(file_path), "client": client_name}),
-                                "embedding": emb_pg
+                                "metadata": json.dumps({
+                                    "source": os.path.basename(file_path), 
+                                    "client": client_name,
+                                    "brand_id": brand_id,
+                                    "is_public": is_public
+                                }),
+                                "embedding": emb_pg,
+                                "brand_id": brand_id,
+                                "is_public": 1 if is_public else 0
                             }
                         )
                         inserted_total += 1
-            print(f"  [DB] Consistently persisted batch {current_batch_idx}.", flush=True)
+            print(f"  [DB] Consistently persisted batch {current_batch_idx} for Brand {brand_id}.", flush=True)
             
         except Exception as e:
             print(f"  [Error] Batch {current_batch_idx} failed: {e}", flush=True)

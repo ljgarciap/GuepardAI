@@ -1,0 +1,78 @@
+<div class="brand-manager-container">
+  <!-- Header Estratégico -->
+  <header class="manager-header">
+    <div class="header-texts">
+      <h1 class="page-title">Brand Directory Master</h1>
+      <p class="page-subtitle">Manage corporate identities and strategic dossiers</p>
+    </div>
+    <button class="action-btn-elite" (click)="showCreateForm = !showCreateForm">
+      {{ showCreateForm ? 'CLOSE DOSSIER' : 'NEW BRAND DOSSIER' }}
+    </button>
+  </header>
+
+  <!-- Formulario de Creación / Edición -->
+  <div class="creation-panel glass-panel" *ngIf="showCreateForm">
+    <h2 class="panel-title">{{ editingId ? 'Update Corporate Identity' : 'Corporate Identity Registration' }}</h2>
+    <div class="form-grid">
+      <div class="input-group">
+        <label>OFFICIAL NAME</label>
+        <input type="text" [(ngModel)]="newBrand.name" placeholder="e.g. Castrol Global">
+      </div>
+      <div class="input-group">
+        <label>CORE VALUE / SLOGAN</label>
+        <input type="text" [(ngModel)]="newBrand.coreValue" placeholder="e.g. It's more than just oil. It's liquid engineering.">
+      </div>
+      <div class="input-group full-width">
+        <label>STRATEGIC ABOUT (BRAND BIOGRAPHY)</label>
+        <textarea [(ngModel)]="newBrand.about" placeholder="Describe the brand essence, mission and target audience..."></textarea>
+      </div>
+      <div class="input-group full-width">
+        <label>OFFICIAL LOGO</label>
+        <div class="logo-upload-zone" (click)="logoInput.click()">
+          <span *ngIf="!logoPreview" class="upload-icon">⊕</span>
+          <img *ngIf="logoPreview" [src]="logoPreview" class="logo-preview-img">
+          <div class="upload-texts">
+            <span class="primary-text">{{ selectedLogoFile ? selectedLogoFile.name : (editingId ? 'Change official logo' : 'Select official logo') }}</span>
+            <span class="secondary-text">PNG, JPG or SVG supported</span>
+          </div>
+          <input #logoInput type="file" (change)="onLogoSelected($event)" style="display: none" accept="image/*">
+        </div>
+      </div>
+    </div>
+    <div class="panel-actions">
+      <button class="save-btn" (click)="saveBrand()" [disabled]="!newBrand.name">
+        {{ editingId ? 'UPDATE BRAND IDENTITY' : 'SAVE BRAND IDENTITY' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- Directorio de Marcas (Grid) -->
+  <div class="brands-grid">
+    <div class="brand-card glass-panel" *ngFor="let brand of brands">
+      <div class="card-header">
+        <div class="brand-avatar">
+          <span *ngIf="!brand.logo_path">{{ brand.name.charAt(0) }}</span>
+          <img *ngIf="brand.logo_path" [src]="'http://localhost:8000/' + brand.logo_path" class="card-logo">
+        </div>
+        <div class="card-titles">
+          <h3>{{ brand.name }}</h3>
+          <p class="core-value-text">{{ brand.core_value || 'No core value defined' }}</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="about-excerpt">{{ brand.about || 'No description available for this corporate profile.' }}</p>
+      </div>
+      <div class="card-footer">
+        <span class="asset-count">ID: #{{ brand.id }}</span>
+        <button class="edit-btn" (click)="editBrand(brand)">EDIT DOSSIER</button>
+      </div>
+    </div>
+
+    <!-- Empty State -->
+    <div class="empty-state glass-panel" *ngIf="brands.length === 0">
+      <span class="empty-icon">⊞</span>
+      <h3>Directory Empty</h3>
+      <p>Register your first brand identity to start orchestrating intelligence.</p>
+    </div>
+  </div>
+</div>

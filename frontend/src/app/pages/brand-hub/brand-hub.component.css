@@ -1,0 +1,263 @@
+.page-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.page-header {
+  margin-bottom: 40px;
+}
+
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--primary-navy);
+  margin-bottom: 4px;
+}
+
+.page-subtitle {
+  font-size: 0.65rem;
+  color: var(--text-light);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+  gap: 32px;
+}
+
+.elite-card {
+  background: #ffffff;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 32px;
+  box-shadow: var(--card-shadow);
+  display: flex;
+  flex-direction: column;
+}
+
+.card-step {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--primary-blue);
+  letter-spacing: 0.1em;
+  margin-bottom: 12px;
+}
+
+.card-header h3 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--primary-navy);
+  margin-bottom: 8px;
+}
+
+.card-desc {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 32px;
+}
+
+/* Custom Upload Styling */
+.upload-orchestrator {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.custom-drop-zone {
+  border: 1px dashed var(--border-light);
+  background: #f8fafc;
+  border-radius: 6px;
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.custom-drop-zone:hover {
+  background: #f1f5f9;
+  border-color: var(--primary-blue);
+}
+
+.upload-icon {
+  font-size: 1.5rem;
+  color: var(--primary-blue);
+  font-weight: 800;
+}
+
+.upload-texts {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.primary-text {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--primary-navy);
+}
+
+.secondary-text {
+  font-size: 0.7rem;
+  color: var(--text-light);
+  font-weight: 600;
+}
+
+.file-status {
+  padding: 8px 12px;
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.file-name {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--primary-blue);
+}
+
+.w-full {
+  width: 100%;
+  justify-content: center;
+}
+
+/* Override Zone */
+.reset-zone-elite {
+  margin-top: 64px;
+  background: #fff5f5;
+  border: 1px solid #fed7d7;
+  border-left: 4px solid #e53e3e;
+  border-radius: 8px;
+  padding: 24px 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.reset-label {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #c53030;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.reset-desc {
+  font-size: 0.8rem;
+  color: #9b2c2c;
+  font-weight: 500;
+}
+
+.btn-reset-enterprise {
+  background: #c53030;
+  color: #ffffff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-weight: 800;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.profile-select {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #e0e0e0;
+  font-size: 0.9rem;
+  cursor: pointer;
+  appearance: auto;
+}
+
+.profile-select:focus {
+  outline: none;
+  border-color: rgba(139, 92, 246, 0.6);
+}
+
+.profile-saved-badge {
+  display: inline-block;
+  margin-top: 0.4rem;
+  padding: 0.25rem 0.6rem;
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+/* DEV RESET ZONE */
+.reset-zone {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-top: 2.5rem;
+  padding: 1rem 1.5rem;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.04);
+  flex-wrap: wrap;
+}
+
+.reset-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1;
+}
+
+.reset-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #ef4444;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.reset-desc {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.btn-reset {
+  padding: 0.55rem 1.2rem;
+  background: transparent;
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.btn-reset:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: #ef4444;
+}
+
+.btn-reset:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.reset-success-badge {
+  padding: 0.3rem 0.8rem;
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}

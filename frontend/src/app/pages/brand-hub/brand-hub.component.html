@@ -1,0 +1,127 @@
+<div class="page-container">
+  <div class="page-header">
+    <div class="header-titles">
+      <h1 class="page-title">INTELLIGENCE HUB</h1>
+      <span class="page-subtitle">KNOWLEDGE ARCHITECTURE & BRAND DNA • v1.0</span>
+    </div>
+  </div>
+
+  <div class="form-grid">
+    <!-- Phase 01: Brand DNA -->
+    <div class="elite-card">
+      <div class="card-step">PHASE 01</div>
+      <div class="card-header">
+        <h3>Brand Blueprint</h3>
+        <p class="card-desc">Extract visual DNA and artistic essence from identity manuals.</p>
+      </div>
+
+      <div class="upload-orchestrator">
+        <div class="custom-drop-zone" *ngIf="!identityState.loading && !identityState.successMessage" (click)="blueprintInput.click()">
+          <span class="upload-icon">↑</span>
+          <div class="upload-texts">
+            <span class="primary-text">Drag & drop brand manual</span>
+            <span class="secondary-text">PDF or PPTX supported</span>
+          </div>
+          <input #blueprintInput type="file" (change)="onFileSelected($event, 'brand_style')" style="display: none">
+        </div>
+        
+        <!-- Log Console for Identity -->
+        <div class="synthesis-console" *ngIf="identityState.loading">
+          <div class="console-header">
+            <span class="console-title">IDENTITY MAPPING LOG</span>
+            <div class="spinner-mini"></div>
+          </div>
+          <div class="console-body">
+            <div class="log-entry" *ngFor="let log of identityState.logs">
+              <span class="log-timestamp">[{{ log.time }}]</span>
+              <span class="log-role">{{ log.role }}:</span>
+              <span class="log-message">{{ log.message }}</span>
+            </div>
+          </div>
+          <div class="console-footer">
+            <div class="progress-bar-elite">
+              <div class="progress-fill-elite" [style.width.%]="identityState.progress"></div>
+            </div>
+            <span class="progress-text">{{ identityState.progress }}%</span>
+          </div>
+        </div>
+
+        <div class="file-status" *ngIf="identityState.file && !identityState.loading && !identityState.successMessage">
+          <span class="file-name">{{ identityState.file.name }}</span>
+        </div>
+
+        <div class="success-status-lite" *ngIf="identityState.successMessage">
+          <span class="success-icon">✓</span> Brand DNA Extracted Successfully
+        </div>
+
+        <button class="btn-primary-enterprise w-full" *ngIf="!identityState.loading && !identityState.successMessage" (click)="upload('brand_style')" [disabled]="!identityState.file">
+          EXTRACT BRAND DNA
+        </button>
+      </div>
+    </div>
+
+    <!-- Phase 02: Knowledge Bank -->
+    <div class="elite-card">
+      <div class="card-step">PHASE 02</div>
+      <div class="card-header">
+        <h3>Contextual Intelligence</h3>
+        <p class="card-desc">Fuel the RAG engine with strategic reports and documentation.</p>
+      </div>
+
+      <div class="upload-orchestrator">
+        <div class="custom-drop-zone" *ngIf="!knowledgeState.loading && !knowledgeState.successMessage" (click)="knowledgeInput.click()">
+          <span class="upload-icon">⊕</span>
+          <div class="upload-texts">
+            <span class="primary-text">Incorporate technical documents</span>
+            <span class="secondary-text">Strategic reports (PDF/PPTX)</span>
+          </div>
+          <input #knowledgeInput type="file" (change)="onFileSelected($event, 'knowledge')" style="display: none">
+        </div>
+
+        <!-- Log Console for Knowledge -->
+        <div class="synthesis-console" *ngIf="knowledgeState.loading">
+          <div class="console-header">
+            <span class="console-title">KNOWLEDGE INGESTION LOG</span>
+            <div class="spinner-mini"></div>
+          </div>
+          <div class="console-body">
+            <div class="log-entry" *ngFor="let log of knowledgeState.logs">
+              <span class="log-timestamp">[{{ log.time }}]</span>
+              <span class="log-role">{{ log.role }}:</span>
+              <span class="log-message">{{ log.message }}</span>
+            </div>
+          </div>
+          <div class="console-footer">
+            <div class="progress-bar-elite">
+              <div class="progress-fill-elite" [style.width.%]="knowledgeState.progress"></div>
+            </div>
+            <span class="progress-text">{{ knowledgeState.progress }}%</span>
+          </div>
+        </div>
+
+        <div class="file-status" *ngIf="knowledgeState.file && !knowledgeState.loading && !knowledgeState.successMessage">
+          <span class="file-name">{{ knowledgeState.file.name }}</span>
+        </div>
+
+        <div class="success-status-lite" *ngIf="knowledgeState.successMessage">
+          <span class="success-icon">✓</span> Knowledge Bank Initialized
+        </div>
+
+        <button class="btn-primary-enterprise w-full" *ngIf="!knowledgeState.loading && !knowledgeState.successMessage" (click)="upload('knowledge')" [disabled]="!knowledgeState.file">
+          INITIALIZE KNOWLEDGE
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- System Override Zone -->
+  <div class="reset-zone-elite">
+    <div class="reset-info">
+      <span class="reset-label">SYSTEM OVERRIDE</span>
+      <p class="reset-desc">Clear all neural weights, brand profiles, and knowledge vectors.</p>
+    </div>
+    <button class="btn-reset-enterprise" (click)="resetAll()" [disabled]="resetLoading">
+      {{ resetLoading ? 'RESETTING...' : 'FACTORY RESET' }}
+    </button>
+  </div>
+</div>

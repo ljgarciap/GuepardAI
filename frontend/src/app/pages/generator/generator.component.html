@@ -1,0 +1,126 @@
+<div class="page-container">
+  <!-- Top Control Bar -->
+  <div class="control-toolbar glass-panel">
+    <div class="toolbar-header">
+      <h1 class="page-title">SYNTHESIS STUDIO</h1>
+      <span class="page-subtitle">OPERATIONAL CONTROL • v1.0</span>
+    </div>
+    
+    <div class="toolbar-actions">
+      <div class="control-group">
+        <label>BLUEPRINT</label>
+        <select [(ngModel)]="selectedStyle" class="enterprise-select">
+          <option value="" disabled>Select...</option>
+          <option *ngFor="let style of availableStyles" [value]="style.filename">
+            {{ style.filename }}
+          </option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>KNOWLEDGE</label>
+        <select [(ngModel)]="selectedKnowledge" class="enterprise-select">
+          <option value="" disabled>Select...</option>
+          <option *ngFor="let source of availableKnowledge" [value]="source">
+            {{ source }}
+          </option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>DIALECT</label>
+        <select [(ngModel)]="selectedRegion" class="enterprise-select">
+          <option value="LATAM">Spanish (LATAM)</option>
+          <option value="UK">English (UK)</option>
+          <option value="USA">English (USA)</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="main-workspace">
+    <!-- Ready State -->
+    <div class="hero-section" *ngIf="!isGenerating && !downloadUrl && !errorMessage">
+      <div class="hero-text-compact">
+        <h2 class="hero-title-clean">Ready for <span class="highlight">Synthesis</span></h2>
+        <p class="hero-desc-clean">Enter your strategic requirements below to begin the generation process.</p>
+      </div>
+      
+      <div class="quick-actions-compact">
+        <div class="preset-pills">
+          <button (click)="setPrompt('Strategic Q3 Financial Outlook')">Strategic Outlook</button>
+          <button (click)="setPrompt('Market Entry Strategy Europe')">Market Entry</button>
+          <button (click)="setPrompt('Corporate Culture Playbook')">Culture Playbook</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Generation / Results -->
+    <div class="output-card glass-panel" *ngIf="isGenerating || downloadUrl || errorMessage">
+      <div class="status-workspace">
+        
+        <!-- Generation Console (Logs) -->
+        <div class="synthesis-console" *ngIf="isGenerating">
+          <div class="console-header">
+            <span class="console-title">LIVE SYNTHESIS LOG</span>
+            <div class="spinner-mini"></div>
+          </div>
+          <div class="console-body" #consoleBody>
+            <div class="log-entry" *ngFor="let log of synthesisLogs">
+              <span class="log-timestamp">[{{ log.time }}]</span>
+              <span class="log-role">{{ log.role }}:</span>
+              <span class="log-message">{{ log.message }}</span>
+            </div>
+            <div class="log-entry active" *ngIf="currentStatus">
+              <span class="log-timestamp">></span>
+              <span class="log-message">{{ currentStatus }}...</span>
+            </div>
+          </div>
+          <div class="console-footer">
+            <div class="progress-bar">
+              <div class="progress-fill" [style.width.%]="progress"></div>
+            </div>
+            <span class="progress-text">{{ progress }}% COMPLETE</span>
+          </div>
+        </div>
+
+        <!-- Success Result -->
+        <div class="success-state" *ngIf="downloadUrl">
+          <div class="success-icon-wrap">✓</div>
+          <h4>Synthesis Perfected</h4>
+          <p>The presentation has been architected to your exact specifications.</p>
+          <a [href]="downloadUrl" download class="btn-primary-enterprise">DOWNLOAD PORTFOLIO</a>
+          <button (click)="reset()" class="btn-link">New Project</button>
+        </div>
+
+        <!-- Error Result -->
+        <div class="error-state" *ngIf="errorMessage">
+          <div class="error-icon-wrap">!</div>
+          <h4>Synthesis Interrupted</h4>
+          <p>{{ errorMessage }}</p>
+          <button (click)="reset()" class="btn-secondary">RETRY SEQUENCE</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Command Input Area -->
+  <div class="command-area">
+    <div class="input-card">
+      <textarea 
+        placeholder="Enter synthesis command..."
+        [(ngModel)]="prompt"
+        [disabled]="isGenerating"
+        rows="2">
+      </textarea>
+      <div class="input-actions">
+        <span class="input-status" [class.ready]="prompt && selectedStyle && selectedKnowledge">
+          {{ isGenerating ? 'BUSY' : 'STANDBY' }}
+        </span>
+        <button class="btn-execute" (click)="generate()" [disabled]="!prompt || !selectedStyle || !selectedKnowledge || isGenerating">
+          SYNTHESIZE NOW
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

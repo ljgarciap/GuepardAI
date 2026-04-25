@@ -1,0 +1,197 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  /* Guepard AI - Proseguir Aesthetic */
+  --bg-app: #f1f5f9; 
+  --bg-sidebar: #ffffff;
+  --bg-card: #ffffff;
+  
+  --primary-navy: #0f172a; /* Deep Navy for titles */
+  --primary-blue: #2563eb; /* Vibrant Blue for active/buttons */
+  
+  --text-main: #334155; 
+  --text-muted: #64748b;
+  --text-light: #94a3b8;
+  
+  --border-light: #e2e8f0;
+  --card-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --radius-md: 8px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  min-height: 100vh;
+}
+
+/* Card Style from Reference */
+.glass-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--card-shadow);
+}
+
+.gradient-text {
+  color: var(--primary-navy);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* Enterprise Inputs */
+input, textarea, select {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: var(--text-main);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+input:focus {
+  border-color: var(--primary-blue);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+/* Proseguir Style Button */
+.btn-primary {
+  background: var(--primary-blue);
+  color: #ffffff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.btn-secondary {
+  background: #ffffff;
+  color: var(--text-main);
+  border: 1px solid var(--border-light);
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+/* Shared Technical Console */
+.synthesis-console {
+  background: #0f172a;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.1);
+  width: 100%;
+  margin-top: 24px;
+}
+
+.console-header {
+  background: #1e293b;
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #334155;
+}
+
+.console-title {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #94a3b8;
+  letter-spacing: 0.1em;
+}
+
+.spinner-mini {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.1);
+  border-top-color: var(--primary-blue);
+  border-radius: 50%;
+  animation: spin-mini 0.8s linear infinite;
+}
+
+.console-body {
+  padding: 20px;
+  height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.log-entry {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.8rem;
+  display: flex;
+  gap: 12px;
+  line-height: 1.4;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.log-timestamp {
+  color: #475569;
+  white-space: nowrap;
+}
+
+.log-role {
+  color: var(--primary-blue);
+  font-weight: 700;
+  white-space: nowrap;
+  min-width: 110px;
+}
+
+.log-message {
+  color: #cbd5e1;
+}
+
+.console-footer {
+  background: #1e293b;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.progress-bar-elite {
+  flex: 1;
+  height: 4px;
+  background: #334155;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill-elite {
+  height: 100%;
+  background: var(--primary-blue);
+  transition: width 0.5s ease-out;
+}
+
+.progress-text {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #94a3b8;
+}
+
+@keyframes spin-mini { 100% { transform: rotate(360deg); } }
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}

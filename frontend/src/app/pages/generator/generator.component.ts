@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BrandService } from '../../services/brand.service';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
+import { interval, switchMap, takeWhile } from 'rxjs';
 
 @Component({
   selector: 'app-generator',
@@ -27,8 +28,13 @@ export class GeneratorComponent implements OnInit {
 
   // --- STATE ---
   isGenerating: boolean = false;
-  downloadUrl: SafeUrl | null = null;
+  downloadUrl: any = '';
   errorMessage: string = '';
+
+  // --- CONSOLE & LOGS ---
+  synthesisLogs: { time: string, role: string, message: string }[] = [];
+  progress: number = 0;
+  currentStatus: string = '';
 
   ngOnInit() {
     this.loadMetadata();
@@ -38,7 +44,6 @@ export class GeneratorComponent implements OnInit {
     this.brandService.getAvailableStyles().subscribe({
       next: (res) => {
         this.availableStyles = res.styles || [];
-        // Auto-select if only one
         if (this.availableStyles.length === 1) {
           this.selectedStyle = this.availableStyles[0].filename;
         }
@@ -48,7 +53,6 @@ export class GeneratorComponent implements OnInit {
     this.brandService.getAvailableKnowledge().subscribe({
       next: (res) => {
         this.availableKnowledge = res.sources || [];
-        // Auto-select if only one
         if (this.availableKnowledge.length === 1) {
           this.selectedKnowledge = this.availableKnowledge[0];
         }
@@ -68,7 +72,7 @@ export class GeneratorComponent implements OnInit {
     this.progress = 0;
     this.addLog('Strategic Orchestrator', 'Initiating neural synthesis sequence...');
     
-    this.brandService.generatePresentation(this.selectedStyle, this.selectedKnowledge, this.prompt, this.selectedRegion)
+    this.brandService.generatePresentation(this.prompt, this.selectedStyle, this.selectedKnowledge, this.selectedRegion)
       .subscribe({
         next: (res: any) => {
           this.addLog('Analyst', 'Strategic command received and validated.');
@@ -95,8 +99,8 @@ export class GeneratorComponent implements OnInit {
       )
       .subscribe({
         next: (res: any) => {
-          this.progress = res.progress;
-          this.currentStatus = this.mapStatusToMessage(res.current_step);
+          this.progress = res.progress || 0;
+          this.currentStatus = this.mapStatusToMessage(res.current_step || '');
           
           if (res.status === 'completed') {
             this.addLog('Strategic Orchestrator', 'Portfolio synthesis finalized and verified.');
@@ -107,9 +111,9 @@ export class GeneratorComponent implements OnInit {
             this.isGenerating = false;
           } else {
             const lastLog = this.synthesisLogs[this.synthesisLogs.length - 1];
-            const mappedRole = this.mapStatusToRole(res.current_step);
-            const mappedMsg = this.mapStatusToMessage(res.current_step);
-            if (lastLog?.message !== mappedMsg) {
+            const mappedRole = this.mapStatusToRole(res.current_step || '');
+            const mappedMsg = this.mapStatusToMessage(res.current_step || '');
+            if (lastLog?.message !== mappedMsg && mappedMsg) {
               this.addLog(mappedRole, mappedMsg);
             }
           }

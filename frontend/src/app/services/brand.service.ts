@@ -6,25 +6,26 @@ import { Observable } from 'rxjs';
   providedIn: 'root'
 })
 export class BrandService {
-  private apiUrl = 'http://localhost:8001/api';
+  private apiUrl = 'http://localhost:8000/api';
 
   constructor(private http: HttpClient) {}
 
   /**
    * Uploads an asset for ingestion.
-   * @param ingestionType 'visual_dna' | 'artistic' | 'knowledge'
-   * @param file PDF or PPTX document
    */
-  uploadBrandAsset(file: File, ingestionType: 'brand_style' | 'visual_dna' | 'artistic' | 'knowledge'): Observable<any> {
+  uploadBrandAsset(file: File, ingestionType: string): Observable<any> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('ingestion_type', ingestionType);
-    
     return this.http.post(`${this.apiUrl}/brand/upload`, formData);
   }
 
-  getIngestionStatus(filename: string, type: 'brand_style' | 'visual_dna' | 'artistic' | 'knowledge'): Observable<any> {
+  getIngestionStatus(filename: string, type: string): Observable<any> {
     return this.http.get(`${this.apiUrl}/ingestion/status/${filename}?ingestion_type=${type}`);
+  }
+
+  getGenerationStatus(jobId: string): Observable<any> {
+    return this.http.get(`${this.apiUrl}/generation/status/${jobId}`);
   }
 
   getAvailableStyles(): Observable<any> {
@@ -35,16 +36,13 @@ export class BrandService {
     return this.http.get(`${this.apiUrl}/available-knowledge`);
   }
 
-  generatePresentation(styleFilename: string, knowledgeFilename: string, prompt: string, region: string = 'LATAM'): Observable<Blob> {
-    return this.http.post(`${this.apiUrl}/presentations/generate`, 
-      { 
-        style_filename: styleFilename, 
-        knowledge_filename: knowledgeFilename, 
-        prompt: prompt, 
-        region: region 
-      }, 
-      { responseType: 'blob' }
-    );
+  generatePresentation(prompt: string, styleFilename: string, knowledgeFilename: string, region: string = 'LATAM'): Observable<any> {
+    return this.http.post(`${this.apiUrl}/presentations/generate`, { 
+      prompt, 
+      style_filename: styleFilename, 
+      knowledge_filename: knowledgeFilename, 
+      region 
+    });
   }
 
   resetDatabase(): Observable<any> {

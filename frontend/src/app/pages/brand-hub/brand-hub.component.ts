@@ -11,6 +11,9 @@ interface JobState {
   progress: number;
   successMessage: string;
   errorMessage: string;
+  visibilityScope: 'exclusive' | 'public';
+  selectedBrandId: number | null;
+  manualTags: string;
   pollingSub?: Subscription;
   logs: { time: string, role: string, message: string }[];
 }
@@ -27,12 +30,34 @@ export class BrandHubComponent implements OnInit, OnDestroy {
 
   identityState: JobState = this.initialState();
   knowledgeState: JobState = this.initialState();
+  assetState: JobState = this.initialState();
+
+  officialBrands: any[] = [];
+  newBrandName: string = '';
+  showBrandCreator: boolean = false;
 
   resetLoading: boolean = false;
-  resetSuccess: boolean = false;
 
   ngOnInit() {
-    console.log('[System] Brand Hub Synchronized with Persona-Driven Logs.');
+    this.loadBrands();
+  }
+
+  loadBrands() {
+    this.brandService.getBrands().subscribe(res => {
+      this.officialBrands = res;
+    });
+  }
+
+  createNewBrand() {
+    if (!this.newBrandName) return;
+    this.brandService.createBrand(this.newBrandName).subscribe({
+      next: (brand) => {
+        this.officialBrands.push(brand);
+        this.newBrandName = '';
+        this.showBrandCreator = false;
+      },
+      error: (err) => alert(err.error?.detail || 'Error creating brand')
+    });
   }
 
   private initialState(): JobState {
@@ -43,29 +68,41 @@ export class BrandHubComponent implements OnInit, OnDestroy {
       progress: 0,
       successMessage: '',
       errorMessage: '',
+      visibilityScope: 'exclusive',
+      selectedBrandId: null,
+      manualTags: '',
       logs: []
     };
   }
 
-  onFileSelected(event: any, type: 'brand_style' | 'knowledge') {
+  onFileSelected(event: any, type: 'brand_style' | 'knowledge' | 'pure_assets') {
     if (event.target.files.length > 0) {
       const file = event.target.files[0];
       if (type === 'brand_style') this.identityState.file = file;
       else if (type === 'knowledge') this.knowledgeState.file = file;
+      else if (type === 'pure_assets') this.assetState.file = file;
     }
   }
 
   private addLog(state: JobState, role: string, message: string) {
     const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
     state.logs.push({ time, role, message });
-    if (state.logs.length > 8) state.logs.shift();
+    if (state.logs.length > 10) state.logs.shift();
   }
 
-  upload(type: 'brand_style' | 'knowledge') {
-    const state = type === 'brand_style' ? this.identityState : this.knowledgeState;
+  upload(type: 'brand_style' | 'knowledge' | 'pure_assets') {
+    let state: JobState;
+    if (type === 'brand_style') state = this.identityState;
+    else if (type === 'knowledge') state = this.knowledgeState;
+    else state = this.assetState;
 
     if (!state.file) {
       state.errorMessage = 'Validation: Document required.';
+      return;
+    }
+
+    if (state.visibilityScope === 'exclusive' && !state.selectedBrandId) {
+      state.errorMessage = 'Validation: Please select a Brand from the official directory.';
       return;
     }
     
@@ -77,13 +114,21 @@ export class BrandHubComponent implements OnInit, OnDestroy {
     state.logs = [];
 
     const role = type === 'brand_style' ? 'Designer' : 'Analyst';
-    this.addLog(state, 'Strategic Orchestrator', `Initiating ${type.replace('_', ' ')} ingestion...`);
+    const brandName = this.officialBrands.find(b => b.id === state.selectedBrandId)?.name || 'Generic';
+    
+    this.addLog(state, 'Strategic Orchestrator', `Initiating ${type.replace('_', ' ')} for ${brandName} (${state.visibilityScope})...`);
 
     const filename = state.file.name;
     
-    this.brandService.uploadBrandAsset(state.file, type).subscribe({
+    this.brandService.uploadBrandAsset(
+      state.file, 
+      type, 
+      state.visibilityScope, 
+      state.selectedBrandId || undefined, 
+      state.manualTags
+    ).subscribe({
       next: (res) => {
-        this.addLog(state, role, 'Document received. Starting architectural mapping...');
+        this.addLog(state, role, 'Gobernance check passed. Starting extraction...');
         this.startPolling(filename, type);
       },
       error: (err) => {
@@ -93,8 +138,11 @@ export class BrandHubComponent implements OnInit, OnDestroy {
     });
   }
 
-  startPolling(filename: string, type: 'brand_style' | 'knowledge') {
-    const state = type === 'brand_style' ? this.identityState : this.knowledgeState;
+  startPolling(filename: string, type: 'brand_style' | 'knowledge' | 'pure_assets') {
+    let state: JobState;
+    if (type === 'brand_style') state = this.identityState;
+    else if (type === 'knowledge') state = this.knowledgeState;
+    else state = this.assetState;
 
     state.pollingSub?.unsubscribe();
 
@@ -118,7 +166,7 @@ export class BrandHubComponent implements OnInit, OnDestroy {
 
           if (res.status === 'completed') {
             state.progress = 100;
-            this.addLog(state, 'Strategic Orchestrator', 'Ingestion finalized and verified.');
+            this.addLog(state, 'Strategic Orchestrator', 'Ingestion finalized and verified in Directory.');
             state.successMessage = 'Ingestion finalized successfully.';
             state.pollingSub?.unsubscribe();
             setTimeout(() => { state.loading = false; }, 5000);
@@ -138,6 +186,7 @@ export class BrandHubComponent implements OnInit, OnDestroy {
   private mapRole(step: string, type: string): string {
     if (step.includes('Parsing')) return 'Analyst';
     if (step.includes('Indexing')) return 'Architect';
+    if (step.includes('Harvest')) return 'Technician';
     return type === 'brand_style' ? 'Designer' : 'Analyst';
   }
 
@@ -147,14 +196,22 @@ export class BrandHubComponent implements OnInit, OnDestroy {
                .replace('Generating', 'Synthesizing');
   }
 
+  reset(type: 'brand_style' | 'knowledge' | 'pure_assets') {
+    const state = type === 'brand_style' ? this.identityState : (type === 'knowledge' ? this.knowledgeState : this.assetState);
+    state.pollingSub?.unsubscribe();
+    Object.assign(state, this.initialState());
+  }
+
   resetAll() {
-    if (!confirm('⚠️ This will DELETE all brand profiles, knowledge vectors, and jobs.\n\nAre you sure?')) return;
+    if (!confirm('⚠️ This will DELETE all official brands, assets, and neural profiles.\n\nAre you sure?')) return;
     this.resetLoading = true;
     this.brandService.resetDatabase().subscribe({
       next: () => {
         this.resetLoading = false;
         this.identityState = this.initialState();
         this.knowledgeState = this.initialState();
+        this.assetState = this.initialState();
+        this.loadBrands();
       },
       error: () => { this.resetLoading = false; }
     });
@@ -163,5 +220,6 @@ export class BrandHubComponent implements OnInit, OnDestroy {
   ngOnDestroy() {
     this.identityState.pollingSub?.unsubscribe();
     this.knowledgeState.pollingSub?.unsubscribe();
+    this.assetState.pollingSub?.unsubscribe();
   }
 }

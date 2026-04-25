@@ -11,13 +11,25 @@ export class BrandService {
   constructor(private http: HttpClient) {}
 
   /**
-   * Uploads an asset for ingestion.
+   * Uploads an asset for ingestion with governance.
    */
-  uploadBrandAsset(file: File, ingestionType: string): Observable<any> {
+  uploadBrandAsset(file: File, ingestionType: string, visibilityScope: string = 'exclusive', brandId?: number, manualTags: string = ''): Observable<any> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('ingestion_type', ingestionType);
+    formData.append('visibility_scope', visibilityScope);
+    if (brandId) formData.append('brand_id', brandId.toString());
+    if (manualTags) formData.append('manual_tags', manualTags);
+    
     return this.http.post(`${this.apiUrl}/brand/upload`, formData);
+  }
+
+  getBrands(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/brands`);
+  }
+
+  createBrand(name: string, description: string = ''): Observable<any> {
+    return this.http.post(`${this.apiUrl}/brands`, { name, description });
   }
 
   getIngestionStatus(filename: string, type: string): Observable<any> {

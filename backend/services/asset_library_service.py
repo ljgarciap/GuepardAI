@@ -19,28 +19,34 @@ def get_file_hash(file_path: str) -> str:
             sha256_hash.update(byte_block)
     return sha256_hash.hexdigest()
 
-def register_asset(db: Session, brand_id: int, file_path: str, 
-                   category: str = "photos", force_tagging: bool = False) -> models.BrandAsset:
+def register_asset(db: Session, brand_id: Optional[int], file_path: str, 
+                   category: str = "photos", force_tagging: bool = False,
+                   is_public: bool = False, source_doc: Optional[str] = None,
+                   manual_tags: List[str] = None) -> models.BrandAsset:
     """
-    Registra un activo en la biblioteca.
-    Si el hash existe, retorna el registro actual.
-    Si no, usa Vision para etiquetarlo y lo guarda.
+    Registra un activo en la biblioteca con Gobernanza y Etiquetas Manuales.
     """
     f_hash = get_file_hash(file_path)
     filename = os.path.basename(file_path)
     
-    # 1. Verificar duplicados para esta marca
+    # 1. Verificar duplicados (considerando visibilidad y marca)
     existing = db.query(models.BrandAsset).filter(
-        models.BrandAsset.brand_id == brand_id,
         models.BrandAsset.file_hash == f_hash
-    ).first()
+    )
     
-    if existing and not force_tagging:
+    if not is_public:
+        existing = existing.filter(models.BrandAsset.brand_id == brand_id)
+    else:
+        existing = existing.filter(models.BrandAsset.is_public == 1)
+        
+    existing_record = existing.first()
+    
+    if existing_record and not force_tagging:
         print(f"  [Library] Asset already exists (hash {f_hash[:8]}). Reusing.")
-        return existing
+        return existing_record
 
-    # 2. Análisis Semántico con Vision (Solo si es nuevo o forzado)
-    print(f"  [Library] Analyzing NEW asset: {filename}...")
+    # 2. Análisis Semántico con Vision IA
+    print(f"  [Library] Analyzing NEW asset: {filename} (Public: {is_public})...")
     tags = []
     description = "brand asset"
     
@@ -59,14 +65,17 @@ def register_asset(db: Session, brand_id: int, file_path: str,
     except Exception as e:
         print(f"  [Library] Tagging failed for {filename}: {e}")
 
-    # 3. Guardar en DB
+    # 3. Guardar en DB con Gobernanza
     new_asset = models.BrandAsset(
-        brand_id=brand_id,
+        brand_id=brand_id if not is_public else None,
         file_hash=f_hash,
         local_path=file_path,
         category=category,
         tags=tags,
-        description=description
+        manual_tags=manual_tags, # v11.0: User enrichment
+        description=description,
+        is_public=1 if is_public else 0,
+        source_doc=source_doc
     )
     db.add(new_asset)
     db.commit()
@@ -75,16 +84,25 @@ def register_asset(db: Session, brand_id: int, file_path: str,
     return new_asset
 
 def find_best_assets(db: Session, brand_id: int, keywords: List[str], 
-                     category: Optional[str] = None, limit: int = 3) -> List[models.BrandAsset]:
+                      category: Optional[str] = None, limit: int = 3) -> List[models.BrandAsset]:
     """
-    Busca los mejores activos basados en palabras clave (tags).
+    Busca los mejores activos. 
+    Lógica: (Marca específica OR Públicos) AND Categoría.
     """
-    query = db.query(models.BrandAsset).filter(models.BrandAsset.brand_id == brand_id)
+    from sqlalchemy import or_
+    query = db.query(models.BrandAsset).filter(
+        or_(
+            models.BrandAsset.brand_id == brand_id,
+            models.BrandAsset.is_public == 1
+        )
+    )
+    
     if category:
         query = query.filter(models.BrandAsset.category == category)
         
     all_assets = query.all()
-    # Scoring simple por coincidencia de tags
+    
+    # Scoring semántico
     scored = []
     for a in all_assets:
         score = 0

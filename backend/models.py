@@ -5,17 +5,32 @@ from sqlalchemy.dialects.postgresql import JSONB
 from database import Base
 
 
-# ============================================================
-# TABLA NUEVA: brand_visual_dna
-# Extracción determinística: colores, fuentes, assets físicos
-# Herramienta: Programático + LLM texto ligero (Mistral/Haiku)
-# ============================================================
+class Brand(Base):
+    """
+    MAESTRO DE MARCAS.
+    El Directorio Oficial para evitar duplicados y errores de ortografía.
+    """
+    __tablename__ = "brands"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    name        = Column(String, unique=True, index=True, nullable=False) # "Castrol", "Tesco", etc.
+    description = Column(Text, nullable=True)
+    created_at  = Column(DateTime, default=datetime.datetime.utcnow)
+
+    # Relaciones
+    visual_dna = relationship("BrandVisualDna", back_populates="brand", uselist=False)
+    assets     = relationship("BrandAsset", back_populates="brand")
+
+
 class BrandVisualDna(Base):
     __tablename__ = "brand_visual_dna"
 
     id               = Column(Integer, primary_key=True, index=True)
-    source_filename  = Column(String, index=True, nullable=False)  # nombre del archivo fuente
-    client_label     = Column(String, nullable=True)               # etiqueta amigable opcional
+    brand_id         = Column(Integer, ForeignKey("brands.id"), unique=True)
+    source_filename  = Column(String, index=True, nullable=False)
+    
+    brand = relationship("Brand", back_populates="visual_dna")
+    assets = relationship("BrandAsset", back_populates="brand_dna") # legacy link if needed or remove
 
     # Paleta de colores
     primary_color    = Column(String, default="#000000")
@@ -45,24 +60,29 @@ class BrandVisualDna(Base):
 class BrandAsset(Base):
     """
     Biblioteca de Activos Inteligente.
-    Almacena metadatos, tags y hashes para evitar duplicados.
     """
     __tablename__ = "brand_assets"
 
     id = Column(Integer, primary_key=True)
-    brand_id = Column(Integer, ForeignKey("brand_visual_dna.id"))
+    brand_id = Column(Integer, ForeignKey("brands.id"), nullable=True) # Linked to Master Brand
+    brand_dna_id = Column(Integer, ForeignKey("brand_visual_dna.id"), nullable=True) # Linked to specific DNA extraction
     
-    file_hash = Column(String(64), index=True) # SHA-256 para deduplicación
+    file_hash = Column(String(64), index=True) 
     local_path = Column(String(512))
     
-    category = Column(String(50)) # 'logos' | 'icons' | 'photos' | 'backgrounds'
-    tags = Column(JSON)           # Lista de etiquetas semánticas (ej: ['retail', 'fresh', 'growth'])
+    category = Column(String(50)) 
+    tags = Column(JSON)           # AI Generated Tags
+    manual_tags = Column(JSON)    # USER Specified Tags (v11.0)
     description = Column(String(512))
     
-    metadata_json = Column(JSON) # Otros datos técnicos
+    is_public = Column(Integer, default=0) 
+    source_doc = Column(String(255))      
+
+    metadata_json = Column(JSON) 
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    brand = relationship("BrandVisualDna", back_populates="assets")
+    brand = relationship("Brand", back_populates="assets")
+    brand_dna = relationship("BrandVisualDna")
 
 
 # ============================================================
@@ -133,6 +153,7 @@ class IngestionJob(Base):
     status         = Column(String, default="pending")  # pending | processing | completed | error
     current_step   = Column(Text, default="Initialized.")
     progress       = Column(Integer, default=0)
+    visibility_scope = Column(String(20), default="exclusive") # 'exclusive' | 'public'
 
     updated_at     = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 

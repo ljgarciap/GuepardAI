@@ -2,7 +2,18 @@
   <div class="page-header">
     <div class="header-titles">
       <h1 class="page-title">INTELLIGENCE HUB</h1>
-      <span class="page-subtitle">KNOWLEDGE ARCHITECTURE & BRAND DNA • v1.0</span>
+      <span class="page-subtitle">KNOWLEDGE ARCHITECTURE & BRAND GOVERNANCE • v1.1</span>
+    </div>
+
+    <!-- Quick Brand Registry -->
+    <div class="brand-registry-pill">
+      <button class="btn-ghost" (click)="showBrandCreator = !showBrandCreator">
+        {{ showBrandCreator ? '− CLOSE REGISTRY' : '⊕ REGISTER NEW BRAND' }}
+      </button>
+      <div class="brand-creator-mini" *ngIf="showBrandCreator">
+        <input type="text" [(ngModel)]="newBrandName" placeholder="Enter Brand Name (e.g. Castrol)" (keyup.enter)="createNewBrand()">
+        <button class="btn-mini" (click)="createNewBrand()">SAVE</button>
+      </div>
     </div>
   </div>
 
@@ -12,23 +23,51 @@
       <div class="card-step">PHASE 01</div>
       <div class="card-header">
         <h3>Brand Blueprint</h3>
-        <p class="card-desc">Extract visual DNA and artistic essence from identity manuals.</p>
+        <p class="card-desc">Extract visual DNA and identity rules for a master profile.</p>
       </div>
 
       <div class="upload-orchestrator">
+        <!-- Brand Selector (Mandatory for exclusive) -->
+        <div class="governance-zone" *ngIf="!identityState.loading && !identityState.successMessage">
+          <label class="visibility-label">BRAND ASSIGNMENT</label>
+          <select class="elite-select" [(ngModel)]="identityState.selectedBrandId" [disabled]="identityState.visibilityScope === 'public'">
+            <option [ngValue]="null">-- Select Official Brand --</option>
+            <option *ngFor="let b of officialBrands" [ngValue]="b.id">{{ b.name }}</option>
+          </select>
+        </div>
+
         <div class="custom-drop-zone" *ngIf="!identityState.loading && !identityState.successMessage" (click)="blueprintInput.click()">
           <span class="upload-icon">↑</span>
           <div class="upload-texts">
-            <span class="primary-text">Drag & drop brand manual</span>
+            <span class="primary-text">Drag & drop identity manual</span>
             <span class="secondary-text">PDF or PPTX supported</span>
           </div>
           <input #blueprintInput type="file" (change)="onFileSelected($event, 'brand_style')" style="display: none">
+        </div>
+
+        <!-- Manual Tags -->
+        <div class="governance-zone" *ngIf="!identityState.loading && !identityState.successMessage">
+          <label class="visibility-label">MANUAL IDENTIFIERS (Comma separated)</label>
+          <input type="text" class="elite-input" [(ngModel)]="identityState.manualTags" placeholder="e.g. logo, primary, 2024">
+        </div>
+
+        <!-- Visibility Selector -->
+        <div class="visibility-orchestrator" *ngIf="!identityState.loading && !identityState.successMessage">
+          <label class="visibility-label">SOVEREIGNTY SCOPE</label>
+          <div class="visibility-options">
+            <button class="opt-btn" [class.active]="identityState.visibilityScope === 'exclusive'" (click)="identityState.visibilityScope = 'exclusive'">
+              <span class="opt-dot"></span> EXCLUSIVE
+            </button>
+            <button class="opt-btn" [class.active]="identityState.visibilityScope === 'public'" (click)="identityState.visibilityScope = 'public'; identityState.selectedBrandId = null">
+              <span class="opt-dot"></span> PUBLIC
+            </button>
+          </div>
         </div>
         
         <!-- Log Console for Identity -->
         <div class="synthesis-console" *ngIf="identityState.loading">
           <div class="console-header">
-            <span class="console-title">IDENTITY MAPPING LOG</span>
+            <span class="console-title">GOVERNANCE LOG</span>
             <div class="spinner-mini"></div>
           </div>
           <div class="console-body">
@@ -46,16 +85,17 @@
           </div>
         </div>
 
-        <div class="file-status" *ngIf="identityState.file && !identityState.loading && !identityState.successMessage">
-          <span class="file-name">{{ identityState.file.name }}</span>
+        <div class="error-lite" *ngIf="identityState.errorMessage">
+          {{ identityState.errorMessage }}
         </div>
 
         <div class="success-status-lite" *ngIf="identityState.successMessage">
-          <span class="success-icon">✓</span> Brand DNA Extracted Successfully
+          <span class="success-icon">✓</span> Blueprint Finalized in Directory
+          <button class="btn-text" (click)="reset('brand_style')">Load Another</button>
         </div>
 
         <button class="btn-primary-enterprise w-full" *ngIf="!identityState.loading && !identityState.successMessage" (click)="upload('brand_style')" [disabled]="!identityState.file">
-          EXTRACT BRAND DNA
+          SYNCHRONIZE BLUEPRINT
         </button>
       </div>
     </div>
@@ -65,23 +105,30 @@
       <div class="card-step">PHASE 02</div>
       <div class="card-header">
         <h3>Contextual Intelligence</h3>
-        <p class="card-desc">Fuel the RAG engine with strategic reports and documentation.</p>
+        <p class="card-desc">Fuel the RAG engine with strategic brand documentation.</p>
       </div>
 
       <div class="upload-orchestrator">
+        <div class="governance-zone" *ngIf="!knowledgeState.loading && !knowledgeState.successMessage">
+          <label class="visibility-label">BRAND ASSIGNMENT</label>
+          <select class="elite-select" [(ngModel)]="knowledgeState.selectedBrandId">
+            <option [ngValue]="null">-- Select Official Brand --</option>
+            <option *ngFor="let b of officialBrands" [ngValue]="b.id">{{ b.name }}</option>
+          </select>
+        </div>
+
         <div class="custom-drop-zone" *ngIf="!knowledgeState.loading && !knowledgeState.successMessage" (click)="knowledgeInput.click()">
           <span class="upload-icon">⊕</span>
           <div class="upload-texts">
-            <span class="primary-text">Incorporate technical documents</span>
-            <span class="secondary-text">Strategic reports (PDF/PPTX)</span>
+            <span class="primary-text">Incorporate strategic reports</span>
+            <span class="secondary-text">PDF or PPTX supported</span>
           </div>
           <input #knowledgeInput type="file" (change)="onFileSelected($event, 'knowledge')" style="display: none">
         </div>
 
-        <!-- Log Console for Knowledge -->
         <div class="synthesis-console" *ngIf="knowledgeState.loading">
           <div class="console-header">
-            <span class="console-title">KNOWLEDGE INGESTION LOG</span>
+            <span class="console-title">INTELLIGENCE LOG</span>
             <div class="spinner-mini"></div>
           </div>
           <div class="console-body">
@@ -99,16 +146,97 @@
           </div>
         </div>
 
-        <div class="file-status" *ngIf="knowledgeState.file && !knowledgeState.loading && !knowledgeState.successMessage">
-          <span class="file-name">{{ knowledgeState.file.name }}</span>
+        <div class="error-lite" *ngIf="knowledgeState.errorMessage">
+          {{ knowledgeState.errorMessage }}
         </div>
 
         <div class="success-status-lite" *ngIf="knowledgeState.successMessage">
-          <span class="success-icon">✓</span> Knowledge Bank Initialized
+          <span class="success-icon">✓</span> Knowledge Bank Synchronized
+          <button class="btn-text" (click)="reset('knowledge')">Load Another</button>
         </div>
 
         <button class="btn-primary-enterprise w-full" *ngIf="!knowledgeState.loading && !knowledgeState.successMessage" (click)="upload('knowledge')" [disabled]="!knowledgeState.file">
           INITIALIZE KNOWLEDGE
+        </button>
+      </div>
+    </div>
+
+    <!-- Phase 03: Asset Treasury -->
+    <div class="elite-card">
+      <div class="card-step">PHASE 03</div>
+      <div class="card-header">
+        <h3>Asset Treasury</h3>
+        <p class="card-desc">Isolated image harvesting with manual metadata enrichment.</p>
+      </div>
+
+      <div class="upload-orchestrator">
+        <div class="governance-zone" *ngIf="!assetState.loading && !assetState.successMessage">
+          <label class="visibility-label">BRAND ASSIGNMENT</label>
+          <select class="elite-select" [(ngModel)]="assetState.selectedBrandId" [disabled]="assetState.visibilityScope === 'public'">
+            <option [ngValue]="null">-- Select Official Brand --</option>
+            <option *ngFor="let b of officialBrands" [ngValue]="b.id">{{ b.name }}</option>
+          </select>
+        </div>
+
+        <div class="custom-drop-zone" *ngIf="!assetState.loading && !assetState.successMessage" (click)="assetInput.click()">
+          <span class="upload-icon">📷</span>
+          <div class="upload-texts">
+            <span class="primary-text">Feed the image bank</span>
+            <span class="secondary-text">Catalogs or individual assets</span>
+          </div>
+          <input #assetInput type="file" (change)="onFileSelected($event, 'pure_assets')" style="display: none">
+        </div>
+
+        <!-- Manual Tags -->
+        <div class="governance-zone" *ngIf="!assetState.loading && !assetState.successMessage">
+          <label class="visibility-label">MANUAL ASSET TAGS</label>
+          <input type="text" class="elite-input" [(ngModel)]="assetState.manualTags" placeholder="e.g. logo, office, white-background">
+        </div>
+
+        <!-- Visibility Selector -->
+        <div class="visibility-orchestrator" *ngIf="!assetState.loading && !assetState.successMessage">
+          <label class="visibility-label">ASSET OWNERSHIP</label>
+          <div class="visibility-options">
+            <button class="opt-btn" [class.active]="assetState.visibilityScope === 'exclusive'" (click)="assetState.visibilityScope = 'exclusive'">
+              <span class="opt-dot"></span> EXCLUSIVE
+            </button>
+            <button class="opt-btn" [class.active]="assetState.visibilityScope === 'public'" (click)="assetState.visibilityScope = 'public'; assetState.selectedBrandId = null">
+              <span class="opt-dot"></span> PUBLIC
+            </button>
+          </div>
+        </div>
+
+        <div class="synthesis-console" *ngIf="assetState.loading">
+          <div class="console-header">
+            <span class="console-title">TREASURY LOG</span>
+            <div class="spinner-mini"></div>
+          </div>
+          <div class="console-body">
+            <div class="log-entry" *ngFor="let log of assetState.logs">
+              <span class="log-timestamp">[{{ log.time }}]</span>
+              <span class="log-role">{{ log.role }}:</span>
+              <span class="log-message">{{ log.message }}</span>
+            </div>
+          </div>
+          <div class="console-footer">
+            <div class="progress-bar-elite">
+              <div class="progress-fill-elite" [style.width.%]="assetState.progress"></div>
+            </div>
+            <span class="progress-text">{{ assetState.progress }}%</span>
+          </div>
+        </div>
+
+        <div class="error-lite" *ngIf="assetState.errorMessage">
+          {{ assetState.errorMessage }}
+        </div>
+
+        <div class="success-status-lite" *ngIf="assetState.successMessage">
+          <span class="success-icon">✓</span> Assets Archived in Directory
+          <button class="btn-text" (click)="reset('pure_assets')">Load Another</button>
+        </div>
+
+        <button class="btn-primary-enterprise w-full" *ngIf="!assetState.loading && !assetState.successMessage" (click)="upload('pure_assets')" [disabled]="!assetState.file">
+          START HARVESTING
         </button>
       </div>
     </div>
@@ -118,7 +246,7 @@
   <div class="reset-zone-elite">
     <div class="reset-info">
       <span class="reset-label">SYSTEM OVERRIDE</span>
-      <p class="reset-desc">Clear all neural weights, brand profiles, and knowledge vectors.</p>
+      <p class="reset-desc">Clear all official brands, neural profiles, and knowledge vectors.</p>
     </div>
     <button class="btn-reset-enterprise" (click)="resetAll()" [disabled]="resetLoading">
       {{ resetLoading ? 'RESETTING...' : 'FACTORY RESET' }}

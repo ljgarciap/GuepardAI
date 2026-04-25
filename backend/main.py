@@ -53,9 +53,13 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # MODELOS PYDANTIC
 # ──────────────────────────────────────────────
 
+class BrandCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
 class PresentationRequest(BaseModel):
-    style_filename: str        # filename del estilo visual (brand_visual_dna.source_filename)
-    knowledge_filename: str    # filename de la fuente RAG
+    style_filename: str        
+    knowledge_filename: str    
     prompt: str
     region: str = "LATAM"
 
@@ -113,12 +117,35 @@ def set_job_status(job_key: str, ingestion_type: str, status: str):
 
 
 # ──────────────────────────────────────────────
+# ENDPOINTS — BRAND DIRECTORY (v11.0)
+# ──────────────────────────────────────────────
+
+@app.get("/api/brands", tags=["Governance"])
+def list_brands(db: Session = Depends(get_db)):
+    """Lista el Directorio Oficial de Marcas."""
+    return db.query(models.Brand).all()
+
+@app.post("/api/brands", tags=["Governance"])
+def create_brand(brand: BrandCreate, db: Session = Depends(get_db)):
+    """Registra una nueva marca oficial para evitar duplicados."""
+    existing = db.query(models.Brand).filter(models.Brand.name == brand.name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Brand already exists in the directory.")
+    
+    new_brand = models.Brand(name=brand.name, description=brand.description)
+    db.add(new_brand)
+    db.commit()
+    db.refresh(new_brand)
+    return new_brand
+
+
+# ──────────────────────────────────────────────
 # WORKER TASKS (background)
 # ──────────────────────────────────────────────
 
-def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str):
+def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
     """Extrae DNA Visual y persiste en brand_visual_dna."""
-    logger.info(f"[Task] Visual DNA iniciado: {source_filename}")
+    logger.info(f"[Task] Visual DNA iniciado: {source_filename} (Brand: {brand_id}, Scope: {visibility_scope})")
     cb = lambda msg, p=0: update_job_step(job_key, "visual_dna", msg, p)
 
     try:
@@ -129,12 +156,15 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str):
 
         db = SessionLocal()
         try:
+            # En v11.0 usamos brand_id formal
             record = db.query(models.BrandVisualDna).filter(
-                models.BrandVisualDna.source_filename == source_filename
+                models.BrandVisualDna.brand_id == brand_id
             ).first()
             if not record:
-                record = models.BrandVisualDna(source_filename=source_filename)
+                record = models.BrandVisualDna(brand_id=brand_id, source_filename=source_filename)
                 db.add(record)
+            else:
+                record.source_filename = source_filename
 
             record.primary_color    = dna.get("primary_color", "#333333")
             record.secondary_color  = dna.get("secondary_color", "#666666")
@@ -145,22 +175,33 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str):
             record.secondary_font   = dna.get("secondary_font")
             record.raw_extraction   = dna.get("raw_extraction")
 
-            # --- REGISTRO EN BIBLIOTECA DE ACTIVOS (v80.0) ---
+            # --- REGISTRO EN BIBLIOTECA DE ACTIVOS (v11.0 - Governance Pass) ---
             from services.asset_library_service import register_asset
             final_library_assets = {"photos": [], "logos": [], "icons": []}
+            is_public = (visibility_scope == "public")
             
             raw_assets = dna.get("extracted_assets", {})
             for cat, items in raw_assets.items():
                 for item in items:
                     raw_path = os.path.join(UPLOAD_DIR, item["path"])
                     if os.path.exists(raw_path):
-                        # Registramos en biblioteca (Deduplicación + Tagging)
-                        asset_record = register_asset(db, record.id, raw_path, category=cat)
+                        # Registramos con visibilidad, marca formal y tags manuales
+                        asset_record = register_asset(
+                            db, 
+                            brand_id, 
+                            raw_path, 
+                            category=cat,
+                            is_public=is_public,
+                            source_doc=source_filename,
+                            manual_tags=manual_tags
+                        )
                         final_library_assets[cat].append({
                             "id": asset_record.id,
                             "path": os.path.basename(asset_record.local_path),
                             "tags": asset_record.tags,
-                            "description": asset_record.description
+                            "manual_tags": asset_record.manual_tags,
+                            "description": asset_record.description,
+                            "is_public": asset_record.is_public
                         })
             
             record.extracted_assets = final_library_assets
@@ -252,15 +293,60 @@ def task_ingest_knowledge(job_key: str, file_path: str, source_filename: str):
         set_job_status(job_key, "knowledge", "error")
 
 
-def task_extract_full_brand_style(job_key: str, file_path: str, source_filename: str):
+def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
+    """
+    Cosecha pura de activos. Extrae imágenes y las registra en la biblioteca.
+    """
+    logger.info(f"[Task] Asset Treasury Harvest started: {source_filename} (Brand: {brand_id}, Scope: {visibility_scope})")
+    cb = lambda msg, p=0: update_job_step(job_key, "pure_assets", msg, p)
+
+    try:
+        dna = extract_visual_dna(file_path, UPLOAD_DIR, cb=cb)
+        
+        db = SessionLocal()
+        try:
+            from services.asset_library_service import register_asset
+            is_public = (visibility_scope == "public")
+            
+            raw_assets = dna.get("extracted_assets", {})
+            count = 0
+            for cat, items in raw_assets.items():
+                for item in items:
+                    raw_path = os.path.join(UPLOAD_DIR, item["path"])
+                    if os.path.exists(raw_path):
+                        register_asset(
+                            db, 
+                            brand_id, 
+                            raw_path, 
+                            category=cat,
+                            is_public=is_public,
+                            source_doc=source_filename,
+                            manual_tags=manual_tags
+                        )
+                        count += 1
+            
+            db.commit()
+            cb(f"Treasury update complete. {count} assets harvested.", 100)
+        finally:
+            db.close()
+
+        set_job_status(job_key, "pure_assets", "completed")
+
+    except Exception as e:
+        logger.error(f"[Task] Pure Asset error: {e}")
+        update_job_step(job_key, "pure_assets", f"Error: {str(e)}", 0)
+        set_job_status(job_key, "pure_assets", "error")
+
+
+def task_extract_full_brand_style(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
     """Combines DNA and Essence extraction for a unified workflow."""
-    logger.info(f"[Task] Full Brand Style initiated: {source_filename}")
+    logger.info(f"[Task] Full Brand Style initiated: {source_filename} (Brand: {brand_id})")
     cb = lambda msg, p=0: update_job_step(job_key, "brand_style", msg, p)
 
     try:
         # Step 1: Visual DNA
         cb("Extracting Visual DNA (Colors, Fonts)...", 10)
-        task_extract_visual_dna(job_key, file_path, source_filename)
+        task_extract_visual_dna(job_key, file_path, source_filename, visibility_scope=visibility_scope, brand_id=brand_id, manual_tags=manual_tags)
         
         # Step 2: Artistic Essence
         cb("Analyzing Artistic Essence (Vision LLM)...", 50)
@@ -281,24 +367,28 @@ def task_extract_full_brand_style(job_key: str, file_path: str, source_filename:
 @app.post("/api/brand/upload", tags=["Ingestion"])
 async def upload_asset(
     background_tasks: BackgroundTasks,
-    ingestion_type: str = Form(...),   # 'visual_dna' | 'artistic' | 'knowledge'
+    ingestion_type: str = Form(...),   
+    visibility_scope: str = Form("exclusive"), 
+    brand_id: Optional[int] = Form(None),       # v11.0: Mandatory for exclusive
+    manual_tags: Optional[str] = Form(None),    # v11.0: "logo, office, primary"
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
     """
-    Endpoint unificado de ingesta.
-    ingestion_type:
-      - 'brand_style' → Extrae DNA + Esencia (Flujo unificado)
-      - 'visual_dna'  → Extrae colores, fuentes, assets (LLM texto)
-      - 'artistic'    → Extrae layouts, gestos, composición (Vision LLM)
-      - 'knowledge'   → Ingesta RAG con embeddings
+    Endpoint unificado de ingesta con gobernanza de marca.
     """
-    valid_types = {"brand_style", "visual_dna", "artistic", "knowledge"}
+    valid_types = {"brand_style", "visual_dna", "artistic", "knowledge", "pure_assets"}
     if ingestion_type not in valid_types:
         raise HTTPException(status_code=400, detail=f"ingestion_type debe ser uno de: {valid_types}")
 
+    if visibility_scope == "exclusive" and not brand_id:
+        raise HTTPException(status_code=400, detail="brand_id is required for exclusive ingestion.")
+
+    # Parse manual tags
+    tag_list = [t.strip() for t in manual_tags.split(",")] if manual_tags else []
+
     source_filename = file.filename
-    job_key = source_filename  # El identificador del job es el nombre del archivo
+    job_key = source_filename 
 
     # Guardar archivo
     safe_name = f"{ingestion_type}_{source_filename}"
@@ -315,28 +405,34 @@ async def upload_asset(
     if not existing_job:
         existing_job = models.IngestionJob(
             client_name=job_key,
-            ingestion_type=ingestion_type
+            ingestion_type=ingestion_type,
+            visibility_scope=visibility_scope
         )
         db.add(existing_job)
+    else:
+        existing_job.visibility_scope = visibility_scope
 
     existing_job.status = "processing"
-    existing_job.current_step = f"Starting {ingestion_type}..."
+    existing_job.current_step = f"Starting {ingestion_type} ({visibility_scope})..."
     existing_job.progress = 2
     db.commit()
 
     # Disparar tarea en background
     if ingestion_type == "brand_style":
-        background_tasks.add_task(task_extract_full_brand_style, job_key, file_path, source_filename)
+        background_tasks.add_task(task_extract_full_brand_style, job_key, file_path, source_filename, visibility_scope, brand_id, tag_list)
     elif ingestion_type == "visual_dna":
-        background_tasks.add_task(task_extract_visual_dna, job_key, file_path, source_filename)
+        background_tasks.add_task(task_extract_visual_dna, job_key, file_path, source_filename, visibility_scope, brand_id, tag_list)
     elif ingestion_type == "artistic":
         background_tasks.add_task(task_extract_artistic_essence, job_key, file_path, source_filename)
+    elif ingestion_type == "pure_assets":
+        background_tasks.add_task(task_extract_pure_assets, job_key, file_path, source_filename, visibility_scope, brand_id, tag_list)
     else:
         background_tasks.add_task(task_ingest_knowledge, job_key, file_path, source_filename)
 
     return {
         "status": "accepted",
         "ingestion_type": ingestion_type,
+        "visibility_scope": visibility_scope,
         "source_filename": source_filename,
         "job_key": job_key,
     }
@@ -558,15 +654,15 @@ def health_check():
 
 @app.delete("/api/admin/reset-db", tags=["Admin"])
 def reset_all_data(db: Session = Depends(get_db)):
-    """DEV ONLY: Trunca todas las tablas de datos."""
+    """DEV ONLY: Trunca todas las tablas de datos (Gobernanza + ADN + RAG + Jobs)."""
     with engine.connect() as conn:
         conn.execute(text(
             "TRUNCATE TABLE corporate_knowledge, brand_visual_dna, brand_artistic_essence, "
-            "brand_styles, ingestion_jobs, generation_jobs RESTART IDENTITY CASCADE"
+            "brand_styles, ingestion_jobs, generation_jobs, brand_assets, brands RESTART IDENTITY CASCADE"
         ))
         conn.commit()
     return {"status": "reset_complete"}
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -1,0 +1,21 @@
+services:
+  backend:
+    build: ./backend
+    container_name: guepard-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/data:/app/data
+    env_file:
+      - .env
+    restart: always
+
+  frontend:
+    build: ./frontend
+    container_name: guepard-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: always

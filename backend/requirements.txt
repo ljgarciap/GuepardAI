@@ -1,0 +1,27 @@
+# Core API
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Database
+sqlalchemy
+psycopg[binary]
+pgvector
+
+# LLM Providers
+anthropic
+mistralai==1.7.0
+openai
+
+# Embeddings & ML
+sentence-transformers
+
+# File Processing
+python-pptx
+PyMuPDF
+Pillow
+
+# Utilities
+python-dotenv
+numpy
+pydantic

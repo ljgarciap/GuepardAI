@@ -151,11 +151,19 @@ def generate_vision_json(prompt: str, image_paths: List[str]) -> dict:
     Analyzes images + text to extract high-level design intelligence.
     Uses OpenRouter (Claude 3.5 Sonnet) or Gemini 1.5 Flash.
     """
-    # 1. Prepare Base64 images for OpenRouter/OpenAI style
+    # 1. Prepare Base64 images for OpenRouter/OpenAI style (with resizing)
+    from PIL import Image
+    import io
     import base64
-    def encode_image(path):
-        with open(path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode('utf-8')
+
+    def prepare_image(path, max_size=(1024, 1024)):
+        with Image.open(path) as img:
+            img.thumbnail(max_size)
+            # Convert to RGB if necessary (Alpha channel can sometimes cause issues)
+            if img.mode in ("RGBA", "P"): img = img.convert("RGB")
+            buffered = io.BytesIO()
+            img.save(buffered, format="JPEG", quality=85)
+            return buffered.getvalue()
 
     or_key = os.getenv("OPENROUTER_API_KEY")
     if or_key:
@@ -166,14 +174,16 @@ def generate_vision_json(prompt: str, image_paths: List[str]) -> dict:
             content = [{"type": "text", "text": prompt}]
             for img_path in image_paths:
                 if os.path.exists(img_path):
+                    img_data = prepare_image(img_path)
                     content.append({
                         "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{encode_image(img_path)}"}
+                        "image_url": {"url": f"data:image/jpeg;base64,{base_64_encode(img_data)}"}
                     })
             
             response = client.chat.completions.create(
                 model="anthropic/claude-3.7-sonnet",
                 messages=[{"role": "user", "content": content}],
+                max_tokens=1000,
                 response_format={"type": "json_object"}
             )
             return json.loads(response.choices[0].message.content)
@@ -187,12 +197,19 @@ def generate_vision_json(prompt: str, image_paths: List[str]) -> dict:
             print(f"  [Vision] Analyzing via NATIVE GEMINI 2.5 FLASH...", flush=True)
             genai.configure(api_key=gem_key)
             model = genai.GenerativeModel("models/gemini-2.5-flash")
-            
             content = [prompt]
             for p in image_paths:
                 if os.path.exists(p):
-                    img_file = genai.upload_file(p)
-                    content.append(img_file)
+                    # Prepare bytes directly
+                    with Image.open(p) as img:
+                        img.thumbnail((1024, 1024))
+                        if img.mode in ("RGBA", "P"): img = img.convert("RGB")
+                        buffered = io.BytesIO()
+                        img.save(buffered, format="JPEG", quality=85)
+                        content.append({
+                            "mime_type": "image/jpeg",
+                            "data": buffered.getvalue()
+                        })
             
             response = model.generate_content(content, generation_config=genai.GenerationConfig(response_mime_type="application/json"))
             return json.loads(response.text)
@@ -200,6 +217,10 @@ def generate_vision_json(prompt: str, image_paths: List[str]) -> dict:
             print(f"  [Vision] Gemini Vision failed: {e}")
 
     raise Exception("All Vision providers failed.")
+
+def base_64_encode(data):
+    import base64
+    return base64.b64encode(data).decode('utf-8')
 
 @retry_with_backoff(retries=3)
 def get_embeddings_batch(texts: List[str]) -> List[Optional[list]]:

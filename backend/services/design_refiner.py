@@ -15,10 +15,10 @@ BRAND ESSENCE (Extracted from actual brand identity documents):
 {brand_essence_json}
 
 INSTRUCTIONS:
-1. FIDELITY: Apply ONLY the design gestures, structural archetypes, and patterns described in the BRAND ESSENCE above. Do NOT invent new rules.
-2. LAYOUT: Refine the coordinates, sizes, and colors based on the detected brand archetypes (e.g., if the brand uses split-screens, enforce them; if it uses floating elements, allow them).
-3. GESTURES: If the brand essence specifies particular shapes (banners, pills, lines), add them to the slide shapes array.
-4. TYPOGRAPHY & COLOR: Use the primary and secondary colors and fonts specified in the essence. Ensure maximum readability and contrast.
+1. FIDELITY: Apply ONLY the design gestures, structural archetypes, and patterns described in the BRAND ESSENCE above.
+2. LAYOUT PRESERVATION: [CRITICAL] Do NOT change the "layout" field of any slide's archetype. The layout structure (e.g., split-left, full-bleed) was decided by a deterministic engine and MUST be preserved.
+3. REFINEMENT: You may ONLY adjust: coordinates (fine-tuning), font sizes, colors, shape geometries, and opacity values within the established layout.
+4. GESTURES: If the brand essence specifies particular shapes (banners, pills, lines), add them to the slide shapes array.
 5. NO OVERLAP: Ensure text never overlaps with the main subjects of the images described in the narrative.
 
 INPUT MANIFEST:

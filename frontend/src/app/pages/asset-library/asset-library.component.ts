@@ -22,6 +22,9 @@ export class AssetLibraryComponent implements OnInit {
   knowledge: any[] = [];
   portfolios: any[] = [];
 
+  selectedAsset: any = null;
+  showModal = false;
+
   ngOnInit() {
     this.loadBrands();
     this.refreshLibrary();
@@ -41,6 +44,16 @@ export class AssetLibraryComponent implements OnInit {
 
   onBrandChange() {
     this.refreshLibrary();
+  }
+
+  openDetail(asset: any) {
+    this.selectedAsset = asset;
+    this.showModal = true;
+  }
+
+  closeDetail() {
+    this.showModal = false;
+    this.selectedAsset = null;
   }
 
   refreshLibrary() {

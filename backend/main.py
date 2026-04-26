@@ -52,9 +52,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOAD_DIR = "uploads"
+class CORSStaticFiles(StaticFiles):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers["Cross-Origin-Resource-Policy"] = "cross-origin"
+        return response
+
+UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+app.mount("/uploads", CORSStaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
 # ──────────────────────────────────────────────
@@ -857,11 +869,34 @@ def _build_brand_context(dna: models.BrandVisualDna,
 
 @app.get("/api/library/images", tags=["Library"])
 def get_library_images(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
-    """Lista imágenes/assets filtrados por marca."""
-    query = db.query(models.BrandAsset)
+    """Lista imágenes/assets filtrados por marca. Excluye embeddings por eficiencia (v12.0)."""
+    query = db.query(
+        models.BrandAsset.id,
+        models.BrandAsset.brand_id,
+        models.BrandAsset.local_path,
+        models.BrandAsset.category,
+        models.BrandAsset.tags,
+        models.BrandAsset.manual_tags,
+        models.BrandAsset.description,
+        models.BrandAsset.is_public,
+        models.BrandAsset.source_doc,
+        models.BrandAsset.created_at
+    )
     if brand_id:
         query = query.filter(models.BrandAsset.brand_id == brand_id)
-    return query.all()
+    
+    assets = query.all()
+    # Mapear a diccionarios para mantener compatibilidad con el contrato del Frontend
+    # El Frontend ya añade http://localhost:8000/ por su cuenta, así que enviamos solo la subruta uploads/
+    return [
+        {
+            "id": a[0], "brand_id": a[1], 
+            "local_path": f"uploads/{os.path.basename(a[2])}", 
+            "category": a[3], "tags": a[4], "manual_tags": a[5],
+            "description": a[6], "is_public": a[7], 
+            "source_doc": a[8], "created_at": a[9]
+        } for a in assets
+    ]
 
 @app.get("/api/library/blueprints", tags=["Library"])
 def get_library_blueprints(brand_id: Optional[int] = None, db: Session = Depends(get_db)):

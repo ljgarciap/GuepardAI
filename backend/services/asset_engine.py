@@ -44,9 +44,13 @@ def fetch_single_asset(idx, narrative, entropy_seed):
     return idx, None
 
 def orchestrate_assets(content_manifest, brand=None, db=None):
-    print(f"[AssetEngine] Orchestrating assets with Brand Fidelity Protocol v80.0 (Library Aware)...")
+    """
+    Orquestador de Activos v90.0: Búsqueda Vectorial Semántica + Diversidad Garantizada.
+    """
+    print(f"[AssetEngine] Orchestrating assets with Vectorized Treasury Protocol v90.0...")
     
     asset_map = {}
+    used_asset_ids = set() # Registro para evitar repeticiones
     from services.asset_library_service import find_best_assets
     
     extracted = getattr(brand, "extracted_assets", {}) if brand else {}
@@ -62,45 +66,51 @@ def orchestrate_assets(content_manifest, brand=None, db=None):
         futures = []
         for i, slide in enumerate(content_manifest["slides"]):
             slide_idx = slide["slide_number"]
-            narrative = slide.get("image_narrative") or "corporate"
+            narrative = slide.get("image_narrative") or "corporate strategy executive professional"
             
-            # --- STRATEGY: CURATED ASSET (v50.0) ---
-            if slide.get("selected_asset"):
-                path = slide.get("selected_asset")
-                if path and not path.startswith("uploads/"):
-                    path = os.path.join("uploads", path)
-                asset_map[slide_idx] = path
-                continue
-
-            # 1. Intentar buscar en la Biblioteca Semántica de la Marca
+            # --- STRATEGY: SEMANTIC VECTOR SEARCH (v12.0) ---
+            # Even if 'selected_asset' exists, we now prioritize the VECTOR search
+            # to ensure diversity and exclusion logic.
             if db and brand:
                 keywords = narrative.lower().replace(",", " ").split()
-                matches = find_best_assets(db, brand.id, keywords, category="photos", limit=5)
+                
+                matches = find_best_assets(
+                    db, 
+                    brand.id, 
+                    keywords, 
+                    category="photos", 
+                    limit=5,
+                    exclude_ids=list(used_asset_ids)
+                )
                 
                 if matches:
-                    # Evitar usar la misma imagen si hay opciones
-                    chosen = matches[i % len(matches)]
+                    chosen = matches[0]
+                    used_asset_ids.add(chosen.id)
                     asset_map[slide_idx] = chosen.local_path
-                    print(f"  [AssetEngine] Library Match for Slide {slide_idx}: {chosen.description} (tags: {chosen.tags})")
+                    print(f"  [AssetEngine] Vector Search success for Slide {slide_idx}: {chosen.description[:40]}...")
                     continue
+                else:
+                    # Fallback to pre-selected if vector search yields zero results (unlikely)
+                    if slide.get("selected_asset"):
+                        path = slide.get("selected_asset")
+                        asset_map[slide_idx] = os.path.join("uploads", path) if not path.startswith("uploads/") else path
+                        continue
             
-            # --- FALLBACK: LOGO AS WATERMARK (if no photos found) ---
+            # --- STRATEGY 3: RANDOM LOCAL FALLBACK (Anti-Gato Protocol) ---
+            # If all else fails, pick any random photo from the local library
+            # instead of going to the internet.
+            print(f"  [AssetEngine] CRITICAL: No semantic match for Slide {slide_idx}. Picking random local asset.")
+            all_local = db.query(models.BrandAsset).filter(models.BrandAsset.category == "photos").all()
+            if all_local:
+                chosen = random.choice(all_local)
+                asset_map[slide_idx] = chosen.local_path
+                continue
+            
+            # --- STRATEGY 4: LOGO FALLBACK ---
             if num_logos > 0:
-                # Better to have a logo than a random cat statue
                 asset_map[slide_idx] = logos[0]
                 continue
-
-            # --- LAST RESORT: EXTERNAL STOCK (Professional Only) ---
-            narrative = slide.get("image_narrative", "corporate strategy")
-            seed = DIVERSITY_SEEDS[i % len(DIVERSITY_SEEDS)]
-            futures.append(ex.submit(fetch_single_asset, slide_idx, narrative, seed))
             
-        for f in concurrent.futures.as_completed(futures):
-            idx, path = f.result()
-            if path:
-                asset_map[idx] = path
-            
-    # Also add the main logo to the asset map for global access
     if num_logos > 0:
         asset_map["global_logo"] = logos[0]
 

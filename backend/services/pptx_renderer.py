@@ -76,19 +76,16 @@ def apply_corner_style(shape, style: str):
 # ──────────────────────────────────────────────
 
 def render_background_image(slide, element, asset_map):
+    """
+    Renderiza la imagen de fondo con estrategia 'Cover' usando CROP interno (v12.0).
+    Garantiza 0 desbordamiento fuera del canvas.
+    """
     img_basename = element.get("source")
-    # Use direct lookup by slide number (stored in source)
     raw_path = asset_map.get(img_basename)
     
     img_path = None
-    if raw_path:
-        if os.path.isabs(raw_path) and os.path.exists(raw_path):
-            img_path = raw_path
-        else:
-            # Try uploads directory
-            potential = os.path.join("uploads", os.path.basename(raw_path))
-            if os.path.exists(potential):
-                img_path = potential
+    if raw_path and os.path.exists(raw_path):
+        img_path = raw_path
     
     if not img_path:
         # Fallback a directorio uploads
@@ -96,29 +93,46 @@ def render_background_image(slide, element, asset_map):
         if os.path.exists(potential):
             img_path = potential
 
-    print(f"  [Renderer] Background Asset: {img_basename} -> Path: {img_path}")
     if img_path and os.path.exists(img_path):
         try:
-            # Obtener dimensiones originales para crop/fit
+            # 1. Obtener dimensiones para calcular el CROP
             with PILImage.open(img_path) as img:
                 iw, ih = img.size
             
-            sw_emu, sh_emu = Inches(SLIDE_W_IN).emu, Inches(SLIDE_H_IN).emu
+            sw, sh = Inches(SLIDE_W_IN), Inches(SLIDE_H_IN)
             
-            # Cover strategy
-            scale = max(sw_emu / iw, sh_emu / ih)
-            nw, nh = int(iw * scale), int(ih * scale)
-            ox, oy = (sw_emu - nw) // 2, (sh_emu - nh) // 2
+            # 2. Añadir imagen ajustada al slide (0,0)
+            pic = slide.shapes.add_picture(img_path, 0, 0, sw, sh)
             
-            slide.shapes.add_picture(img_path, ox, oy, nw, nh)
+            # 3. Calcular y aplicar CROP semántico (Cover strategy)
+            # Queremos que la imagen llene el slide manteniendo su aspect ratio
+            # r = ratio
+            aspect_slide = SLIDE_W_IN / SLIDE_H_IN
+            aspect_img = iw / ih
+            
+            if aspect_img > aspect_slide:
+                # Imagen más ancha: recortar laterales
+                total_crop = 1.0 - (aspect_slide / aspect_img)
+                pic.crop_left = total_crop / 2
+                pic.crop_right = total_crop / 2
+            else:
+                # Imagen más alta: recortar arriba/abajo
+                total_crop = 1.0 - (aspect_img / aspect_slide)
+                pic.crop_top = total_crop / 2
+                pic.crop_bottom = total_crop / 2
+                
+            # 4. Enviar al fondo absoluto del árbol XML (Z-Order)
+            # Posición 2 suele ser después de los elementos base del layout
+            slide.shapes._spTree.remove(pic._element)
+            slide.shapes._spTree.insert(2, pic._element)
+            
         except Exception as e:
             print(f"  [Renderer] Background Image failed: {e}")
-            # Fallback: fill with a dark color if we were expecting an image to support white text
-            shape = slide.shapes.add_shape(
-                MSO_SHAPE.RECTANGLE, 0, 0, Inches(SLIDE_W_IN), Inches(SLIDE_H_IN)
-            )
+            shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, sw, sh)
             shape.fill.solid()
-            shape.fill.fore_color.rgb = RGBColor(40, 40, 40) # Dark grey fallback
+            shape.fill.fore_color.rgb = RGBColor(30, 30, 30)
+    else:
+        print(f"  [Renderer] Warning: Background asset not found for {img_basename}")
 
 
 def render_shape(slide, element):

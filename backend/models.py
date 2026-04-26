@@ -81,6 +81,7 @@ class BrandAsset(Base):
     source_doc = Column(String(255))      
 
     metadata_json = Column(JSON) 
+    embedding = Column(Vector(1024), nullable=True) # Vector representation for semantic search
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     brand = relationship("Brand", back_populates="assets")

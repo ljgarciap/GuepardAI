@@ -30,11 +30,11 @@
     <div class="asset-grid" *ngIf="activeTab === 'images'">
       <div class="asset-card glass-panel" *ngFor="let img of images">
         <div class="asset-preview">
-          <img [src]="'http://localhost:8000/' + img.asset_path" alt="Asset">
+          <img [src]="'http://localhost:8000/' + img.local_path" alt="Asset">
         </div>
         <div class="asset-info">
-          <span class="asset-tag">{{ img.asset_type }}</span>
-          <h3 class="asset-name">{{ img.original_name }}</h3>
+          <span class="asset-tag">{{ img.category }}</span>
+          <h3 class="asset-name">{{ img.description }}</h3>
           <p class="asset-meta">ID: #{{ img.id }} • Brand: {{ img.brand_id || 'Public' }}</p>
         </div>
       </div>

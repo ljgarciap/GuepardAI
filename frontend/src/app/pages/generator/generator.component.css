@@ -241,18 +241,78 @@ textarea {
   gap: 20px;
 }
 
-.progress-bar {
+.progress-track {
   flex: 1;
-  height: 6px;
-  background: #334155;
-  border-radius: 3px;
-  overflow: hidden;
+  height: 8px;
+  background: rgba(0,0,0,0.05);
+  border-radius: 4px;
+  position: relative;
+  overflow: visible; /* Permitimos que el guepardo sobresalga un poco */
 }
 
 .progress-fill {
   height: 100%;
-  background: var(--primary-blue);
-  transition: width 0.5s ease-out;
+  background: linear-gradient(90deg, #6366f1, #a855f7);
+  border-radius: 4px;
+  position: relative;
+  transition: width 0.3s ease-out;
+  box-shadow: 0 0 15px rgba(99, 102, 241, 0.3);
+}
+
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  animation: shimmer 1.5s infinite;
+}
+
+.progress-cheetah {
+  position: absolute;
+  top: -35px; /* Altura optimizada para visibilidad en Studio */
+  transform: translateX(-50%);
+  filter: drop-shadow(0 4px 10px rgba(0,0,0,0.3));
+  z-index: 100;
+}
+
+.cheetah-gif {
+  width: 90px; /* Un poco más grande para el Studio */
+  height: auto;
+  display: block;
+}
+
+@keyframes gallop {
+  from { transform: translateX(-50%) scaleX(-1) translateY(0) rotate(-5deg); }
+  to { transform: translateX(-50%) scaleX(-1) translateY(-4px) rotate(5deg); }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #6366f1;
+  letter-spacing: 1px;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  background: #6366f1;
+  border-radius: 50%;
+  animation: pulse-dot 1s infinite;
+}
+
+@keyframes pulse-dot {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.5); opacity: 0.4; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 .progress-text {

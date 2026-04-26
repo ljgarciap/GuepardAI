@@ -113,7 +113,8 @@ export class GeneratorComponent implements OnInit {
   private addLog(role: string, message: string) {
     const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
     this.synthesisLogs.push({ time, role, message });
-    if (this.synthesisLogs.length > 10) this.synthesisLogs.shift();
+    // Ampliamos el buffer para transparencia total (v12.0)
+    if (this.synthesisLogs.length > 50) this.synthesisLogs.shift();
   }
 
   startPolling(jobId: string) {

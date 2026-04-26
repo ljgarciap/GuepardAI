@@ -104,12 +104,12 @@ def ingest_document(file_path, client_name="Internal", update_callback=None, bra
                         
                         conn.execute(
                             text("""
-                            INSERT INTO corporate_knowledge (content, metadata, embedding, brand_id, is_public, source_filename, document_type)
-                            VALUES (:content, :metadata, cast(:embedding as vector), :brand_id, :is_public, :source_filename, :document_type)
+                            INSERT INTO corporate_knowledge (content, meta_data, embedding, brand_id, is_public, source_filename, document_type)
+                            VALUES (:content, :meta_data, cast(:embedding as vector), :brand_id, :is_public, :source_filename, :document_type)
                             """),
                             {
                                 "content": text_fragment,
-                                "metadata": json.dumps({
+                                "meta_data": json.dumps({
                                     "source": source_filename, 
                                     "client": client_name,
                                     "brand_id": brand_id,

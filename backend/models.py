@@ -2,6 +2,7 @@ import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Float, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
+from pgvector.sqlalchemy import Vector
 from database import Base
 
 
@@ -176,6 +177,8 @@ class GenerationJob(Base):
     llm_response_json = Column(JSONB, nullable=True) # JSON crudo devuelto por la IA
 
     status      = Column(String, default="pending")
+    current_step = Column(String, nullable=True) # v12.0: Para logs en tiempo real
+    progress    = Column(Integer, default=0)    # v12.0: Porcentaje de avance
     pptx_path   = Column(String, nullable=True)
 
     created_at  = Column(DateTime, default=datetime.datetime.utcnow)
@@ -225,7 +228,10 @@ class CorporateKnowledge(Base):
     # Taxonomía: brand_identity, company_knowledge, case_studies, etc.
     document_type = Column(String(50), nullable=True)
     
-    # Metadata para RAG (embedding se maneja vía raw SQL o tipo vector si está disponible)
+    # Metadata para RAG y Embeddings (v12.0)
+    meta_data = Column(JSONB, nullable=True)
+    embedding = Column(Vector(1024), nullable=True) # Mistral-embed standard
+    
     # is_public: 0 = Exclusive, 1 = Public
     is_public = Column(Integer, default=0)
     

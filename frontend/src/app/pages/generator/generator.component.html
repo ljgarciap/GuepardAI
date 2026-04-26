@@ -87,10 +87,18 @@
             </div>
           </div>
           <div class="console-footer">
-            <div class="progress-bar">
-              <div class="progress-fill" [style.width.%]="progress"></div>
+            <div class="progress-track">
+              <div class="progress-fill" [style.width.%]="progress">
+                <div class="progress-cheetah" [style.left.%]="100">
+                  <img src="/assets/img/cheetah.gif" class="cheetah-gif">
+                </div>
+              </div>
             </div>
             <span class="progress-text">{{ progress }}% COMPLETE</span>
+            <div class="status-indicator" *ngIf="isGenerating">
+              <div class="status-dot"></div>
+              <span>SYSTEM ACTIVE</span>
+            </div>
           </div>
         </div>
 

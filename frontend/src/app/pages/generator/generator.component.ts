@@ -17,12 +17,14 @@ export class GeneratorComponent implements OnInit {
   sanitizer = inject(DomSanitizer);
 
   // --- FORM DATA ---
+  selectedBrandId: number | null = null;
   selectedStyle: string = '';
   selectedKnowledge: string = '';
   prompt: string = '';
   selectedRegion: string = 'LATAM';
   
   // --- OPTIONS ---
+  brands: any[] = [];
   availableStyles: any[] = [];
   availableKnowledge: string[] = [];
 
@@ -37,11 +39,29 @@ export class GeneratorComponent implements OnInit {
   currentStatus: string = '';
 
   ngOnInit() {
+    this.loadBrands();
+    this.loadMetadata();
+  }
+
+  loadBrands() {
+    this.brandService.getBrands().subscribe({
+      next: (res) => {
+        this.brands = res;
+        if (this.brands.length > 0) {
+          // No auto-select, force user to be intentional
+        }
+      }
+    });
+  }
+
+  onBrandChange() {
+    this.selectedStyle = '';
+    this.selectedKnowledge = '';
     this.loadMetadata();
   }
 
   loadMetadata() {
-    this.brandService.getAvailableStyles().subscribe({
+    this.brandService.getAvailableStyles(this.selectedBrandId || undefined).subscribe({
       next: (res) => {
         this.availableStyles = res.styles || [];
         if (this.availableStyles.length === 1) {
@@ -50,7 +70,7 @@ export class GeneratorComponent implements OnInit {
       }
     });
 
-    this.brandService.getAvailableKnowledge().subscribe({
+    this.brandService.getAvailableKnowledge(this.selectedBrandId || undefined).subscribe({
       next: (res) => {
         this.availableKnowledge = res.sources || [];
         if (this.availableKnowledge.length === 1) {
@@ -72,8 +92,13 @@ export class GeneratorComponent implements OnInit {
     this.progress = 0;
     this.addLog('Strategic Orchestrator', 'Initiating neural synthesis sequence...');
     
-    this.brandService.generatePresentation(this.prompt, this.selectedStyle, this.selectedKnowledge, this.selectedRegion)
-      .subscribe({
+    this.brandService.generatePresentation(
+      this.prompt, 
+      this.selectedStyle, 
+      this.selectedKnowledge, 
+      this.selectedRegion, 
+      this.selectedBrandId || undefined
+    ).subscribe({
         next: (res: any) => {
           this.addLog('Analyst', 'Strategic command received and validated.');
           this.startPolling(res.job_id);

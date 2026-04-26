@@ -56,20 +56,38 @@ export class BrandService {
     return this.http.get(`${this.apiUrl}/generation/status/${jobId}`);
   }
 
-  getAvailableStyles(): Observable<any> {
-    return this.http.get(`${this.apiUrl}/available-styles`);
+  getAvailableStyles(brandId?: number): Observable<any> {
+    const url = brandId ? `${this.apiUrl}/available-styles?brand_id=${brandId}` : `${this.apiUrl}/available-styles`;
+    return this.http.get(url);
   }
 
-  getAvailableKnowledge(): Observable<any> {
-    return this.http.get(`${this.apiUrl}/available-knowledge`);
+  getAvailableKnowledge(brandId?: number): Observable<any> {
+    const url = brandId ? `${this.apiUrl}/available-knowledge?brand_id=${brandId}` : `${this.apiUrl}/available-knowledge`;
+    return this.http.get(url);
   }
 
-  generatePresentation(prompt: string, styleFilename: string, knowledgeFilename: string, region: string = 'LATAM'): Observable<any> {
+  getLibraryImages(brandId?: number): Observable<any[]> {
+    const url = brandId ? `${this.apiUrl}/library/images?brand_id=${brandId}` : `${this.apiUrl}/library/images`;
+    return this.http.get<any[]>(url);
+  }
+
+  getLibraryBlueprints(brandId?: number): Observable<any[]> {
+    const url = brandId ? `${this.apiUrl}/library/blueprints?brand_id=${brandId}` : `${this.apiUrl}/library/blueprints`;
+    return this.http.get<any[]>(url);
+  }
+
+  getLibraryKnowledge(brandId?: number): Observable<any[]> {
+    const url = brandId ? `${this.apiUrl}/library/knowledge?brand_id=${brandId}` : `${this.apiUrl}/library/knowledge`;
+    return this.http.get<any[]>(url);
+  }
+
+  generatePresentation(prompt: string, styleFilename: string, knowledgeFilename: string, region: string = 'LATAM', brandId?: number): Observable<any> {
     return this.http.post(`${this.apiUrl}/presentations/generate`, { 
       prompt, 
       style_filename: styleFilename, 
       knowledge_filename: knowledgeFilename, 
-      region 
+      region,
+      brand_id: brandId
     });
   }
 

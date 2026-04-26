@@ -70,6 +70,7 @@ class PresentationRequest(BaseModel):
     knowledge_filename: str    
     prompt: str
     region: str = "LATAM"
+    brand_id: Optional[int] = None
 
 
 # ──────────────────────────────────────────────
@@ -525,14 +526,18 @@ def get_ingestion_status(
 # ──────────────────────────────────────────────
 
 @app.get("/api/available-styles", tags=["Metadata"])
-def get_available_styles(db: Session = Depends(get_db)):
+def get_available_styles(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
     """
-    Lista los estilos disponibles para el dropdown.
-    Un estilo es 'completo' cuando tiene tanto DNA Visual como Esencia Artística.
+    Lista los estilos disponibles para el dropdown con filtrado por marca.
     """
-    dna_files = {
-        row[0] for row in db.query(models.BrandVisualDna.source_filename).all()
-    }
+    query = db.query(models.BrandVisualDna.source_filename)
+    if brand_id:
+        query = query.filter(
+            (models.BrandVisualDna.brand_id == brand_id) | 
+            (models.BrandVisualDna.brand_id == None)
+        )
+    
+    dna_files = {row[0] for row in query.all()}
     essence_files = {
         row[0] for row in db.query(models.BrandArtisticEssence.source_filename).all()
     }
@@ -550,13 +555,17 @@ def get_available_styles(db: Session = Depends(get_db)):
 
 
 @app.get("/api/available-knowledge", tags=["Metadata"])
-def get_available_knowledge(db: Session = Depends(get_db)):
-    """Lista las fuentes RAG disponibles para el dropdown."""
+def get_available_knowledge(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """Lista las fuentes RAG disponibles con filtrado soberano."""
     try:
-        result = db.execute(
-            text("SELECT DISTINCT metadata->>'source' FROM corporate_knowledge "
-                 "WHERE metadata->>'source' IS NOT NULL ORDER BY 1")
-        )
+        sql = "SELECT DISTINCT source_filename FROM corporate_knowledge"
+        params = {}
+        if brand_id:
+            sql += " WHERE (brand_id = :brand_id OR is_public = 1)"
+            params["brand_id"] = brand_id
+        
+        sql += " ORDER BY 1"
+        result = db.execute(text(sql), params)
         return {"sources": [row[0] for row in result]}
     except Exception as e:
         logger.error(f"Error fetching knowledge sources: {e}")
@@ -614,9 +623,12 @@ async def generate_presentation(
 
     try:
         # 5. Síntesis de contenido (v11.0: Brand Sovereign RAG)
+        # Priorizamos el brand_id del request (mando directo del usuario en el Studio)
+        target_brand_id = req.brand_id if req.brand_id is not None else dna.brand_id
+        
         content_manifest, full_prompt = synthesize_strategic_content(
             req.prompt,
-            dna.brand_id, # Usamos el ID de la marca dueña del estilo
+            target_brand_id,
             region=req.region
         )
         
@@ -699,6 +711,39 @@ def _build_brand_context(dna: models.BrandVisualDna,
         ctx["composition_rules"]  = brand_essence.composition_rules or {}
         ctx["art_direction_note"] = brand_essence.art_direction_note or ""
     return ctx
+
+
+# ──────────────────────────────────────────────
+# LIBRARY ENDPOINTS (Bóveda de Activos)
+# ──────────────────────────────────────────────
+
+@app.get("/api/library/images", tags=["Library"])
+def get_library_images(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """Lista imágenes/assets filtrados por marca."""
+    query = db.query(models.BrandAsset)
+    if brand_id:
+        query = query.filter(models.BrandAsset.brand_id == brand_id)
+    return query.all()
+
+@app.get("/api/library/blueprints", tags=["Library"])
+def get_library_blueprints(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """Lista estilos (DNA Visual) filtrados por marca."""
+    query = db.query(models.BrandVisualDna)
+    if brand_id:
+        query = query.filter(models.BrandVisualDna.brand_id == brand_id)
+    return query.all()
+
+@app.get("/api/library/knowledge", tags=["Library"])
+def get_library_knowledge(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """Lista documentos de conocimiento filtrados por marca."""
+    sql = "SELECT DISTINCT source_filename, is_public, brand_id FROM corporate_knowledge"
+    params = {}
+    if brand_id:
+        sql += " WHERE brand_id = :brand_id"
+        params["brand_id"] = brand_id
+    
+    result = db.execute(text(sql), params)
+    return [{"filename": row[0], "is_public": row[1], "brand_id": row[2]} for row in result]
 
 
 # ──────────────────────────────────────────────

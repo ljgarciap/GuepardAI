@@ -1,0 +1,214 @@
+.page-container {
+  padding: 40px;
+  animation: fadeIn 0.8s ease-out;
+}
+
+.library-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 30px;
+  margin-bottom: 30px;
+  border-radius: 24px;
+}
+
+.header-titles .page-title {
+  font-size: 2.2rem;
+  font-weight: 900;
+  letter-spacing: -1px;
+  color: #1e293b;
+  margin: 0;
+}
+
+.header-titles .page-subtitle {
+  color: #64748b;
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 2px;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 30px;
+}
+
+.control-group label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #6366f1;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.enterprise-select {
+  background: white;
+  border: 1.5px solid rgba(0,0,0,0.05);
+  padding: 10px 15px;
+  border-radius: 12px;
+  font-weight: 600;
+  color: #1e293b;
+  min-width: 200px;
+  cursor: pointer;
+}
+
+/* Tab Switcher */
+.tab-switcher {
+  display: flex;
+  background: rgba(0,0,0,0.03);
+  padding: 5px;
+  border-radius: 14px;
+  gap: 5px;
+}
+
+.tab-switcher button {
+  border: none;
+  background: transparent;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.tab-switcher button.active {
+  background: white;
+  color: #6366f1;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+/* Asset Grid (Images) */
+.asset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 25px;
+}
+
+.asset-card {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 20px;
+  transition: transform 0.3s;
+}
+
+.asset-card:hover {
+  transform: translateY(-5px);
+}
+
+.asset-preview {
+  height: 180px;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  border-bottom: 1.5px solid rgba(0,0,0,0.03);
+}
+
+.asset-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.asset-info {
+  padding: 20px;
+}
+
+.asset-tag {
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.asset-name {
+  margin: 10px 0 5px 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.asset-meta {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin: 0;
+}
+
+/* List Container (Blueprints & Knowledge) */
+.list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.list-item {
+  display: flex;
+  align-items: center;
+  padding: 20px 30px;
+  gap: 25px;
+  border-radius: 20px;
+}
+
+.item-icon {
+  font-size: 1.5rem;
+  background: white;
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+.item-details {
+  flex: 1;
+}
+
+.item-details h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.item-details p {
+  margin: 4px 0 0 0;
+  font-size: 0.9rem;
+  color: #64748b;
+}
+
+.badge {
+  background: #22c55e;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 6px 14px;
+  border-radius: 30px;
+}
+
+.badge.exclusive {
+  background: #6366f1;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 100px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}

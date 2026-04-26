@@ -1,0 +1,56 @@
+import { Component, inject, OnInit } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { BrandService } from '../../services/brand.service';
+
+@Component({
+  selector: 'app-asset-library',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  templateUrl: './asset-library.component.html',
+  styleUrl: './asset-library.component.css'
+})
+export class AssetLibraryComponent implements OnInit {
+  private brandService = inject(BrandService);
+
+  brands: any[] = [];
+  selectedBrandId: number | null = null;
+  activeTab: 'images' | 'blueprints' | 'knowledge' = 'images';
+
+  images: any[] = [];
+  blueprints: any[] = [];
+  knowledge: any[] = [];
+
+  ngOnInit() {
+    this.loadBrands();
+    this.refreshLibrary();
+  }
+
+  loadBrands() {
+    this.brandService.getBrands().subscribe({
+      next: (res) => this.brands = res,
+      error: (err) => console.error('Error loading brands:', err)
+    });
+  }
+
+  setTab(tab: 'images' | 'blueprints' | 'knowledge') {
+    this.activeTab = tab;
+    this.refreshLibrary();
+  }
+
+  onBrandChange() {
+    this.refreshLibrary();
+  }
+
+  refreshLibrary() {
+    const bId = this.selectedBrandId || undefined;
+    
+    if (this.activeTab === 'images') {
+      this.brandService.getLibraryImages(bId).subscribe(res => this.images = res);
+    } else if (this.activeTab === 'blueprints') {
+      this.brandService.getLibraryBlueprints(bId).subscribe(res => this.blueprints = res);
+    } else if (this.activeTab === 'knowledge') {
+      this.brandService.getLibraryKnowledge(bId).subscribe(res => this.knowledge = res);
+    }
+  }
+}

@@ -1,0 +1,81 @@
+<div class="page-container">
+  <header class="library-header glass-panel">
+    <div class="header-titles">
+      <h1 class="page-title">STRATEGIC ASSET LIBRARY</h1>
+      <p class="page-subtitle">CENTRAL REPOSITORY • v1.0</p>
+    </div>
+
+    <div class="header-controls">
+      <div class="control-group">
+        <label>Sovereignty Filter</label>
+        <select [(ngModel)]="selectedBrandId" (ngModelChange)="onBrandChange()" class="enterprise-select">
+          <option [ngValue]="null">All Brands / Public</option>
+          <option *ngFor="let brand of brands" [ngValue]="brand.id">
+            {{ brand.name }}
+          </option>
+        </select>
+      </div>
+      
+      <div class="tab-switcher">
+        <button [class.active]="activeTab === 'images'" (click)="setTab('images')">IMAGES</button>
+        <button [class.active]="activeTab === 'blueprints'" (click)="setTab('blueprints')">BLUEPRINTS</button>
+        <button [class.active]="activeTab === 'knowledge'" (click)="setTab('knowledge')">KNOWLEDGE</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="library-content">
+    
+    <!-- IMAGES VAULT -->
+    <div class="asset-grid" *ngIf="activeTab === 'images'">
+      <div class="asset-card glass-panel" *ngFor="let img of images">
+        <div class="asset-preview">
+          <img [src]="'http://localhost:8000/' + img.asset_path" alt="Asset">
+        </div>
+        <div class="asset-info">
+          <span class="asset-tag">{{ img.asset_type }}</span>
+          <h3 class="asset-name">{{ img.original_name }}</h3>
+          <p class="asset-meta">ID: #{{ img.id }} • Brand: {{ img.brand_id || 'Public' }}</p>
+        </div>
+      </div>
+      <div class="empty-state" *ngIf="images.length === 0">
+        <p>No visual assets found for this selection.</p>
+      </div>
+    </div>
+
+    <!-- BLUEPRINTS VAULT -->
+    <div class="list-container" *ngIf="activeTab === 'blueprints'">
+      <div class="list-item glass-panel" *ngFor="let bp of blueprints">
+        <div class="item-icon">📐</div>
+        <div class="item-details">
+          <h3>{{ bp.source_filename }}</h3>
+          <p>Visual Identity DNA • Brand ID: {{ bp.brand_id || 'Public' }}</p>
+        </div>
+        <div class="item-status">
+          <span class="badge">ACTIVE</span>
+        </div>
+      </div>
+      <div class="empty-state" *ngIf="blueprints.length === 0">
+        <p>No visual blueprints found for this selection.</p>
+      </div>
+    </div>
+
+    <!-- KNOWLEDGE BANK -->
+    <div class="list-container" *ngIf="activeTab === 'knowledge'">
+      <div class="list-item glass-panel" *ngFor="let kn of knowledge">
+        <div class="item-icon">📚</div>
+        <div class="item-details">
+          <h3>{{ kn.filename }}</h3>
+          <p>Strategic Knowledge Base • {{ kn.is_public ? 'PUBLIC USE' : 'BRAND EXCLUSIVE' }}</p>
+        </div>
+        <div class="item-status">
+          <span class="badge" [class.exclusive]="!kn.is_public">ID: {{ kn.brand_id || 'Global' }}</span>
+        </div>
+      </div>
+      <div class="empty-state" *ngIf="knowledge.length === 0">
+        <p>No strategic knowledge documents found for this selection.</p>
+      </div>
+    </div>
+
+  </div>
+</div>

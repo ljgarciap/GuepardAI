@@ -8,6 +8,16 @@
     
     <div class="toolbar-actions">
       <div class="control-group">
+        <label>IDENTITY</label>
+        <select [(ngModel)]="selectedBrandId" (ngModelChange)="onBrandChange()" class="enterprise-select">
+          <option [ngValue]="null">Public / Generic</option>
+          <option *ngFor="let brand of brands" [ngValue]="brand.id">
+            {{ brand.name }}
+          </option>
+        </select>
+      </div>
+
+      <div class="control-group">
         <label>BLUEPRINT</label>
         <select [(ngModel)]="selectedStyle" class="enterprise-select">
           <option value="" disabled>Select...</option>

@@ -8,36 +8,23 @@ from typing import List
 from llm_provider import generate_json
 
 REFINER_PROMPT = """
-You are a World-Class Graphic Designer and Art Director. 
-Your goal is to transform a "Math-Based" layout into a "High-Fidelity Brand Masterpiece".
+You are a World-Class Art Director and Graphic Designer. 
+Your mission is to transform a math-based layout manifest into a brand-faithful masterpiece.
 
-STRATEGY FOR TESCO BRAND:
-1. SPLIT-SCREEN ENFORCEMENT: If a slide has a large image (role: background or visual), you MUST use a 50/50 Split-Screen. 
-   - Left side (0-50%): Text, Titles, Bullets.
-   - Right side (50-100%): Images, Photos.
-   - PROHIBIT OVERLAPPING: Text must NEVER be on top of the main subject of an image.
+BRAND ESSENCE (Extracted from actual brand identity documents):
+{brand_essence_json}
 
-2. PILL-BANNERS (The Tesco Gesture): 
-   - Wrap ALL slide titles in a "rounded_rectangle" shape.
-   - Style: Use the Brand's PRIMARY or SECONDARY color. Text inside must be WHITE.
-   - Geometry: Left=margin_left-1, Top=title_top-1, Width=auto (approx 40-50), Height=title_height+2.
-
-3. GRID & ALIGNMENT:
-   - Use a strict 2-column grid for the left-side content.
-   - Margin Left: EXACTLY 8%.
-   - Bullet Symbol: Use '■' (Square) as detected in the manual.
-
-4. COLOR PALETTE:
-   - Backgrounds MUST be White (#FFFFFF) or very light. NO DARK GREYS.
-   - Text color: Use #111111 for body, WHITE for text inside pill-banners.
+INSTRUCTIONS:
+1. FIDELITY: Apply ONLY the design gestures, structural archetypes, and patterns described in the BRAND ESSENCE above. Do NOT invent new rules.
+2. LAYOUT: Refine the coordinates, sizes, and colors based on the detected brand archetypes (e.g., if the brand uses split-screens, enforce them; if it uses floating elements, allow them).
+3. GESTURES: If the brand essence specifies particular shapes (banners, pills, lines), add them to the slide shapes array.
+4. TYPOGRAPHY & COLOR: Use the primary and secondary colors and fonts specified in the essence. Ensure maximum readability and contrast.
+5. NO OVERLAP: Ensure text never overlaps with the main subjects of the images described in the narrative.
 
 INPUT MANIFEST:
 {manifest_json}
 
-BRAND DNA:
-{brand_essence_json}
-
-Return ONLY the perfected JSON. Ensure every slide has a 'banner' shape for the title if it's a content slide.
+Return ONLY the perfected JSON manifest.
 """
 
 def refine_manifest(manifest: dict, brand_dna: dict, brand_essence: dict) -> dict:

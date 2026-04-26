@@ -223,7 +223,12 @@ def analyze_with_vision(image_paths: List[str], cb: Optional[Callable] = None) -
     if not image_paths:
         return {"error": "No images to analyze."}
 
-    audit_file = "/Users/lgarcia/Documents/GitHub/Softclass/PowerAI/CleanArchitecture/backend/vision_audit.log"
+    # Path dinámico para el log de auditoría
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    audit_dir = os.path.join(base_dir, "data")
+    os.makedirs(audit_dir, exist_ok=True)
+    audit_file = os.path.join(audit_dir, "vision_audit.log")
+
     import datetime
     import json
     from llm_provider import generate_json

@@ -45,9 +45,44 @@ def search_rag(query, brand_id=None, k=15):
         return ""
     return "\n---\n".join(results)
 
+def plan_narrative(topic: str) -> list:
+    """
+    NARRATIVE ARCHITECT (v12.0).
+    Decompounds the user prompt into strategic search axes.
+    """
+    prompt = f"""
+    You are a Strategic Planner. Decompound the following presentation request into 3 to 5 specific search queries to retrieve high-quality corporate data from a knowledge base.
+    
+    USER REQUEST: {topic}
+    
+    Example output for "Tesco Strategy":
+    ["Tesco Brand Values and Mission", "Clubcard and Loyalty Program performance", "Tesco Market Share and Competitors", "Financial results and ESG commitments"]
+    
+    RESPONSE ONLY with this JSON format:
+    {{ "queries": ["query 1", "query 2", ...] }}
+    """
+    try:
+        plan = generate_json(prompt, specialization="general")
+        return plan.get("queries", [topic])
+    except:
+        return [topic]
+
 def synthesize_strategic_content(topic, brand_id, region="Global"):
-    print(f"[ContentEngine] Fetching RAG for: {topic} | Brand ID: {brand_id}", flush=True)
-    rag_context = search_rag(topic, brand_id)
+    print(f"[ContentEngine] Orchestrating Narrative Architecture for: {topic}", flush=True)
+    
+    # 1. Narrative Planning
+    search_axes = plan_narrative(topic)
+    print(f"[ContentEngine] Search Axes: {search_axes}", flush=True)
+    
+    # 2. Multi-Query RAG
+    rag_blocks = []
+    for axis in search_axes:
+        print(f"  [RAG] Searching for Axis: {axis}...", flush=True)
+        block = search_rag(axis, brand_id)
+        if block:
+            rag_blocks.append(f"### DATA FOR: {axis}\n{block}")
+    
+    rag_context = "\n\n".join(rag_blocks)
 
     if not rag_context:
         raise ValueError(f"No RAG content found for Brand ID '{brand_id}'. "

@@ -291,9 +291,9 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
         set_job_status(job_key, "visual_dna", "error")
 
 
-def task_extract_artistic_essence(job_key: str, file_path: str, source_filename: str):
-    """Extrae Esencia Artística con Vision LLM y persiste en brand_artistic_essence."""
-    logger.info(f"[Task] Artistic Essence started: {source_filename}")
+def task_extract_artistic_essence(job_key: str, file_path: str, source_filename: str, brand_id: int = None):
+    """Extrae Esencia Artística (layouts/gestos) vía Vision LLM (v12.0)."""
+    logger.info(f"[Task] Artistic Essence started: {source_filename} (Brand: {brand_id})")
     cb = lambda msg, p=0: update_job_step(job_key, "artistic", msg, p)
 
     try:
@@ -309,14 +309,19 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
 
         db = SessionLocal()
         try:
+            # v12.0: Ahora permitimos múltiples esencias por marca (unique=False)
+            # Buscamos si ya existe para este archivo EXACTO
             record = db.query(models.BrandArtisticEssence).filter(
-                models.BrandArtisticEssence.source_filename == source_filename
+                models.BrandArtisticEssence.source_filename == source_filename,
+                models.BrandArtisticEssence.brand_id == brand_id
             ).first()
+            
             if not record:
-                record = models.BrandArtisticEssence(source_filename=source_filename)
+                record = models.BrandArtisticEssence(source_filename=source_filename, brand_id=brand_id)
                 db.add(record)
 
-            # Sincronización con ADN Estructural (v70.0)
+            # Sincronización
+            record.brand_id              = brand_id
             record.slide_archetypes      = brand_essence.get("slide_archetypes", {})
             record.structural_archetypes = brand_essence.get("structural_archetypes", {})
             record.design_gestures        = brand_essence.get("design_gestures", {})
@@ -337,9 +342,9 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
         set_job_status(job_key, "artistic", "error")
 
 
-def task_ingest_knowledge(job_key: str, file_path: str, source_filename: str, brand_id: int = None, visibility_scope: str = "exclusive"):
-    """Ingesta RAG con Soberanía de Marca y Visibilidad (v11.0)."""
-    logger.info(f"[Task] Knowledge Ingest started: {source_filename} (Brand: {brand_id}, Scope: {visibility_scope})")
+def task_ingest_knowledge(job_key: str, file_path: str, source_filename: str, brand_id: int = None, visibility_scope: str = "exclusive", document_type: str = "company_knowledge"):
+    """Ingesta RAG con Soberanía, Visibilidad y Taxonomía (v12.0)."""
+    logger.info(f"[Task] Knowledge Ingest started: {source_filename} (Brand: {brand_id}, Type: {document_type})")
     cb = lambda msg, p=0: update_job_step(job_key, "knowledge", msg, p)
 
     try:
@@ -409,7 +414,7 @@ def task_extract_full_brand_style(job_key: str, file_path: str, source_filename:
         
         # Step 2: Artistic Essence
         cb("Analyzing Artistic Essence (Vision LLM)...", 50)
-        task_extract_artistic_essence(job_key, file_path, source_filename)
+        task_extract_artistic_essence(job_key, file_path, source_filename, brand_id=brand_id)
 
         update_job_step(job_key, "brand_style", "Full Brand Identity extraction complete.", 100)
         set_job_status(job_key, "brand_style", "completed")
@@ -430,6 +435,7 @@ async def upload_asset(
     visibility_scope: str = Form("exclusive"), 
     brand_id: Optional[int] = Form(None),       # v11.0: Mandatory for exclusive
     manual_tags: Optional[str] = Form(None),    # v11.0: "logo, office, primary"
+    document_type: str = Form("company_knowledge"), # v12.0: brand_identity, case_study, etc
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
@@ -487,7 +493,7 @@ async def upload_asset(
         background_tasks.add_task(task_extract_pure_assets, job_key, file_path, source_filename, visibility_scope, brand_id, tag_list)
     else:
         # v11.0: Knowledge Bank now follows Brand Governance & Visibility
-        background_tasks.add_task(task_ingest_knowledge, job_key, file_path, source_filename, brand_id, visibility_scope)
+        background_tasks.add_task(task_ingest_knowledge, job_key, file_path, source_filename, brand_id, visibility_scope, document_type=document_type)
 
     return {
         "status": "accepted",

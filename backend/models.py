@@ -21,7 +21,8 @@ class Brand(Base):
     created_at  = Column(DateTime, default=datetime.datetime.utcnow)
 
     # Relaciones
-    visual_dna = relationship("BrandVisualDna", back_populates="brand", uselist=False)
+    visual_dna = relationship("BrandVisualDna", back_populates="brand")
+    artistic_essence = relationship("BrandArtisticEssence", back_populates="brand")
     assets     = relationship("BrandAsset", back_populates="brand")
     knowledge  = relationship("CorporateKnowledge", back_populates="brand")
 
@@ -30,7 +31,7 @@ class BrandVisualDna(Base):
     __tablename__ = "brand_visual_dna"
 
     id               = Column(Integer, primary_key=True, index=True)
-    brand_id         = Column(Integer, ForeignKey("brands.id"), unique=True)
+    brand_id         = Column(Integer, ForeignKey("brands.id"))
     source_filename  = Column(String, index=True, nullable=False)
     
     brand = relationship("Brand", back_populates="visual_dna")
@@ -93,7 +94,10 @@ class BrandArtisticEssence(Base):
     __tablename__ = "brand_artistic_essence"
 
     id              = Column(Integer, primary_key=True, index=True)
+    brand_id        = Column(Integer, ForeignKey("brands.id"))
     source_filename = Column(String, index=True, nullable=False)  # mismo archivo que BrandVisualDna
+
+    brand = relationship("Brand", back_populates="artistic_essence")
 
     # Arquetipos de layout por tipo de slide
     # {
@@ -217,6 +221,9 @@ class CorporateKnowledge(Base):
     
     source_filename = Column(String(255))
     content = Column(Text)
+    
+    # Taxonomía: brand_identity, company_knowledge, case_studies, etc.
+    document_type = Column(String(50), nullable=True)
     
     # Metadata para RAG (embedding se maneja vía raw SQL o tipo vector si está disponible)
     # is_public: 0 = Exclusive, 1 = Public

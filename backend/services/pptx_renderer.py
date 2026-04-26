@@ -278,61 +278,128 @@ def render_image(slide, element, asset_map):
 
 def render_pptx_manifest(design_manifest, asset_map, output_path):
     """
-    ENGINE RENDERER v4.0.
-    Aplica el manifest de diseño transformando elementos abstractos en objetos PPTX reales.
+    ENGINE RENDERER v16.1 — ANALYST VISION DRIVEN.
+    Aplica el manifest de diseño con soporte para Canvas Ultra-Wide y Decoradores.
     """
-    print(f"[Renderer v4] Creando presentación: {output_path}...", flush=True)
+    print(f"[Renderer v16.1] Creando presentación: {output_path}...", flush=True)
+    
+    # ── 1. Inicializar Canvas Dinámico ────────────────────────────────────
+    canvas = design_manifest.get("canvas", {})
+    slide_w_in = canvas.get("width_inches", 13.33)
+    slide_h_in = canvas.get("height_inches", 7.5)
     
     prs = Presentation()
-    prs.slide_width = Inches(SLIDE_W_IN)
-    prs.slide_height = Inches(SLIDE_H_IN)
-    blank_layout = prs.slide_layouts[6] # Layout vacío
+    prs.slide_width  = Inches(slide_w_in)
+    prs.slide_height = Inches(slide_h_in)
+    blank_layout = prs.slide_layouts[6] 
     
     theme = design_manifest.get("theme", {})
     bg_color_hex = theme.get("background", "#FFFFFF")
+
+    # Helpers de escalado dinámico
+    def sx(val): return Inches((val / 100.0) * slide_w_in)
+    def sy(val): return Inches((val / 100.0) * slide_h_in)
 
     for slide_data in design_manifest.get("slides", []):
         slide = prs.slides.add_slide(blank_layout)
         elements = slide_data.get("elements", [])
         
-        # 1. Fondo de color sólido (base)
+        # 2. Fondo base
         background = slide.background
         fill = background.fill
         fill.solid()
         fill.fore_color.rgb = hex_to_rgb(bg_color_hex)
 
-        # 2. Ordenar elementos por capas
-        # Capas: background_img -> shapes (overlays/accents) -> images -> logos -> text
-        layer_map = {
-            "background_color": 0,
-            "image": 1, 
-            "shape": 2, 
-            "logo": 3, 
-            "text": 4
-        }
-        if elements is None:
-            elements = []
+        # 3. Z-Order Sorting
+        layer_map = {"background_color": 0, "image": 1, "shape": 2, "logo": 3, "text": 4}
+        if elements is None: elements = []
         elements.sort(key=lambda x: layer_map.get(x.get("type"), 5))
 
         for el in elements:
             try:
                 el_type = el.get("type")
-                role    = el.get("role")
+                role    = el.get("role", "")
+                geo     = el.get("geometry", {})
+                style   = el.get("style", {})
                 
                 if el_type == "image" and role == "background":
-                    render_background_image(slide, el, asset_map)
-                elif el_type == "shape":
-                    render_shape(slide, el)
+                    render_background_image_dynamic(slide, el, asset_map, slide_w_in, slide_h_in)
+                elif el_type == "shape" or role in ("horizontal_bar", "vertical_bar", "footer_line", "header_zone", "brand_bar", "overlay", "sidebar_zone", "content_panel", "corner_accent"):
+                    _render_decorator_v2(slide, el, sx, sy)
                 elif el_type == "text":
-                    render_text(slide, el)
+                    _render_text_v2(slide, el, sx, sy)
                 elif el_type in ["image", "logo"]:
-                    render_image(slide, el, asset_map)
-                elif el_type == "background_color":
-                    # Ya manejado por la base del slide, pero permite overrides por elemento
-                    pass
+                    _render_image_v2(slide, el, asset_map, sx, sy)
             except Exception as e:
                 print(f"  [Renderer] Error en elemento {el.get('type')}: {e}")
 
     prs.save(output_path)
-    print(f"[Renderer v4] PPTX guardado con éxito.", flush=True)
+    print(f"[Renderer v16.1] PPTX guardado con éxito.", flush=True)
     return output_path
+
+# ──────────────────────────────────────────────
+# DYNAMIC RENDERERS v2 (v16.1)
+# ──────────────────────────────────────────────
+
+def render_background_image_dynamic(slide, element, asset_map, sw_in, sh_in):
+    img_basename = element.get("source")
+    img_path = asset_map.get(img_basename)
+    if not (img_path and os.path.exists(img_path)):
+        img_path = os.path.join("uploads", str(img_basename))
+        
+    if img_path and os.path.exists(img_path):
+        try:
+            with PILImage.open(img_path) as img: iw, ih = img.size
+            pic = slide.shapes.add_picture(img_path, 0, 0, Inches(sw_in), Inches(sh_in))
+            aspect_slide, aspect_img = sw_in / sh_in, iw / ih
+            if aspect_img > aspect_slide:
+                tc = 1.0 - (aspect_slide / aspect_img)
+                pic.crop_left, pic.crop_right = tc/2, tc/2
+            else:
+                tc = 1.0 - (aspect_img / aspect_slide)
+                pic.crop_top, pic.crop_bottom = tc/2, tc/2
+            slide.shapes._spTree.remove(pic._element)
+            slide.shapes._spTree.insert(2, pic._element)
+        except: pass
+
+def _render_decorator_v2(slide, element, sx, sy):
+    geo, style = element.get("geometry", {}), element.get("style", {})
+    shape = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, sx(geo["left"]), sy(geo["top"]), sx(geo["width"]), sy(geo["height"])
+    )
+    shape.line.fill.background()
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = hex_to_rgb(style.get("color", "#CCCCCC"))
+    set_shape_transparency(shape, style.get("opacity", 1.0))
+
+def _render_text_v2(slide, element, sx, sy):
+    content = clean_text(element.get("content", ""))
+    if not content: return
+    geo, style, role = element.get("geometry", {}), element.get("style", {}), element.get("role", "")
+    tx = slide.shapes.add_textbox(sx(geo["left"]), sy(geo["top"]), sx(geo["width"]), sy(geo["height"]))
+    tf = tx.text_frame
+    tf.word_wrap = True
+    tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+    for i, line in enumerate(content.split('\n')):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        p.text = line
+        p.alignment = {"center": PP_ALIGN.CENTER, "right": PP_ALIGN.RIGHT}.get(style.get("align"), PP_ALIGN.LEFT)
+        p.font.name = style.get("font", "Arial")
+        p.font.size = Pt(style.get("size", 18))
+        p.font.color.rgb = hex_to_rgb(style.get("color", "#000000"))
+        p.font.bold = style.get("bold", role == "title")
+
+def _render_image_v2(slide, element, asset_map, sx, sy):
+    img_basename, geo = element.get("source"), element.get("geometry", {})
+    img_path = asset_map.get(img_basename)
+    if not (img_path and os.path.exists(img_path)):
+        img_path = os.path.join("uploads", str(img_basename))
+    if img_path and os.path.exists(img_path):
+        try:
+            with PILImage.open(img_path) as img: iw, ih = img.size
+            tw, th = sx(geo["width"]).emu, sy(geo["height"]).emu
+            sc = min(tw / iw, th / ih)
+            nw, nh = int(iw * sc), int(ih * sc)
+            ox, oy = sx(geo["left"]).emu + (tw - nw) // 2, sy(geo["top"]).emu + (th - nh) // 2
+            slide.shapes.add_picture(img_path, ox, oy, nw, nh)
+        except: pass

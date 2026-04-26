@@ -95,11 +95,15 @@ def find_best_assets(db: Session, brand_id: int, keywords: List[str],
     
     # 1. Generar embedding de la búsqueda (la narrativa del slide)
     query_text = " ".join(keywords)
-    query_embedding = get_embedding(query_text)
+    query_embedding = None
+    try:
+        query_embedding = get_embedding(query_text)
+    except Exception as e:
+        print(f"  [AssetLibrary] Embedding failed: {e}. Falling back to simple query.")
     
     if not query_embedding:
-        # Fallback a búsqueda simple si falla el embedding
-        print("  [AssetEngine] Warning: Embedding failed, falling back to simple query.")
+        # Fallback a búsqueda simple si falla el embedding o no hay API Key
+        print("  [AssetLibrary] Performing keyword-based fallback search.")
         query = db.query(models.BrandAsset).filter(
             or_(models.BrandAsset.brand_id == brand_id, models.BrandAsset.is_public == 1)
         )

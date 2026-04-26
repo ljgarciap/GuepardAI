@@ -4,14 +4,12 @@ import random
 import time
 import os
 import concurrent.futures
+import models
 
 # Pool of diversities
 DIVERSITY_SEEDS = ["futuristic", "strategic", "minimalist", "dynamic", "organic", "modern", "visionary", "digital", "vibrant"]
 
 def fetch_single_asset(idx, narrative, entropy_seed):
-    # --- CORPORATE QUALITY GUARD (v34.0) ---
-    # Pre-pend executive tags to force professional context.
-    # --- ELITE CORPORATE FILTER (v38.0) ---
     forbidden = ["puzzle", "gear", "handshake", "metaphor", "concept", "abstract"]
     clean_narrative = narrative.lower()
     for f in forbidden:
@@ -30,14 +28,11 @@ def fetch_single_asset(idx, narrative, entropy_seed):
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=12) as res:
                 content = res.read()
-                # --- BINARY GUARD (v33.0) ---
-                # Check for JPEG Magic Bytes (FF D8 FF)
                 if len(content) > 5000 and content.startswith(b'\xff\xd8\xff'):
                     with open(path, 'wb') as f:
                         f.write(content)
                     return idx, path
         except:
-            # Fallback to broader corporate search (v34.1)
             url = f"https://loremflickr.com/1600/900/modern,executive,office"
             time.sleep(1)
             
@@ -45,12 +40,12 @@ def fetch_single_asset(idx, narrative, entropy_seed):
 
 def orchestrate_assets(content_manifest, brand=None, db=None):
     """
-    Orquestador de Activos v90.0: Búsqueda Vectorial Semántica + Diversidad Garantizada.
+    Orquestador de Activos v90.1: Búsqueda Vectorial Semántica Corregida.
     """
-    print(f"[AssetEngine] Orchestrating assets with Vectorized Treasury Protocol v90.0...")
+    print(f"[AssetEngine] Orchestrating assets with Vectorized Treasury Protocol v90.1...")
     
     asset_map = {}
-    used_asset_ids = set() # Registro para evitar repeticiones
+    used_asset_ids = set()
     from services.asset_library_service import find_best_assets
     
     extracted = getattr(brand, "extracted_assets", {}) if brand else {}
@@ -63,20 +58,19 @@ def orchestrate_assets(content_manifest, brand=None, db=None):
     num_logos = len(logos)
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
-        futures = []
         for i, slide in enumerate(content_manifest["slides"]):
             slide_idx = slide["slide_number"]
             narrative = slide.get("image_narrative") or "corporate strategy executive professional"
             
-            # --- STRATEGY: SEMANTIC VECTOR SEARCH (v12.0) ---
-            # Even if 'selected_asset' exists, we now prioritize the VECTOR search
-            # to ensure diversity and exclusion logic.
             if db and brand:
-                keywords = narrative.lower().replace(",", " ").split()
+                # --- CRITICAL FIX: Use brand_id, not DNA internal ID ---
+                target_id = getattr(brand, "brand_id", brand.id)
+                print(f"  [AssetEngine] Slide {slide_idx}: Searching for '{narrative}' in Brand ID {target_id}...")
                 
+                keywords = narrative.lower().replace(",", " ").split()
                 matches = find_best_assets(
                     db, 
-                    brand.id, 
+                    target_id, 
                     keywords, 
                     category="photos", 
                     limit=5,
@@ -87,24 +81,25 @@ def orchestrate_assets(content_manifest, brand=None, db=None):
                     chosen = matches[0]
                     used_asset_ids.add(chosen.id)
                     asset_map[slide_idx] = chosen.local_path
-                    print(f"  [AssetEngine] Vector Search success for Slide {slide_idx}: {chosen.description[:40]}...")
+                    print(f"  [AssetEngine] Success! Found: {chosen.description[:40]} at {chosen.local_path}")
                     continue
                 else:
-                    # Fallback to pre-selected if vector search yields zero results (unlikely)
-                    if slide.get("selected_asset"):
-                        path = slide.get("selected_asset")
-                        asset_map[slide_idx] = os.path.join("uploads", path) if not path.startswith("uploads/") else path
-                        continue
+                    print(f"  [AssetEngine] No semantic matches for Brand ID {target_id}. Using fallback.")
             
-            # --- STRATEGY 3: RANDOM LOCAL FALLBACK (Anti-Gato Protocol) ---
-            # If all else fails, pick any random photo from the local library
-            # instead of going to the internet.
-            print(f"  [AssetEngine] CRITICAL: No semantic match for Slide {slide_idx}. Picking random local asset.")
-            all_local = db.query(models.BrandAsset).filter(models.BrandAsset.category == "photos").all()
-            if all_local:
-                chosen = random.choice(all_local)
-                asset_map[slide_idx] = chosen.local_path
-                continue
+            # --- STRATEGY 3: RANDOM LOCAL FALLBACK ---
+            if db:
+                # Intentar buscar cualquier cosa de la marca si lo semántico falló
+                target_id = getattr(brand, "brand_id", brand.id) if brand else -1
+                all_local = db.query(models.BrandAsset).filter(
+                    models.BrandAsset.brand_id == target_id,
+                    models.BrandAsset.category == "photos"
+                ).all()
+                
+                if all_local:
+                    chosen = random.choice(all_local)
+                    asset_map[slide_idx] = chosen.local_path
+                    print(f"  [AssetEngine] Random local fallback for Slide {slide_idx}")
+                    continue
             
             # --- STRATEGY 4: LOGO FALLBACK ---
             if num_logos > 0:

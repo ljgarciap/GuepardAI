@@ -142,19 +142,38 @@ def _build_slide_elements(
     title_color = _get_contrast_color(background_color if not is_impact else "#000000", primary_color, "#FFFFFF")
     body_color = _get_contrast_color(background_color if not is_impact else "#000000", text_main_color, "#FFFFFF")
     
+    # --- ADAPTIVE VERTICAL SPACING (v15.1) ---
+    # Si el título es largo (> 40 caracteres), bajamos el cuerpo de texto
+    title_height = 12
+    body_top = 35
+    if len(title_text) > 40:
+        title_height = 18
+        body_top = 42
+    if len(title_text) > 75:
+        title_height = 24
+        body_top = 48
+
     elements.append({
         "type": "text", "role": "title", "content": title_text,
-        "geometry": {"left": 7, "top": 12, "width": 50 if not is_impact else 86, "height": 12},
+        "geometry": {"left": 7, "top": 12, "width": 50 if not is_impact else 86, "height": title_height},
         "style": {"font": primary_font, "size": 32, "color": title_color, "bold": True}
     })
     
     bullets = slide.get("bullets", [])
     if bullets:
         bullet_text = "\n".join([f"• {b}" for b in bullets])
+        
+        # --- DYNAMIC BODY SCALING (v15.3) ---
+        # Si hay mucho texto, bajamos la fuente agresivamente
+        body_size = 18
+        if len(bullet_text) > 300: body_size = 14
+        if len(bullet_text) > 500: body_size = 12
+        if len(bullet_text) > 800: body_size = 10
+
         elements.append({
             "type": "text", "role": "bullets", "content": bullet_text,
-            "geometry": {"left": 7, "top": 35, "width": 50 if not is_impact else 86, "height": 45},
-            "style": {"font": secondary_font, "size": 18, "color": body_color}
+            "geometry": {"left": 7, "top": body_top, "width": 50 if not is_impact else 86, "height": 80 - body_top},
+            "style": {"font": secondary_font, "size": body_size, "color": body_color}
         })
 
     # ── METRIC (STRATEGIC VALUE) ──
@@ -163,8 +182,8 @@ def _build_slide_elements(
         metric_color = _get_contrast_color(background_color if not is_impact else "#000000", primary_color, "#FFFFFF")
         elements.append({
             "type": "text", "role": "metric", "content": metric,
-            "geometry": {"left": 7, "top": 85, "width": 86, "height": 8},
-            "style": {"font": primary_font, "size": 16, "color": metric_color, "bold": True, "align": "left"}
+            "geometry": {"left": 7, "top": 88, "width": 86, "height": 7},
+            "style": {"font": primary_font, "size": 14, "color": metric_color, "bold": True, "align": "left"}
         })
 
     # Logo

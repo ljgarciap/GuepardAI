@@ -10,6 +10,7 @@
       <div class="control-group">
         <label>IDENTITY</label>
         <select [(ngModel)]="selectedBrandId" (ngModelChange)="onBrandChange()" class="enterprise-select">
+          <option [ngValue]="-1" class="admin-opt">★ SUPERUSER / ALL ACCESS</option>
           <option [ngValue]="null">Public / Generic</option>
           <option *ngFor="let brand of brands" [ngValue]="brand.id">
             {{ brand.name }}
@@ -40,9 +41,9 @@
       <div class="control-group">
         <label>DIALECT</label>
         <select [(ngModel)]="selectedRegion" class="enterprise-select">
-          <option value="LATAM">Spanish (LATAM)</option>
-          <option value="UK">English (UK)</option>
-          <option value="USA">English (USA)</option>
+          <option *ngFor="let d of availableDialects" [value]="d.code">
+            {{ d.name }}
+          </option>
         </select>
       </div>
     </div>
@@ -87,20 +88,39 @@
             </div>
           </div>
           <div class="console-footer">
-            <div class="progress-bar">
-              <div class="progress-fill" [style.width.%]="progress"></div>
+            <div class="progress-track">
+              <div class="progress-fill" [style.width.%]="progress">
+                <div class="progress-cheetah" [style.left.%]="100">
+                  <img src="/assets/img/cheetah.gif" class="cheetah-gif">
+                </div>
+              </div>
             </div>
             <span class="progress-text">{{ progress }}% COMPLETE</span>
+            <div class="status-indicator" *ngIf="isGenerating">
+              <div class="status-dot"></div>
+              <span>SYSTEM ACTIVE</span>
+            </div>
           </div>
         </div>
 
         <!-- Success Result -->
-        <div class="success-state" *ngIf="downloadUrl">
-          <div class="success-icon-wrap">✓</div>
-          <h4>Synthesis Perfected</h4>
-          <p>The presentation has been architected to your exact specifications.</p>
-          <a [href]="downloadUrl" download class="btn-primary-enterprise">DOWNLOAD PORTFOLIO</a>
-          <button (click)="reset()" class="btn-link">New Project</button>
+        <!-- SUCCESS STATE (ELITE) -->
+        <div class="success-card-elite slideUp" *ngIf="downloadUrl">
+          <div class="success-icon-wrap">
+            <span class="success-icon">✓</span>
+          </div>
+          <div class="success-content">
+            <h4>Synthesis Perfected</h4>
+            <p>The presentation has been architected to your exact specifications and is ready for executive review.</p>
+          </div>
+          <div class="success-actions">
+            <a [href]="downloadUrl" class="btn-primary-enterprise" download>
+              DOWNLOAD STRATEGIC PORTFOLIO
+            </a>
+            <button class="btn-action-outline" (click)="reset()">
+              NEW PROJECT
+            </button>
+          </div>
         </div>
 
         <!-- Error Result -->

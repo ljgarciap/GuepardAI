@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 import models
@@ -53,6 +54,7 @@ app.add_middleware(
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
 # ──────────────────────────────────────────────
@@ -215,14 +217,18 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
         db = SessionLocal()
         try:
             # En v11.0 usamos brand_id formal
+            # v12.0: Strategic DNA also follows visibility
+            is_public = (visibility_scope == "public")
+            
             record = db.query(models.BrandVisualDna).filter(
                 models.BrandVisualDna.brand_id == brand_id
             ).first()
             if not record:
-                record = models.BrandVisualDna(brand_id=brand_id, source_filename=source_filename)
+                record = models.BrandVisualDna(brand_id=brand_id, source_filename=source_filename, is_public=int(is_public))
                 db.add(record)
             else:
                 record.source_filename = source_filename
+                record.is_public = int(is_public)
 
             record.primary_color    = dna.get("primary_color", "#333333")
             record.secondary_color  = dna.get("secondary_color", "#666666")
@@ -291,9 +297,9 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
         set_job_status(job_key, "visual_dna", "error")
 
 
-def task_extract_artistic_essence(job_key: str, file_path: str, source_filename: str):
-    """Extrae Esencia Artística con Vision LLM y persiste en brand_artistic_essence."""
-    logger.info(f"[Task] Artistic Essence started: {source_filename}")
+def task_extract_artistic_essence(job_key: str, file_path: str, source_filename: str, brand_id: int = None, visibility_scope: str = "exclusive"):
+    """Extrae Esencia Artística (layouts/gestos) vía Vision LLM (v12.0)."""
+    logger.info(f"[Task] Artistic Essence started: {source_filename} (Brand: {brand_id}, Scope: {visibility_scope})")
     cb = lambda msg, p=0: update_job_step(job_key, "artistic", msg, p)
 
     try:
@@ -309,14 +315,23 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
 
         db = SessionLocal()
         try:
+            # v12.0: Ahora permitimos múltiples esencias por marca (unique=False)
+            # Buscamos si ya existe para este archivo EXACTO
             record = db.query(models.BrandArtisticEssence).filter(
-                models.BrandArtisticEssence.source_filename == source_filename
+                models.BrandArtisticEssence.source_filename == source_filename,
+                models.BrandArtisticEssence.brand_id == brand_id
             ).first()
+            
+            is_public = (visibility_scope == "public")
+            
             if not record:
-                record = models.BrandArtisticEssence(source_filename=source_filename)
+                record = models.BrandArtisticEssence(source_filename=source_filename, brand_id=brand_id, is_public=int(is_public))
                 db.add(record)
+            else:
+                record.is_public = int(is_public)
 
-            # Sincronización con ADN Estructural (v70.0)
+            # Sincronización
+            record.brand_id              = brand_id
             record.slide_archetypes      = brand_essence.get("slide_archetypes", {})
             record.structural_archetypes = brand_essence.get("structural_archetypes", {})
             record.design_gestures        = brand_essence.get("design_gestures", {})
@@ -337,9 +352,9 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
         set_job_status(job_key, "artistic", "error")
 
 
-def task_ingest_knowledge(job_key: str, file_path: str, source_filename: str, brand_id: int = None, visibility_scope: str = "exclusive"):
-    """Ingesta RAG con Soberanía de Marca y Visibilidad (v11.0)."""
-    logger.info(f"[Task] Knowledge Ingest started: {source_filename} (Brand: {brand_id}, Scope: {visibility_scope})")
+def task_ingest_knowledge(job_key: str, file_path: str, source_filename: str, brand_id: int = None, visibility_scope: str = "exclusive", document_type: str = "company_knowledge"):
+    """Ingesta RAG con Soberanía, Visibilidad y Taxonomía (v12.0)."""
+    logger.info(f"[Task] Knowledge Ingest started: {source_filename} (Brand: {brand_id}, Type: {document_type})")
     cb = lambda msg, p=0: update_job_step(job_key, "knowledge", msg, p)
 
     try:
@@ -360,13 +375,33 @@ def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str,
     cb = lambda msg, p=0: update_job_step(job_key, "pure_assets", msg, p)
 
     try:
+        ext = os.path.splitext(file_path)[1].lower()
+        db = SessionLocal()
+        is_public = (visibility_scope == "public")
+        from services.asset_library_service import register_asset
+        
+        # SI YA ES UNA IMAGEN: Registro directo
+        if ext in [".png", ".jpg", ".jpeg", ".webp", ".svg"]:
+            cb("Registering direct asset...", 50)
+            register_asset(
+                db, 
+                brand_id, 
+                file_path, 
+                category="photos", # Categoría base para carga directa
+                is_public=is_public,
+                source_doc=source_filename,
+                manual_tags=manual_tags
+            )
+            db.commit()
+            db.close()
+            cb(f"Treasury update complete. 1 asset harvested.", 100)
+            set_job_status(job_key, "pure_assets", "completed")
+            return
+
+        # SI ES PDF/PPTX: Extracción normal
         dna = extract_visual_dna(file_path, UPLOAD_DIR, cb=cb)
         
-        db = SessionLocal()
         try:
-            from services.asset_library_service import register_asset
-            is_public = (visibility_scope == "public")
-            
             raw_assets = dna.get("extracted_assets", {})
             count = 0
             for cat, items in raw_assets.items():
@@ -409,7 +444,7 @@ def task_extract_full_brand_style(job_key: str, file_path: str, source_filename:
         
         # Step 2: Artistic Essence
         cb("Analyzing Artistic Essence (Vision LLM)...", 50)
-        task_extract_artistic_essence(job_key, file_path, source_filename)
+        task_extract_artistic_essence(job_key, file_path, source_filename, brand_id=brand_id, visibility_scope=visibility_scope)
 
         update_job_step(job_key, "brand_style", "Full Brand Identity extraction complete.", 100)
         set_job_status(job_key, "brand_style", "completed")
@@ -430,6 +465,7 @@ async def upload_asset(
     visibility_scope: str = Form("exclusive"), 
     brand_id: Optional[int] = Form(None),       # v11.0: Mandatory for exclusive
     manual_tags: Optional[str] = Form(None),    # v11.0: "logo, office, primary"
+    document_type: str = Form("company_knowledge"), # v12.0: brand_identity, case_study, etc
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
@@ -487,7 +523,7 @@ async def upload_asset(
         background_tasks.add_task(task_extract_pure_assets, job_key, file_path, source_filename, visibility_scope, brand_id, tag_list)
     else:
         # v11.0: Knowledge Bank now follows Brand Governance & Visibility
-        background_tasks.add_task(task_ingest_knowledge, job_key, file_path, source_filename, brand_id, visibility_scope)
+        background_tasks.add_task(task_ingest_knowledge, job_key, file_path, source_filename, brand_id, visibility_scope, document_type=document_type)
 
     return {
         "status": "accepted",
@@ -530,11 +566,20 @@ def get_available_styles(brand_id: Optional[int] = None, db: Session = Depends(g
     """
     Lista los estilos disponibles para el dropdown con filtrado por marca.
     """
+    # Lógica de Soberanía v12.0
     query = db.query(models.BrandVisualDna.source_filename)
-    if brand_id:
+    
+    if brand_id == -1:
+        # SUPERUSER: All Access
+        pass
+    elif brand_id is None:
+        # GENERIC: Only Public
+        query = query.filter(models.BrandVisualDna.is_public == 1)
+    else:
+        # BRAND SPECIFIC: Own + Public
         query = query.filter(
             (models.BrandVisualDna.brand_id == brand_id) | 
-            (models.BrandVisualDna.brand_id == None)
+            (models.BrandVisualDna.is_public == 1)
         )
     
     dna_files = {row[0] for row in query.all()}
@@ -554,13 +599,38 @@ def get_available_styles(brand_id: Optional[int] = None, db: Session = Depends(g
     return {"styles": styles}
 
 
+@app.get("/api/available-dialects", tags=["Metadata"])
+def get_available_dialects(db: Session = Depends(get_db)):
+    """Lista los dialectos disponibles ordenados por prioridad estratégica (v12.0)."""
+    # Auto-seed if empty
+    count = db.query(models.Language).count()
+    if count == 0:
+        seeds = [
+            models.Language(code="UK", name="English (UK)", priority=1),
+            models.Language(code="USA", name="English (USA)", priority=2),
+            models.Language(code="LATAM", name="Spanish (LATAM)", priority=3),
+            models.Language(code="ES", name="Spanish (Spain)", priority=4),
+        ]
+        db.add_all(seeds)
+        db.commit()
+    
+    langs = db.query(models.Language).filter(models.Language.is_active == True).order_by(models.Language.priority).all()
+    return [{"code": l.code, "name": l.name} for l in langs]
+    
 @app.get("/api/available-knowledge", tags=["Metadata"])
 def get_available_knowledge(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
     """Lista las fuentes RAG disponibles con filtrado soberano."""
     try:
         sql = "SELECT DISTINCT source_filename FROM corporate_knowledge"
         params = {}
-        if brand_id:
+        if brand_id == -1:
+            # SUPERUSER: No filter
+            pass
+        elif brand_id is None:
+            # GENERIC: Only public
+            sql += " WHERE is_public = 1"
+        else:
+            # BRAND SPECIFIC: Own + Public
             sql += " WHERE (brand_id = :brand_id OR is_public = 1)"
             params["brand_id"] = brand_id
         
@@ -576,54 +646,34 @@ def get_available_knowledge(brand_id: Optional[int] = None, db: Session = Depend
 # ENDPOINT — GENERACIÓN
 # ──────────────────────────────────────────────
 
-@app.post("/api/presentations/generate", tags=["Generation"])
-async def generate_presentation(
-    req: PresentationRequest,
-    db: Session = Depends(get_db)
-):
+def task_generate_presentation(job_id: int, req: PresentationRequest, pptx_path: str):
     """
-    Pipeline completo de generación:
-    1. Fetch BrandVisualDna + BrandArtisticEssence por style_filename
-    2. RAG retrieval desde knowledge_filename
-    3. Síntesis de contenido con LLM
-    4. Layout + render PPTX
+    Background worker for strategic generation (v12.0).
     """
-    logger.info(f"[Generate] style={req.style_filename} | knowledge={req.knowledge_filename}")
-
-    # 1. Fetch DNA Visual
-    dna = db.query(models.BrandVisualDna).filter(
-        models.BrandVisualDna.source_filename == req.style_filename
-    ).first()
-    if not dna:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Visual DNA not found for '{req.style_filename}'. "
-                   "Upload the file with ingestion_type='visual_dna' or 'brand_style' first."
-        )
-
-    # 2. Fetch Esencia Artística (opcional — degrada con gracia si no existe)
-    # 2. Fetch Esencia Artística (opcional)
-    brand_essence = db.query(models.BrandArtisticEssence).filter(
-        models.BrandArtisticEssence.source_filename == req.style_filename
-    ).first()
-    
-    # 3. Preparar registro de auditoría
-    gen_job = models.GenerationJob(
-        client_name=req.style_filename,
-        brand_id=dna.id,
-        prompt=req.prompt,
-        status="processing"
-    )
-    db.add(gen_job)
-    db.commit()
-
-    # 4. Preparar paths de salida
-    timestamp = int(time.time())
-    pptx_path = os.path.join(UPLOAD_DIR, f"presentation_{timestamp}.pptx")
-
+    db = SessionLocal()
     try:
-        # 5. Síntesis de contenido (v11.0: Brand Sovereign RAG)
-        # Priorizamos el brand_id del request (mando directo del usuario en el Studio)
+        def update_step(msg: str, p: int):
+            job = db.query(models.GenerationJob).get(job_id)
+            if job:
+                job.current_step = msg
+                job.progress = p
+                db.commit()
+            logger.info(f"[Job {job_id}] {msg} ({p}%)")
+
+        update_step("Orchestrating Narrative Architecture...", 10)
+        
+        # 1. Fetch DNA
+        dna = db.query(models.BrandVisualDna).filter(
+            models.BrandVisualDna.source_filename == req.style_filename
+        ).first()
+        
+        # 2. Fetch Essence
+        brand_essence = db.query(models.BrandArtisticEssence).filter(
+            models.BrandArtisticEssence.source_filename == req.style_filename
+        ).first()
+
+        # 3. Content Synthesis (RAG)
+        update_step("Synthesizing Strategic Content (RAG Analysis)...", 30)
         target_brand_id = req.brand_id if req.brand_id is not None else dna.brand_id
         
         content_manifest, full_prompt = synthesize_strategic_content(
@@ -632,29 +682,26 @@ async def generate_presentation(
             region=req.region
         )
         
-        # Guardar auditoría
-        gen_job.full_llm_prompt = full_prompt
-        gen_job.llm_response_json = content_manifest
+        # Audit update
+        job = db.query(models.GenerationJob).get(job_id)
+        job.full_llm_prompt = full_prompt
+        job.llm_response_json = content_manifest
         db.commit()
 
-        # Re-numerar slides
-        for i, s in enumerate(content_manifest.get("slides", [])):
-            s["slide_number"] = i + 1
-
-        # 5. Asset enrichment & Curaduría
+        update_step("Structuring Visual Coherence...", 50)
         from services.layout_engine import orchestrate_visual_coherence
         content_manifest = orchestrate_visual_coherence(content_manifest, dna, brand_essence)
         
+        update_step("Curating Brand Assets...", 65)
         asset_map = orchestrate_assets(content_manifest, brand=dna, db=db)
 
-        # 6. Layout policy (Mathematical Coordinates)
+        update_step("Applying Design Archetypes...", 80)
         design_manifest = apply_design_policy(content_manifest, dna, brand_essence)
 
-        # 7. DESIGN REFINEMENT (The Art Director pass)
-        # This step crosses content and DNA intelligently to adjust the layout before rendering.
+        # Art Director Pass
+        update_step("Art Director: Refining Visual Fidelity...", 90)
         try:
             from services.design_refiner import refine_manifest
-            # Convertimos objetos SQLAlchemy a dicts limpios para el LLM
             dna_dict = {
                 "primary_color": dna.primary_color,
                 "secondary_color": dna.secondary_color,
@@ -669,28 +716,119 @@ async def generate_presentation(
             }
             design_manifest = refine_manifest(design_manifest, dna_dict, essence_dict)
         except Exception as ref_err:
-            logger.error(f"Art Director pass failed: {ref_err}. Proceeding with raw math.")
+            logger.error(f"Art Director pass failed: {ref_err}")
 
-        # 8. Render
+        update_step("Rendering High-Fidelity PPTX...", 95)
         render_pptx_manifest(design_manifest, asset_map, pptx_path)
 
-        # 8. Finalizar job
-        gen_job.status = "completed"
-        gen_job.pptx_path = pptx_path
+        # Finalize
+        job = db.query(models.GenerationJob).get(job_id)
+        job.status = "completed"
+        job.pptx_path = pptx_path
+        job.current_step = "Presentation Ready for Download"
+        job.progress = 100
         db.commit()
-
-        logger.info(f"[Generate] PPTX ready: {pptx_path}")
-
-        return FileResponse(
-            pptx_path,
-            filename=f"PowerAI_{req.style_filename}_{timestamp}.pptx",
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        )
-
+        
     except Exception as e:
-        logger.error(f"[Generate] Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"[Task Error] {e}")
+        job = db.query(models.GenerationJob).get(job_id)
+        if job:
+            job.status = "error"
+            job.current_step = f"Critical Error: {str(e)}"
+            db.commit()
+    finally:
+        db.close()
 
+@app.post("/api/presentations/generate", tags=["Generation"])
+async def generate_presentation(
+    req: PresentationRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Trigger a new generation job with real-time tracking.
+    """
+    dna = db.query(models.BrandVisualDna).filter(
+        models.BrandVisualDna.source_filename == req.style_filename
+    ).first()
+    
+    if not dna:
+        raise HTTPException(status_code=404, detail="Visual DNA not found.")
+
+    gen_job = models.GenerationJob(
+        client_name=req.style_filename,
+        brand_id=dna.brand_id,
+        prompt=req.prompt,
+        status="processing",
+        current_step="Initializing neural synthesis...",
+        progress=5
+    )
+    db.add(gen_job)
+    db.commit()
+    db.refresh(gen_job)
+
+    timestamp = int(time.time())
+    pptx_path = os.path.join(UPLOAD_DIR, f"presentation_{gen_job.id}_{timestamp}.pptx")
+    
+    background_tasks.add_task(task_generate_presentation, gen_job.id, req, pptx_path)
+
+    return {
+        "status": "accepted",
+        "job_id": gen_job.id,
+        "message": "Strategic generation initiated."
+    }
+
+@app.get("/api/generation/status/{job_id}", tags=["Generation"])
+def get_generation_status(job_id: int, db: Session = Depends(get_db)):
+    """
+    Check the status of a generation job (v12.0).
+    """
+    job = db.query(models.GenerationJob).get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    
+    return {
+        "id": job.id,
+        "status": job.status,
+        "progress": job.progress,
+        "current_step": job.current_step,
+        "download_url": f"/api/generation/download/{job.id}" if job.status == "completed" else None
+    }
+
+@app.get("/api/generation/download/{job_id}", tags=["Generation"])
+def download_presentation(job_id: int, db: Session = Depends(get_db)):
+    """
+    Download the finalized PPTX.
+    """
+    job = db.query(models.GenerationJob).get(job_id)
+    if not job or job.status != "completed" or not job.pptx_path:
+        raise HTTPException(status_code=404, detail="File not ready or job not found.")
+    
+    return FileResponse(
+        job.pptx_path,
+        filename=os.path.basename(job.pptx_path),
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
+
+@app.get("/api/library/portfolios", tags=["Library"])
+def get_library_portfolios(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """
+    Lista las generaciones exitosas (v12.0: Portfolio History).
+    """
+    query = db.query(models.GenerationJob).filter(models.GenerationJob.status == "completed")
+    if brand_id:
+        # Nota: En v12.0 esto requiere que el job tenga brand_id guardado.
+        # Por ahora listamos todos para la marca o generales si es nulo.
+        pass 
+        
+    jobs = query.order_by(models.GenerationJob.id.desc()).all()
+    return [{
+        "id": j.id,
+        "pptx_path": j.pptx_path,
+        "filename": os.path.basename(j.pptx_path) if j.pptx_path else f"Generation_{j.id}.pptx",
+        "created_at": j.created_at.isoformat() if j.created_at else None,
+        "step": j.current_step
+    } for j in jobs]
 
 def _build_brand_context(dna: models.BrandVisualDna,
                           brand_essence: Optional[models.BrandArtisticEssence]) -> dict:

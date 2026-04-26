@@ -37,18 +37,15 @@
         </div>
 
         <div class="custom-drop-zone" *ngIf="!identityState.loading && !identityState.successMessage" (click)="blueprintInput.click()">
-          <span class="upload-icon">↑</span>
+          <span class="upload-icon" *ngIf="!identityState.file">↑</span>
+          <span class="upload-icon-active" *ngIf="identityState.file">📄</span>
+          
           <div class="upload-texts">
-            <span class="primary-text">Drag & drop identity manual</span>
-            <span class="secondary-text">PDF or PPTX supported</span>
+            <span class="primary-text" *ngIf="!identityState.file">Drag & drop identity manual</span>
+            <span class="primary-text-active" *ngIf="identityState.file">{{ identityState.file.name }}</span>
+            <span class="secondary-text">{{ identityState.file ? 'Document selected and ready' : 'PDF or PPTX supported' }}</span>
           </div>
           <input #blueprintInput type="file" (change)="onFileSelected($event, 'brand_style')" style="display: none">
-        </div>
-
-        <!-- Manual Tags -->
-        <div class="governance-zone" *ngIf="!identityState.loading && !identityState.successMessage">
-          <label class="visibility-label">MANUAL IDENTIFIERS (Comma separated)</label>
-          <input type="text" class="elite-input" [(ngModel)]="identityState.manualTags" placeholder="e.g. logo, primary, 2024">
         </div>
 
         <!-- Visibility Selector -->
@@ -79,9 +76,17 @@
           </div>
           <div class="console-footer">
             <div class="progress-bar-elite">
-              <div class="progress-fill-elite" [style.width.%]="identityState.progress"></div>
+              <div class="progress-fill-elite" [style.width.%]="identityState.progress">
+                <div class="progress-cheetah" [style.left.%]="100">
+                  <img src="/assets/img/cheetah.gif" class="cheetah-gif">
+                </div>
+              </div>
             </div>
             <span class="progress-text">{{ identityState.progress }}%</span>
+            <div class="status-indicator" *ngIf="identityState.loading">
+              <div class="status-dot"></div>
+              <span>SYSTEM ACTIVE</span>
+            </div>
           </div>
         </div>
 
@@ -89,9 +94,15 @@
           {{ identityState.errorMessage }}
         </div>
 
-        <div class="success-status-lite" *ngIf="identityState.successMessage">
-          <span class="success-icon">✓</span> Blueprint Finalized in Directory
-          <button class="btn-text" (click)="reset('brand_style')">Load Another</button>
+        <div class="success-card-elite" *ngIf="identityState.successMessage">
+          <div class="success-icon-wrap">
+            <span class="success-icon">✓</span>
+          </div>
+          <div class="success-content">
+            <h4>Blueprint Finalized</h4>
+            <p>Visual DNA and Artistic Essence archived in Directory.</p>
+          </div>
+          <button class="btn-action-outline" (click)="reset('brand_style')">LOAD ANOTHER</button>
         </div>
 
         <button class="btn-primary-enterprise w-full" *ngIf="!identityState.loading && !identityState.successMessage" (click)="upload('brand_style')" [disabled]="!identityState.file">
@@ -118,10 +129,13 @@
         </div>
 
         <div class="custom-drop-zone" *ngIf="!knowledgeState.loading && !knowledgeState.successMessage" (click)="knowledgeInput.click()">
-          <span class="upload-icon">⊕</span>
+          <span class="upload-icon" *ngIf="!knowledgeState.file">⊕</span>
+          <span class="upload-icon-active" *ngIf="knowledgeState.file">📖</span>
+          
           <div class="upload-texts">
-            <span class="primary-text">Incorporate strategic reports</span>
-            <span class="secondary-text">PDF or PPTX supported</span>
+            <span class="primary-text" *ngIf="!knowledgeState.file">Incorporate strategic reports</span>
+            <span class="primary-text-active" *ngIf="knowledgeState.file">{{ knowledgeState.file.name }}</span>
+            <span class="secondary-text">{{ knowledgeState.file ? 'Strategic asset selected' : 'PDF or PPTX supported' }}</span>
           </div>
           <input #knowledgeInput type="file" (change)="onFileSelected($event, 'knowledge')" style="display: none">
         </div>
@@ -153,9 +167,17 @@
           </div>
           <div class="console-footer">
             <div class="progress-bar-elite">
-              <div class="progress-fill-elite" [style.width.%]="knowledgeState.progress"></div>
+              <div class="progress-fill-elite" [style.width.%]="knowledgeState.progress">
+                <div class="progress-cheetah" [style.left.%]="100">
+                  <img src="/assets/img/cheetah.gif" class="cheetah-gif">
+                </div>
+              </div>
             </div>
             <span class="progress-text">{{ knowledgeState.progress }}%</span>
+            <div class="status-indicator" *ngIf="knowledgeState.loading">
+              <div class="status-dot"></div>
+              <span>SYSTEM ACTIVE</span>
+            </div>
           </div>
         </div>
 
@@ -163,9 +185,15 @@
           {{ knowledgeState.errorMessage }}
         </div>
 
-        <div class="success-status-lite" *ngIf="knowledgeState.successMessage">
-          <span class="success-icon">✓</span> Knowledge Bank Synchronized
-          <button class="btn-text" (click)="reset('knowledge')">Load Another</button>
+        <div class="success-card-elite" *ngIf="knowledgeState.successMessage">
+          <div class="success-icon-wrap">
+            <span class="success-icon">✓</span>
+          </div>
+          <div class="success-content">
+            <h4>Intelligence Synchronized</h4>
+            <p>Knowledge Bank updated with strategic context.</p>
+          </div>
+          <button class="btn-action-outline" (click)="reset('knowledge')">LOAD ANOTHER</button>
         </div>
 
         <button class="btn-primary-enterprise w-full" *ngIf="!knowledgeState.loading && !knowledgeState.successMessage" (click)="upload('knowledge')" [disabled]="!knowledgeState.file">
@@ -192,10 +220,13 @@
         </div>
 
         <div class="custom-drop-zone" *ngIf="!assetState.loading && !assetState.successMessage" (click)="assetInput.click()">
-          <span class="upload-icon">📷</span>
+          <span class="upload-icon" *ngIf="!assetState.file">📷</span>
+          <span class="upload-icon-active" *ngIf="assetState.file">🖼️</span>
+          
           <div class="upload-texts">
-            <span class="primary-text">Feed the image bank</span>
-            <span class="secondary-text">Catalogs or individual assets</span>
+            <span class="primary-text" *ngIf="!assetState.file">Feed the image bank</span>
+            <span class="primary-text-active" *ngIf="assetState.file">{{ assetState.file.name }}</span>
+            <span class="secondary-text">{{ assetState.file ? 'Image catalog ready' : 'Catalogs or individual assets' }}</span>
           </div>
           <input #assetInput type="file" (change)="onFileSelected($event, 'pure_assets')" style="display: none">
         </div>
@@ -233,9 +264,17 @@
           </div>
           <div class="console-footer">
             <div class="progress-bar-elite">
-              <div class="progress-fill-elite" [style.width.%]="assetState.progress"></div>
+              <div class="progress-fill-elite" [style.width.%]="assetState.progress">
+                <div class="progress-cheetah" [style.left.%]="100">
+                  <img src="/assets/img/cheetah.gif" class="cheetah-gif">
+                </div>
+              </div>
             </div>
             <span class="progress-text">{{ assetState.progress }}%</span>
+            <div class="status-indicator" *ngIf="assetState.loading">
+              <div class="status-dot"></div>
+              <span>SYSTEM ACTIVE</span>
+            </div>
           </div>
         </div>
 
@@ -243,9 +282,15 @@
           {{ assetState.errorMessage }}
         </div>
 
-        <div class="success-status-lite" *ngIf="assetState.successMessage">
-          <span class="success-icon">✓</span> Assets Archived in Directory
-          <button class="btn-text" (click)="reset('pure_assets')">Load Another</button>
+        <div class="success-card-elite" *ngIf="assetState.successMessage">
+          <div class="success-icon-wrap">
+            <span class="success-icon">✓</span>
+          </div>
+          <div class="success-content">
+            <h4>Assets Archived</h4>
+            <p>Treasury updated with new visual assets.</p>
+          </div>
+          <button class="btn-action-outline" (click)="reset('pure_assets')">LOAD ANOTHER</button>
         </div>
 
         <button class="btn-primary-enterprise w-full" *ngIf="!assetState.loading && !assetState.successMessage" (click)="upload('pure_assets')" [disabled]="!assetState.file">

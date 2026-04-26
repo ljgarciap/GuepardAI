@@ -6,10 +6,11 @@
 .library-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 30px;
+  align-items: flex-start; /* Alineación superior para dar aire */
+  padding: 40px;
   margin-bottom: 30px;
   border-radius: 24px;
+  gap: 40px;
 }
 
 .header-titles .page-title {
@@ -25,12 +26,16 @@
   font-weight: 600;
   font-size: 0.85rem;
   letter-spacing: 2px;
+  margin-top: 5px;
+  display: block;
 }
 
 .header-controls {
   display: flex;
-  align-items: center;
-  gap: 30px;
+  flex-direction: column;
+  align-items: flex-end; /* Controles a la derecha */
+  gap: 20px;
+  flex-shrink: 0;
 }
 
 .control-group label {
@@ -199,6 +204,29 @@
 
 .badge.exclusive {
   background: #6366f1;
+}
+
+.item-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-mini {
+  background: #1e293b;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.btn-mini:hover {
+  background: #6366f1;
+  transform: translateY(-2px);
 }
 
 .empty-state {

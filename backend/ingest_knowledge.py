@@ -42,18 +42,19 @@ def chunk_text(text, chunk_size=1500, overlap=250):
         start += chunk_size - overlap
     return chunks
 
-def ingest_document(file_path, client_name="Internal", update_callback=None, brand_id=None, is_public=False):
+def ingest_document(file_path, client_name="Internal", update_callback=None, brand_id=None, is_public=False, document_type="company_knowledge"):
     """
-    STABLE INGESTION WITH BRAND SOVEREIGNTY & VISIBILITY (v11.0).
+    STABLE INGESTION WITH BRAND SOVEREIGNTY, VISIBILITY & TAXONOMY (v12.0).
     """
     ext = os.path.splitext(file_path)[1].lower()
     if ext not in [".pdf", ".pptx"]:
          raise ValueError(f"Format {ext} not supported.")
-         
-    print(f"[Worker] Starting ingestion for {client_name} (Brand ID: {brand_id}). Path: {file_path}", flush=True)
+    
+    source_filename = os.path.basename(file_path)
+    print(f"[Worker] Starting ingestion for {client_name} (Brand ID: {brand_id}). Type: {document_type}", flush=True)
          
     if update_callback:
-        update_callback(f"Reading document: {os.path.basename(file_path)}", 5)
+        update_callback(f"Reading document: {source_filename}", 5)
     
     if ext == ".pdf":
         if not fitz: raise ValueError("PyMuPDF missing.")
@@ -103,20 +104,23 @@ def ingest_document(file_path, client_name="Internal", update_callback=None, bra
                         
                         conn.execute(
                             text("""
-                            INSERT INTO corporate_knowledge (content, metadata, embedding, brand_id, is_public)
-                            VALUES (:content, :metadata, cast(:embedding as vector), :brand_id, :is_public)
+                            INSERT INTO corporate_knowledge (content, meta_data, embedding, brand_id, is_public, source_filename, document_type)
+                            VALUES (:content, :meta_data, cast(:embedding as vector), :brand_id, :is_public, :source_filename, :document_type)
                             """),
                             {
                                 "content": text_fragment,
-                                "metadata": json.dumps({
-                                    "source": os.path.basename(file_path), 
+                                "meta_data": json.dumps({
+                                    "source": source_filename, 
                                     "client": client_name,
                                     "brand_id": brand_id,
-                                    "is_public": is_public
+                                    "is_public": is_public,
+                                    "document_type": document_type
                                 }),
                                 "embedding": emb_pg,
                                 "brand_id": brand_id,
-                                "is_public": 1 if is_public else 0
+                                "is_public": 1 if is_public else 0,
+                                "source_filename": source_filename,
+                                "document_type": document_type
                             }
                         )
                         inserted_total += 1

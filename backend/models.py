@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Float, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from pgvector.sqlalchemy import Vector
@@ -56,6 +56,7 @@ class BrandVisualDna(Base):
 
     created_at       = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at       = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    is_public        = Column(Integer, default=0) # 0=Exclusive, 1=Public
 
 
 class BrandAsset(Base):
@@ -141,6 +142,7 @@ class BrandArtisticEssence(Base):
 
     created_at         = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at         = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    is_public          = Column(Integer, default=0) # 0=Exclusive, 1=Public
 
 
 # ============================================================
@@ -208,8 +210,19 @@ class BrandStyle(Base):
     raw_style_json   = Column(JSON, nullable=True)
     extracted_assets = Column(JSON, nullable=True)
     visual_strategy  = Column(JSON, nullable=True)
-
+    
     updated_at       = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+class Language(Base):
+    __tablename__ = "languages"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    code         = Column(String(10), unique=True, index=True) # e.g., 'UK', 'USA', 'LATAM'
+    name         = Column(String(50), nullable=False)          # e.g., 'English (UK)'
+    priority     = Column(Integer, default=100)                # For custom ordering
+    is_active    = Column(Boolean, default=True)
+
+    created_at   = Column(DateTime, default=datetime.datetime.utcnow)
 
 
 class CorporateKnowledge(Base):

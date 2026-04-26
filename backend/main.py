@@ -217,14 +217,18 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
         db = SessionLocal()
         try:
             # En v11.0 usamos brand_id formal
+            # v12.0: Strategic DNA also follows visibility
+            is_public = (visibility_scope == "public")
+            
             record = db.query(models.BrandVisualDna).filter(
                 models.BrandVisualDna.brand_id == brand_id
             ).first()
             if not record:
-                record = models.BrandVisualDna(brand_id=brand_id, source_filename=source_filename)
+                record = models.BrandVisualDna(brand_id=brand_id, source_filename=source_filename, is_public=int(is_public))
                 db.add(record)
             else:
                 record.source_filename = source_filename
+                record.is_public = int(is_public)
 
             record.primary_color    = dna.get("primary_color", "#333333")
             record.secondary_color  = dna.get("secondary_color", "#666666")
@@ -293,9 +297,9 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
         set_job_status(job_key, "visual_dna", "error")
 
 
-def task_extract_artistic_essence(job_key: str, file_path: str, source_filename: str, brand_id: int = None):
+def task_extract_artistic_essence(job_key: str, file_path: str, source_filename: str, brand_id: int = None, visibility_scope: str = "exclusive"):
     """Extrae Esencia Artística (layouts/gestos) vía Vision LLM (v12.0)."""
-    logger.info(f"[Task] Artistic Essence started: {source_filename} (Brand: {brand_id})")
+    logger.info(f"[Task] Artistic Essence started: {source_filename} (Brand: {brand_id}, Scope: {visibility_scope})")
     cb = lambda msg, p=0: update_job_step(job_key, "artistic", msg, p)
 
     try:
@@ -318,9 +322,13 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
                 models.BrandArtisticEssence.brand_id == brand_id
             ).first()
             
+            is_public = (visibility_scope == "public")
+            
             if not record:
-                record = models.BrandArtisticEssence(source_filename=source_filename, brand_id=brand_id)
+                record = models.BrandArtisticEssence(source_filename=source_filename, brand_id=brand_id, is_public=int(is_public))
                 db.add(record)
+            else:
+                record.is_public = int(is_public)
 
             # Sincronización
             record.brand_id              = brand_id
@@ -436,7 +444,7 @@ def task_extract_full_brand_style(job_key: str, file_path: str, source_filename:
         
         # Step 2: Artistic Essence
         cb("Analyzing Artistic Essence (Vision LLM)...", 50)
-        task_extract_artistic_essence(job_key, file_path, source_filename, brand_id=brand_id)
+        task_extract_artistic_essence(job_key, file_path, source_filename, brand_id=brand_id, visibility_scope=visibility_scope)
 
         update_job_step(job_key, "brand_style", "Full Brand Identity extraction complete.", 100)
         set_job_status(job_key, "brand_style", "completed")
@@ -558,11 +566,20 @@ def get_available_styles(brand_id: Optional[int] = None, db: Session = Depends(g
     """
     Lista los estilos disponibles para el dropdown con filtrado por marca.
     """
+    # Lógica de Soberanía v12.0
     query = db.query(models.BrandVisualDna.source_filename)
-    if brand_id:
+    
+    if brand_id == -1:
+        # SUPERUSER: All Access
+        pass
+    elif brand_id is None:
+        # GENERIC: Only Public
+        query = query.filter(models.BrandVisualDna.is_public == 1)
+    else:
+        # BRAND SPECIFIC: Own + Public
         query = query.filter(
             (models.BrandVisualDna.brand_id == brand_id) | 
-            (models.BrandVisualDna.brand_id == None)
+            (models.BrandVisualDna.is_public == 1)
         )
     
     dna_files = {row[0] for row in query.all()}
@@ -582,13 +599,38 @@ def get_available_styles(brand_id: Optional[int] = None, db: Session = Depends(g
     return {"styles": styles}
 
 
+@app.get("/api/available-dialects", tags=["Metadata"])
+def get_available_dialects(db: Session = Depends(get_db)):
+    """Lista los dialectos disponibles ordenados por prioridad estratégica (v12.0)."""
+    # Auto-seed if empty
+    count = db.query(models.Language).count()
+    if count == 0:
+        seeds = [
+            models.Language(code="UK", name="English (UK)", priority=1),
+            models.Language(code="USA", name="English (USA)", priority=2),
+            models.Language(code="LATAM", name="Spanish (LATAM)", priority=3),
+            models.Language(code="ES", name="Spanish (Spain)", priority=4),
+        ]
+        db.add_all(seeds)
+        db.commit()
+    
+    langs = db.query(models.Language).filter(models.Language.is_active == True).order_by(models.Language.priority).all()
+    return [{"code": l.code, "name": l.name} for l in langs]
+    
 @app.get("/api/available-knowledge", tags=["Metadata"])
 def get_available_knowledge(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
     """Lista las fuentes RAG disponibles con filtrado soberano."""
     try:
         sql = "SELECT DISTINCT source_filename FROM corporate_knowledge"
         params = {}
-        if brand_id:
+        if brand_id == -1:
+            # SUPERUSER: No filter
+            pass
+        elif brand_id is None:
+            # GENERIC: Only public
+            sql += " WHERE is_public = 1"
+        else:
+            # BRAND SPECIFIC: Own + Public
             sql += " WHERE (brand_id = :brand_id OR is_public = 1)"
             params["brand_id"] = brand_id
         
@@ -767,6 +809,26 @@ def download_presentation(job_id: int, db: Session = Depends(get_db)):
         filename=os.path.basename(job.pptx_path),
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
+
+@app.get("/api/library/portfolios", tags=["Library"])
+def get_library_portfolios(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """
+    Lista las generaciones exitosas (v12.0: Portfolio History).
+    """
+    query = db.query(models.GenerationJob).filter(models.GenerationJob.status == "completed")
+    if brand_id:
+        # Nota: En v12.0 esto requiere que el job tenga brand_id guardado.
+        # Por ahora listamos todos para la marca o generales si es nulo.
+        pass 
+        
+    jobs = query.order_by(models.GenerationJob.id.desc()).all()
+    return [{
+        "id": j.id,
+        "pptx_path": j.pptx_path,
+        "filename": os.path.basename(j.pptx_path) if j.pptx_path else f"Generation_{j.id}.pptx",
+        "created_at": j.created_at.isoformat() if j.created_at else None,
+        "step": j.current_step
+    } for j in jobs]
 
 def _build_brand_context(dna: models.BrandVisualDna,
                           brand_essence: Optional[models.BrandArtisticEssence]) -> dict:

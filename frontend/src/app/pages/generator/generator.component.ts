@@ -21,12 +21,13 @@ export class GeneratorComponent implements OnInit {
   selectedStyle: string = '';
   selectedKnowledge: string = '';
   prompt: string = '';
-  selectedRegion: string = 'LATAM';
+  selectedRegion: string = '';
   
   // --- OPTIONS ---
   brands: any[] = [];
   availableStyles: any[] = [];
   availableKnowledge: string[] = [];
+  availableDialects: any[] = [];
 
   // --- STATE ---
   isGenerating: boolean = false;
@@ -41,6 +42,26 @@ export class GeneratorComponent implements OnInit {
   ngOnInit() {
     this.loadBrands();
     this.loadMetadata();
+    this.loadDialects();
+  }
+
+  loadDialects() {
+    this.brandService.getAvailableDialects().subscribe({
+      next: (res) => {
+        console.log("[SynthesisStudio] Dialects loaded:", res);
+        this.availableDialects = res || [];
+        
+        // Force UK if it exists in the response
+        const uk = this.availableDialects.find(d => d.code === 'UK');
+        if (uk) {
+          this.selectedRegion = uk.code;
+          console.log("[SynthesisStudio] Setting default to English (UK)");
+        } else if (this.availableDialects.length > 0) {
+          this.selectedRegion = this.availableDialects[0].code;
+        }
+      },
+      error: (err) => console.error("[SynthesisStudio] Error loading dialects:", err)
+    });
   }
 
   loadBrands() {
@@ -61,7 +82,9 @@ export class GeneratorComponent implements OnInit {
   }
 
   loadMetadata() {
-    this.brandService.getAvailableStyles(this.selectedBrandId || undefined).subscribe({
+    const brandId = (this.selectedBrandId === null) ? undefined : this.selectedBrandId;
+    
+    this.brandService.getAvailableStyles(brandId).subscribe({
       next: (res) => {
         this.availableStyles = res.styles || [];
         if (this.availableStyles.length === 1) {
@@ -70,7 +93,7 @@ export class GeneratorComponent implements OnInit {
       }
     });
 
-    this.brandService.getAvailableKnowledge(this.selectedBrandId || undefined).subscribe({
+    this.brandService.getAvailableKnowledge(brandId).subscribe({
       next: (res) => {
         this.availableKnowledge = res.sources || [];
         if (this.availableKnowledge.length === 1) {
@@ -130,7 +153,7 @@ export class GeneratorComponent implements OnInit {
           
           if (res.status === 'completed') {
             this.addLog('Strategic Orchestrator', 'Portfolio synthesis finalized and verified.');
-            this.downloadUrl = res.download_url;
+            this.downloadUrl = 'http://localhost:8000' + res.download_url;
             this.isGenerating = false;
           } else if (res.status === 'error') {
             this.errorMessage = res.current_step;

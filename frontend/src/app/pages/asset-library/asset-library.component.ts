@@ -15,11 +15,12 @@ export class AssetLibraryComponent implements OnInit {
 
   brands: any[] = [];
   selectedBrandId: number | null = null;
-  activeTab: 'images' | 'blueprints' | 'knowledge' = 'images';
+  activeTab: 'images' | 'blueprints' | 'knowledge' | 'portfolios' = 'images';
 
   images: any[] = [];
   blueprints: any[] = [];
   knowledge: any[] = [];
+  portfolios: any[] = [];
 
   ngOnInit() {
     this.loadBrands();
@@ -33,7 +34,7 @@ export class AssetLibraryComponent implements OnInit {
     });
   }
 
-  setTab(tab: 'images' | 'blueprints' | 'knowledge') {
+  setTab(tab: 'images' | 'blueprints' | 'knowledge' | 'portfolios') {
     this.activeTab = tab;
     this.refreshLibrary();
   }
@@ -51,6 +52,8 @@ export class AssetLibraryComponent implements OnInit {
       this.brandService.getLibraryBlueprints(bId).subscribe(res => this.blueprints = res);
     } else if (this.activeTab === 'knowledge') {
       this.brandService.getLibraryKnowledge(bId).subscribe(res => this.knowledge = res);
+    } else if (this.activeTab === 'portfolios') {
+      this.brandService.getLibraryPortfolios(bId).subscribe(res => this.portfolios = res);
     }
   }
 }

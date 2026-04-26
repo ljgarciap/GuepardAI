@@ -66,6 +66,10 @@ export class BrandService {
     return this.http.get(url);
   }
 
+  getAvailableDialects(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/available-dialects`);
+  }
+
   getLibraryImages(brandId?: number): Observable<any[]> {
     const url = brandId ? `${this.apiUrl}/library/images?brand_id=${brandId}` : `${this.apiUrl}/library/images`;
     return this.http.get<any[]>(url);
@@ -78,6 +82,11 @@ export class BrandService {
 
   getLibraryKnowledge(brandId?: number): Observable<any[]> {
     const url = brandId ? `${this.apiUrl}/library/knowledge?brand_id=${brandId}` : `${this.apiUrl}/library/knowledge`;
+    return this.http.get<any[]>(url);
+  }
+
+  getLibraryPortfolios(brandId?: number): Observable<any[]> {
+    const url = brandId ? `${this.apiUrl}/library/portfolios?brand_id=${brandId}` : `${this.apiUrl}/library/portfolios`;
     return this.http.get<any[]>(url);
   }
 

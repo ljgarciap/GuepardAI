@@ -52,9 +52,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOAD_DIR = "uploads"
+class CORSStaticFiles(StaticFiles):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers["Cross-Origin-Resource-Policy"] = "cross-origin"
+        return response
+
+UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+app.mount("/uploads", CORSStaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
 # ──────────────────────────────────────────────
@@ -144,28 +156,46 @@ async def create_brand(
     logo: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db)
 ):
-    """Registra una nueva marca con carga física de logo."""
+    """Registra una nueva marca con integración total de IA para el logo."""
     existing = db.query(models.Brand).filter(models.Brand.name == name).first()
     if existing:
         raise HTTPException(status_code=400, detail="Brand already exists.")
     
-    logo_path = None
-    if logo:
-        # Guardar logo físicamente
-        safe_logo_name = f"logo_{int(time.time())}_{logo.filename}"
-        logo_path = os.path.join(UPLOAD_DIR, safe_logo_name)
-        with open(logo_path, "wb") as buffer:
-            buffer.write(await logo.read())
-
+    # 1. Crear el registro de la marca primero para obtener el ID
     new_brand = models.Brand(
         name=name, 
         about=about,
-        core_value=core_value,
-        logo_path=logo_path
+        core_value=core_value
     )
     db.add(new_brand)
     db.commit()
     db.refresh(new_brand)
+
+    # 2. Si hay logo, procesarlo como Activo Estratégico (IA)
+    if logo:
+        from services.asset_library_service import register_asset
+        # Guardar temporalmente para procesar
+        safe_logo_name = f"logo_{int(time.time())}_{logo.filename}"
+        temp_path = os.path.join(UPLOAD_DIR, safe_logo_name)
+        with open(temp_path, "wb") as buffer:
+            buffer.write(await logo.read())
+        
+        # Registrar en la biblioteca (esto dispara la IA y guarda el embedding)
+        asset = register_asset(
+            db, 
+            brand_id=new_brand.id, 
+            file_path=temp_path, 
+            category="logo", 
+            is_public=False,
+            source_doc=f"Brand Identity: {name}",
+            manual_tags=["official-logo", "identity"]
+        )
+        
+        # Actualizar la ruta en la marca usando la ruta relativa para el frontend
+        new_brand.logo_path = f"uploads/{os.path.basename(temp_path)}"
+        db.commit()
+        db.refresh(new_brand)
+
     return new_brand
 
 @app.put("/api/brands/{brand_id}", tags=["Governance"])
@@ -177,7 +207,7 @@ async def update_brand(
     logo: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db)
 ):
-    """Actualiza un dossier de marca existente."""
+    """Actualiza un dossier de marca e integra el nuevo logo en la biblioteca."""
     brand = db.query(models.Brand).filter(models.Brand.id == brand_id).first()
     if not brand:
         raise HTTPException(status_code=404, detail="Brand not found.")
@@ -187,12 +217,26 @@ async def update_brand(
     brand.core_value = core_value
     
     if logo:
-        # Reemplazar logo físicamente
+        from services.asset_library_service import register_asset
+        # Procesar nuevo logo
         safe_logo_name = f"logo_{int(time.time())}_{logo.filename}"
-        logo_path = os.path.join(UPLOAD_DIR, safe_logo_name)
-        with open(logo_path, "wb") as buffer:
+        temp_path = os.path.join(UPLOAD_DIR, safe_logo_name)
+        with open(temp_path, "wb") as buffer:
             buffer.write(await logo.read())
-        brand.logo_path = logo_path
+            
+        # Registrar como nuevo activo (IA)
+        register_asset(
+            db, 
+            brand_id=brand.id, 
+            file_path=temp_path, 
+            category="logo", 
+            is_public=False,
+            source_doc=f"Brand Identity Update: {name}",
+            manual_tags=["official-logo", "identity", "updated"]
+        )
+        
+        # Ruta relativa para el frontend
+        brand.logo_path = f"uploads/{os.path.basename(temp_path)}"
 
     db.commit()
     db.refresh(brand)
@@ -857,11 +901,34 @@ def _build_brand_context(dna: models.BrandVisualDna,
 
 @app.get("/api/library/images", tags=["Library"])
 def get_library_images(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
-    """Lista imágenes/assets filtrados por marca."""
-    query = db.query(models.BrandAsset)
+    """Lista imágenes/assets filtrados por marca. Excluye embeddings por eficiencia (v12.0)."""
+    query = db.query(
+        models.BrandAsset.id,
+        models.BrandAsset.brand_id,
+        models.BrandAsset.local_path,
+        models.BrandAsset.category,
+        models.BrandAsset.tags,
+        models.BrandAsset.manual_tags,
+        models.BrandAsset.description,
+        models.BrandAsset.is_public,
+        models.BrandAsset.source_doc,
+        models.BrandAsset.created_at
+    )
     if brand_id:
         query = query.filter(models.BrandAsset.brand_id == brand_id)
-    return query.all()
+    
+    assets = query.all()
+    # Mapear a diccionarios para mantener compatibilidad con el contrato del Frontend
+    # El Frontend ya añade http://localhost:8000/ por su cuenta, así que enviamos solo la subruta uploads/
+    return [
+        {
+            "id": a[0], "brand_id": a[1], 
+            "local_path": f"uploads/{os.path.basename(a[2])}", 
+            "category": a[3], "tags": a[4], "manual_tags": a[5],
+            "description": a[6], "is_public": a[7], 
+            "source_doc": a[8], "created_at": a[9]
+        } for a in assets
+    ]
 
 @app.get("/api/library/blueprints", tags=["Library"])
 def get_library_blueprints(brand_id: Optional[int] = None, db: Session = Depends(get_db)):

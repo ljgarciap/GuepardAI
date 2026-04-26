@@ -40,8 +40,12 @@
       </div>
     </div>
     <div class="panel-actions">
-      <button class="save-btn" (click)="saveBrand()" [disabled]="!newBrand.name">
-        {{ editingId ? 'UPDATE BRAND IDENTITY' : 'SAVE BRAND IDENTITY' }}
+      <button class="save-btn" (click)="saveBrand()" [disabled]="!newBrand.name || isSaving">
+        <span *ngIf="!isSaving">{{ editingId ? 'UPDATE BRAND IDENTITY' : 'SAVE BRAND IDENTITY' }}</span>
+        <span *ngIf="isSaving" class="loading-container">
+          <span class="spinner"></span>
+          ORCHESTRATING IDENTITY...
+        </span>
       </button>
     </div>
   </div>

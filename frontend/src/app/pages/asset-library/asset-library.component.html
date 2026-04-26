@@ -29,7 +29,7 @@
     
     <!-- IMAGES VAULT -->
     <div class="asset-grid" *ngIf="activeTab === 'images'">
-      <div class="asset-card glass-panel" *ngFor="let img of images">
+      <div class="asset-card glass-panel" *ngFor="let img of images" (click)="openDetail(img)">
         <div class="asset-preview">
           <img [src]="'http://localhost:8000/' + img.local_path" alt="Asset">
         </div>
@@ -95,5 +95,55 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- ASSET DETAIL MODAL -->
+  <div class="modal-overlay" *ngIf="showModal" (click)="closeDetail()">
+    <div class="modal-content glass-panel" (click)="$event.stopPropagation()">
+      <button class="btn-close" (click)="closeDetail()">×</button>
+      
+      <div class="modal-layout">
+        <div class="modal-visual">
+          <img [src]="'http://localhost:8000/' + selectedAsset.local_path" alt="Full Asset">
+        </div>
+        <div class="modal-data">
+          <span class="asset-tag-large">{{ selectedAsset.category }}</span>
+          <h2 class="modal-title">Strategic Asset Detail</h2>
+          
+          <div class="data-section">
+            <label>AI DESCRIPTION</label>
+            <p class="data-text">{{ selectedAsset.description }}</p>
+          </div>
+
+          <div class="data-section">
+            <label>SEMANTIC TAGS</label>
+            <div class="tags-cloud">
+              <span class="tag-bubble" *ngFor="let tag of selectedAsset.tags">{{ tag }}</span>
+              <span class="tag-bubble manual" *ngFor="let mtag of selectedAsset.manual_tags">{{ mtag }}</span>
+            </div>
+          </div>
+
+          <div class="data-section grid-2">
+            <div>
+              <label>ASSET ID</label>
+              <p class="data-value">#{{ selectedAsset.id }}</p>
+            </div>
+            <div>
+              <label>SOVEREIGNTY</label>
+              <p class="data-value">{{ selectedAsset.brand_id ? 'Exclusive' : 'Public / Global' }}</p>
+            </div>
+          </div>
+
+          <div class="data-section">
+            <label>SOURCE DOCUMENT</label>
+            <p class="data-value truncate">{{ selectedAsset.source_doc || 'Manual Upload' }}</p>
+          </div>
+
+          <div class="modal-actions">
+            <a [href]="'http://localhost:8000/' + selectedAsset.local_path" download class="btn-mini" style="width: 100%; text-align: center; margin-top: 1rem;">DOWNLOAD MASTER</a>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>

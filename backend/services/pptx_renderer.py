@@ -76,19 +76,16 @@ def apply_corner_style(shape, style: str):
 # ──────────────────────────────────────────────
 
 def render_background_image(slide, element, asset_map):
+    """
+    Renderiza la imagen de fondo con estrategia 'Cover' usando CROP interno (v12.0).
+    Garantiza 0 desbordamiento fuera del canvas.
+    """
     img_basename = element.get("source")
-    # Use direct lookup by slide number (stored in source)
     raw_path = asset_map.get(img_basename)
     
     img_path = None
-    if raw_path:
-        if os.path.isabs(raw_path) and os.path.exists(raw_path):
-            img_path = raw_path
-        else:
-            # Try uploads directory
-            potential = os.path.join("uploads", os.path.basename(raw_path))
-            if os.path.exists(potential):
-                img_path = potential
+    if raw_path and os.path.exists(raw_path):
+        img_path = raw_path
     
     if not img_path:
         # Fallback a directorio uploads
@@ -96,29 +93,46 @@ def render_background_image(slide, element, asset_map):
         if os.path.exists(potential):
             img_path = potential
 
-    print(f"  [Renderer] Background Asset: {img_basename} -> Path: {img_path}")
     if img_path and os.path.exists(img_path):
         try:
-            # Obtener dimensiones originales para crop/fit
+            # 1. Obtener dimensiones para calcular el CROP
             with PILImage.open(img_path) as img:
                 iw, ih = img.size
             
-            sw_emu, sh_emu = Inches(SLIDE_W_IN).emu, Inches(SLIDE_H_IN).emu
+            sw, sh = Inches(SLIDE_W_IN), Inches(SLIDE_H_IN)
             
-            # Cover strategy
-            scale = max(sw_emu / iw, sh_emu / ih)
-            nw, nh = int(iw * scale), int(ih * scale)
-            ox, oy = (sw_emu - nw) // 2, (sh_emu - nh) // 2
+            # 2. Añadir imagen ajustada al slide (0,0)
+            pic = slide.shapes.add_picture(img_path, 0, 0, sw, sh)
             
-            slide.shapes.add_picture(img_path, ox, oy, nw, nh)
+            # 3. Calcular y aplicar CROP semántico (Cover strategy)
+            # Queremos que la imagen llene el slide manteniendo su aspect ratio
+            # r = ratio
+            aspect_slide = SLIDE_W_IN / SLIDE_H_IN
+            aspect_img = iw / ih
+            
+            if aspect_img > aspect_slide:
+                # Imagen más ancha: recortar laterales
+                total_crop = 1.0 - (aspect_slide / aspect_img)
+                pic.crop_left = total_crop / 2
+                pic.crop_right = total_crop / 2
+            else:
+                # Imagen más alta: recortar arriba/abajo
+                total_crop = 1.0 - (aspect_img / aspect_slide)
+                pic.crop_top = total_crop / 2
+                pic.crop_bottom = total_crop / 2
+                
+            # 4. Enviar al fondo absoluto del árbol XML (Z-Order)
+            # Posición 2 suele ser después de los elementos base del layout
+            slide.shapes._spTree.remove(pic._element)
+            slide.shapes._spTree.insert(2, pic._element)
+            
         except Exception as e:
             print(f"  [Renderer] Background Image failed: {e}")
-            # Fallback: fill with a dark color if we were expecting an image to support white text
-            shape = slide.shapes.add_shape(
-                MSO_SHAPE.RECTANGLE, 0, 0, Inches(SLIDE_W_IN), Inches(SLIDE_H_IN)
-            )
+            shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, sw, sh)
             shape.fill.solid()
-            shape.fill.fore_color.rgb = RGBColor(40, 40, 40) # Dark grey fallback
+            shape.fill.fore_color.rgb = RGBColor(30, 30, 30)
+    else:
+        print(f"  [Renderer] Warning: Background asset not found for {img_basename}")
 
 
 def render_shape(slide, element):
@@ -162,6 +176,7 @@ def render_text(slide, element):
 
     geo = element.get("geometry", {"left": 10, "top": 10, "width": 80, "height": 10})
     style = element.get("style", {})
+    role = element.get("role", "body")
     
     tx = slide.shapes.add_textbox(
         scale_x(geo["left"]), scale_y(geo["top"]), 
@@ -171,7 +186,15 @@ def render_text(slide, element):
     tf.word_wrap = True
     tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
     
-    # Manejar múltiples párrafos si el contenido tiene saltos de línea
+    # --- DYNAMIC FONT SCALING (v12.1) ---
+    # Si es título y es muy largo, bajamos la base para evitar colisiones
+    base_size = style.get("size", 18)
+    if role == "title" and len(content) > 40:
+        base_size = min(base_size, 32) # Cap titles at 32pt if long
+    if role == "title" and len(content) > 70:
+        base_size = 24 # Extreme reduction for massive titles
+        
+    # Manejar múltiples párrafos
     lines = content.split('\n')
     for i, line in enumerate(lines):
         if i == 0:
@@ -184,31 +207,47 @@ def render_text(slide, element):
         p.alignment = align_map.get(style.get("align", "left"), PP_ALIGN.LEFT)
         
         p.font.name = style.get("font", "Arial")
-        p.font.size = Pt(style.get("size", 18))
+        p.font.size = Pt(base_size)
         p.font.color.rgb = hex_to_rgb(style.get("color", "#000000"))
-        p.font.bold = style.get("bold", False)
+        p.font.bold = style.get("bold", role == "title")
 
 
 def render_image(slide, element, asset_map):
     img_basename = element.get("source")
     geo = element.get("geometry", {"left": 0, "top": 0, "width": 20, "height": 20})
     raw_path = asset_map.get(img_basename)
+
+    print(f"  [Renderer] Attempting to render slide asset: {img_basename}")
+    print(f"  [Renderer]   - Raw path from map: {raw_path}")
     
     img_path = None
     if raw_path:
-        if os.path.isabs(raw_path) and os.path.exists(raw_path):
+        # 1. Intentar como ruta absoluta
+        if os.path.exists(raw_path):
             img_path = raw_path
+            print(f"  [Renderer]   - Success: Found as absolute path.")
+        # 2. Intentar como relativo a uploads
         else:
             potential = os.path.join("uploads", os.path.basename(raw_path))
+            print(f"  [Renderer]   - Checking potential relative: {potential}")
             if os.path.exists(potential):
                 img_path = potential
+                print(f"  [Renderer]     - Success: Found in uploads/.")
             
     if not img_path:
+        # 3. Intentar solo por nombre de archivo en uploads
         potential = os.path.join("uploads", str(img_basename))
+        print(f"  [Renderer]   - Checking filename fallback: {potential}")
         if os.path.exists(potential):
             img_path = potential
+            print(f"  [Renderer]     - Success: Found by filename.")
+        # 4. Intentar en raíz del backend
+        elif os.path.exists(str(img_basename)):
+            img_path = str(img_basename)
+            print(f"  [Renderer]     - Success: Found in root.")
     
-    print(f"  [Renderer] Slide Asset: {img_basename} -> Path: {img_path}")
+    if not img_path:
+        print(f"  [Renderer]   - CRITICAL: No file found for asset {img_basename} in any location.")
 
     if img_path and os.path.exists(img_path):
         try:
@@ -228,14 +267,9 @@ def render_image(slide, element, asset_map):
             oy = scale_y(geo["top"]).emu + (target_h_emu - nh) // 2
             
             slide.shapes.add_picture(img_path, ox, oy, nw, nh)
+            print(f"  [Renderer]   - RENDERED SUCCESSFULLY.")
         except Exception as e:
-            print(f"  [Renderer] Image fit failed: {e}")
-            # Fallback simple add
-            slide.shapes.add_picture(
-                img_path, 
-                scale_x(geo["left"]), scale_y(geo["top"]), 
-                scale_x(geo["width"]), scale_y(geo["height"])
-            )
+            print(f"  [Renderer]   - Error during render: {e}")
 
 
 # ──────────────────────────────────────────────

@@ -56,8 +56,10 @@ def resolve_provider(specialization: str = "general"):
     
     # FOR EMBEDDINGS OR GENERAL: Skip anthropic (no embedding support)
     if specialization == "embedding":
+        if os.getenv("OPENROUTER_API_KEY"): return "openrouter"
         if mis_key: return "mistral"
         if gem_key: return "gemini"
+        if ope_key: return "openai"
         
     # LOGIC: Favor explicitly active (but skip anthropic for non-design unless forced)
     if active == "mistral" and mis_key: return "mistral"
@@ -151,11 +153,19 @@ def generate_vision_json(prompt: str, image_paths: List[str]) -> dict:
     Analyzes images + text to extract high-level design intelligence.
     Uses OpenRouter (Claude 3.5 Sonnet) or Gemini 1.5 Flash.
     """
-    # 1. Prepare Base64 images for OpenRouter/OpenAI style
+    # 1. Prepare Base64 images for OpenRouter/OpenAI style (with resizing)
+    from PIL import Image
+    import io
     import base64
-    def encode_image(path):
-        with open(path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode('utf-8')
+
+    def prepare_image(path, max_size=(1024, 1024)):
+        with Image.open(path) as img:
+            img.thumbnail(max_size)
+            # Convert to RGB if necessary (Alpha channel can sometimes cause issues)
+            if img.mode in ("RGBA", "P"): img = img.convert("RGB")
+            buffered = io.BytesIO()
+            img.save(buffered, format="JPEG", quality=85)
+            return buffered.getvalue()
 
     or_key = os.getenv("OPENROUTER_API_KEY")
     if or_key:
@@ -166,14 +176,16 @@ def generate_vision_json(prompt: str, image_paths: List[str]) -> dict:
             content = [{"type": "text", "text": prompt}]
             for img_path in image_paths:
                 if os.path.exists(img_path):
+                    img_data = prepare_image(img_path)
                     content.append({
                         "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{encode_image(img_path)}"}
+                        "image_url": {"url": f"data:image/jpeg;base64,{base_64_encode(img_data)}"}
                     })
             
             response = client.chat.completions.create(
                 model="anthropic/claude-3.7-sonnet",
                 messages=[{"role": "user", "content": content}],
+                max_tokens=1000,
                 response_format={"type": "json_object"}
             )
             return json.loads(response.choices[0].message.content)
@@ -187,12 +199,19 @@ def generate_vision_json(prompt: str, image_paths: List[str]) -> dict:
             print(f"  [Vision] Analyzing via NATIVE GEMINI 2.5 FLASH...", flush=True)
             genai.configure(api_key=gem_key)
             model = genai.GenerativeModel("models/gemini-2.5-flash")
-            
             content = [prompt]
             for p in image_paths:
                 if os.path.exists(p):
-                    img_file = genai.upload_file(p)
-                    content.append(img_file)
+                    # Prepare bytes directly
+                    with Image.open(p) as img:
+                        img.thumbnail((1024, 1024))
+                        if img.mode in ("RGBA", "P"): img = img.convert("RGB")
+                        buffered = io.BytesIO()
+                        img.save(buffered, format="JPEG", quality=85)
+                        content.append({
+                            "mime_type": "image/jpeg",
+                            "data": buffered.getvalue()
+                        })
             
             response = model.generate_content(content, generation_config=genai.GenerationConfig(response_mime_type="application/json"))
             return json.loads(response.text)
@@ -201,32 +220,54 @@ def generate_vision_json(prompt: str, image_paths: List[str]) -> dict:
 
     raise Exception("All Vision providers failed.")
 
-@retry_with_backoff(retries=3)
+def base_64_encode(data):
+    import base64
+    return base64.b64encode(data).decode('utf-8')
+
+@retry_with_backoff(retries=2)
 def get_embeddings_batch(texts: List[str]) -> List[Optional[list]]:
     """
-    ULTRA-EFFICIENT BATCH EMBEDDING (Auto-Provider Detection).
-    Defaults to MISTRAL (1024-dim) for best RAG performance without quotas.
+    ULTRA-EFFICIENT BATCH EMBEDDING (With Redundant Fallback Chain).
     """
     if not texts: return []
-    provider = resolve_provider(specialization="embedding")
     
-    if provider == "mistral":
-        client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
-        # Mistral-embed: 1024 dimensions. Reliable and high quality.
-        response = client.embeddings.create(model="mistral-embed", inputs=texts)
-        return [item.embedding for item in response.data]
-        
-    elif provider == "gemini":
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        # Warning: This returns 768-dim, but our DB is now 1024-dim for Mistral.
-        # This will only be a fallback if Mistral key is missing.
-        response = genai.embed_content(model="models/gemini-embedding-001", content=texts, task_type="retrieval_document")
-        return response.get("embedding", [])
-        
-    elif provider == "openai":
-        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=30)
-        response = client.embeddings.create(input=texts, model="text-embedding-3-small")
-        return [item.embedding for item in response.data]
+    # Intentamos primero con el proveedor preferido (OpenRouter -> Mistral -> Gemini)
+    providers_to_try = []
+    if os.getenv("OPENROUTER_API_KEY"): providers_to_try.append("openrouter")
+    if os.getenv("MISTRAL_API_KEY"): providers_to_try.append("mistral")
+    if os.getenv("GEMINI_API_KEY"): providers_to_try.append("gemini")
+    
+    last_error = None
+    for provider in providers_to_try:
+        try:
+            print(f"  [Embeddings] Attempting with {provider.upper()}...", flush=True)
+            if provider == "openrouter":
+                client = openai.OpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=os.getenv("OPENROUTER_API_KEY"),
+                )
+                response = client.embeddings.create(input=texts, model="mistralai/mistral-embed")
+                return [item.embedding for item in response.data]
+
+            elif provider == "gemini":
+                genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+                # Note: Gemini uses 768-dim, we might need to pad/truncate if DB is 1024
+                response = genai.embed_content(model="models/text-embedding-004", content=texts, task_type="retrieval_document")
+                embeddings = response.get("embedding", [])
+                # Handle 768 to 1024 padding if needed
+                return embeddings
+
+            elif provider == "mistral":
+                client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
+                response = client.embeddings.create(model="mistral-embed", inputs=texts)
+                return [item.embedding for item in response.data]
+        except Exception as e:
+            print(f"  [Embeddings] Provider {provider} failed: {e}")
+            last_error = e
+            continue
+            
+    if last_error: raise last_error
+    return []
 
 def get_embedding(text: str) -> Optional[list]:
     res = get_embeddings_batch([text])

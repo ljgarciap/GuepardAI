@@ -28,16 +28,28 @@ def search_rag(query, brand_id=None, k=15):
     try:
         with psycopg.connect(DB_CONN) as conn:
             with conn.cursor() as cur:
-                # v11.0: Filtro por Brand ID formal
-                cur.execute(
-                    """
-                    SELECT content FROM corporate_knowledge
-                    WHERE brand_id = %s
-                    ORDER BY embedding <=> %s::vector
-                    LIMIT %s
-                    """,
-                    (brand_id, str(query_embedding), k)
-                )
+                # v11.0: Gobernanza de Marca Híbrida (Exclusivo + Público)
+                if brand_id == -1:
+                    # Modo Superuser: Buscar en todo el universo de datos
+                    cur.execute(
+                        """
+                        SELECT content FROM corporate_knowledge
+                        ORDER BY embedding <=> %s::vector
+                        LIMIT %s
+                        """,
+                        (str(query_embedding), k)
+                    )
+                else:
+                    # Modo Soberano: Buscar exclusivo de marca O público
+                    cur.execute(
+                        """
+                        SELECT content FROM corporate_knowledge
+                        WHERE brand_id = %s OR is_public = 1
+                        ORDER BY embedding <=> %s::vector
+                        LIMIT %s
+                        """,
+                        (brand_id, str(query_embedding), k)
+                    )
                 for row in cur.fetchall():
                     results.append(row[0])
     except Exception as e:

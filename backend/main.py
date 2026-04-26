@@ -156,28 +156,46 @@ async def create_brand(
     logo: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db)
 ):
-    """Registra una nueva marca con carga física de logo."""
+    """Registra una nueva marca con integración total de IA para el logo."""
     existing = db.query(models.Brand).filter(models.Brand.name == name).first()
     if existing:
         raise HTTPException(status_code=400, detail="Brand already exists.")
     
-    logo_path = None
-    if logo:
-        # Guardar logo físicamente
-        safe_logo_name = f"logo_{int(time.time())}_{logo.filename}"
-        logo_path = os.path.join(UPLOAD_DIR, safe_logo_name)
-        with open(logo_path, "wb") as buffer:
-            buffer.write(await logo.read())
-
+    # 1. Crear el registro de la marca primero para obtener el ID
     new_brand = models.Brand(
         name=name, 
         about=about,
-        core_value=core_value,
-        logo_path=logo_path
+        core_value=core_value
     )
     db.add(new_brand)
     db.commit()
     db.refresh(new_brand)
+
+    # 2. Si hay logo, procesarlo como Activo Estratégico (IA)
+    if logo:
+        from services.asset_library_service import register_asset
+        # Guardar temporalmente para procesar
+        safe_logo_name = f"logo_{int(time.time())}_{logo.filename}"
+        temp_path = os.path.join(UPLOAD_DIR, safe_logo_name)
+        with open(temp_path, "wb") as buffer:
+            buffer.write(await logo.read())
+        
+        # Registrar en la biblioteca (esto dispara la IA y guarda el embedding)
+        asset = register_asset(
+            db, 
+            brand_id=new_brand.id, 
+            file_path=temp_path, 
+            category="logo", 
+            is_public=False,
+            source_doc=f"Brand Identity: {name}",
+            manual_tags=["official-logo", "identity"]
+        )
+        
+        # Actualizar la ruta en la marca usando la ruta relativa para el frontend
+        new_brand.logo_path = f"uploads/{os.path.basename(temp_path)}"
+        db.commit()
+        db.refresh(new_brand)
+
     return new_brand
 
 @app.put("/api/brands/{brand_id}", tags=["Governance"])
@@ -189,7 +207,7 @@ async def update_brand(
     logo: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db)
 ):
-    """Actualiza un dossier de marca existente."""
+    """Actualiza un dossier de marca e integra el nuevo logo en la biblioteca."""
     brand = db.query(models.Brand).filter(models.Brand.id == brand_id).first()
     if not brand:
         raise HTTPException(status_code=404, detail="Brand not found.")
@@ -199,12 +217,26 @@ async def update_brand(
     brand.core_value = core_value
     
     if logo:
-        # Reemplazar logo físicamente
+        from services.asset_library_service import register_asset
+        # Procesar nuevo logo
         safe_logo_name = f"logo_{int(time.time())}_{logo.filename}"
-        logo_path = os.path.join(UPLOAD_DIR, safe_logo_name)
-        with open(logo_path, "wb") as buffer:
+        temp_path = os.path.join(UPLOAD_DIR, safe_logo_name)
+        with open(temp_path, "wb") as buffer:
             buffer.write(await logo.read())
-        brand.logo_path = logo_path
+            
+        # Registrar como nuevo activo (IA)
+        register_asset(
+            db, 
+            brand_id=brand.id, 
+            file_path=temp_path, 
+            category="logo", 
+            is_public=False,
+            source_doc=f"Brand Identity Update: {name}",
+            manual_tags=["official-logo", "identity", "updated"]
+        )
+        
+        # Ruta relativa para el frontend
+        brand.logo_path = f"uploads/{os.path.basename(temp_path)}"
 
     db.commit()
     db.refresh(brand)

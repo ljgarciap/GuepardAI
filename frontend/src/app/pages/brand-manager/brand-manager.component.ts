@@ -25,6 +25,7 @@ export class BrandManagerComponent implements OnInit {
 
   selectedLogoFile: File | null = null;
   logoPreview: string | null = null;
+  isSaving = false;
 
   ngOnInit() {
     this.loadBrands();
@@ -62,6 +63,7 @@ export class BrandManagerComponent implements OnInit {
 
   saveBrand() {
     if (!this.newBrand.name) return;
+    this.isSaving = true;
 
     const obs = this.editingId 
       ? this.brandService.updateBrand(this.editingId, this.newBrand.name, this.newBrand.about, this.newBrand.coreValue, this.selectedLogoFile || undefined)
@@ -72,8 +74,12 @@ export class BrandManagerComponent implements OnInit {
         this.loadBrands();
         this.resetForm();
         this.showCreateForm = false;
+        this.isSaving = false;
       },
-      error: (err) => alert('Error saving brand identity: ' + (err.error?.detail || err.message))
+      error: (err) => {
+        this.isSaving = false;
+        alert('Error saving brand identity: ' + (err.error?.detail || err.message));
+      }
     });
   }
 

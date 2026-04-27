@@ -33,78 +33,121 @@ def orchestrate_visual_coherence(content_manifest: dict, brand_dna, brand_essenc
 
 def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None) -> dict:
     """
-    DESIGN ARCHITECT v16.1 — ANALYST VISION DRIVEN.
-    Usa BrandCompositionPolicy para asegurar fidelidad a Tesco (Canvas 21.99").
+    DESIGN ARCHITECT v18.0 — SENIOR ART DIRECTOR DRIVEN.
+    Analiza slide por slide para evitar colisiones y elegir las mejores imágenes.
     """
     all_slides = content_manifest.get("slides", [])
     total_slides = len(all_slides)
 
-    # 1. Reconstruir Esencia y DNA para la Política
+    # 1. Preparar Contexto de Marca
     visual_dna_dict = {
-        "primary_color":    getattr(brand_dna, "primary_color", "#333333"),
-        "secondary_color":  getattr(brand_dna, "secondary_color", "#666666"),
+        "primary_color":    getattr(brand_dna, "primary_color", "#0052A3"),
+        "secondary_color":  getattr(brand_dna, "secondary_color", "#EE1C2E"),
         "background_color": getattr(brand_dna, "background_color", "#FFFFFF"),
-        "text_main_color":  getattr(brand_dna, "text_main_color", "#000000"),
         "primary_font":     getattr(brand_dna, "primary_font", "Arial"),
     }
     
     artistic_essence_dict = {
         "structural_archetypes": getattr(brand_essence, "structural_archetypes", {}),
+        "slide_archetypes":      getattr(brand_essence, "slide_archetypes", {}),
         "design_gestures":       getattr(brand_essence, "design_gestures", {}),
-        "composition_rules":     getattr(brand_essence, "composition_rules", {}),
+        "visual_patterns":       getattr(brand_essence, "visual_patterns", []),
+        "visual_strategy":       getattr(brand_essence, "visual_strategy", ""),
     }
 
-    # Intentar detectar el canvas real si el brand_dna tiene el path original
-    # Para Tesco, forzamos el canvas ultra-wide si no hay path
-    source_pptx = getattr(brand_dna, "source_file_path", None)
-    
     policy = parse_essence_to_policy(
         brand_id=getattr(brand_dna, "brand_id", 0),
         brand_name=getattr(brand_dna, "brand_name", ""),
         artistic_essence=artistic_essence_dict,
         visual_dna=visual_dna_dict,
-        source_pptx_path=source_pptx
+        force_width=getattr(brand_dna, "slide_width_inches", 21.99),
+        force_height=getattr(brand_dna, "slide_height_inches", 12.37)
     )
 
-    # 2. Configurar Canvas y Budget
-    max_full_bleed = max(1, int(total_slides * policy.image_rules.max_background_ratio))
-    full_bleed_budget = {"used": 0, "max": max_full_bleed}
+    # 2. Obtener Biblioteca de Imágenes Disponibles
+    # Esto es CRUCIAL para dejar de usar solo 2 imágenes.
+    available_assets = []
+    if hasattr(brand_dna, "extracted_assets") and brand_dna.extracted_assets:
+        for cat in ["photos", "logos", "icons"]:
+            for asset in brand_dna.extracted_assets.get(cat, []):
+                available_assets.append({
+                    "id": asset.get("path"),
+                    "tags": asset.get("tags", []),
+                    "description": asset.get("description", "")
+                })
 
+    # 3. LLM ART DIRECTOR: Planificación Maestra
+    # Le pedimos al LLM que analice TODO el contenido y asigne los mejores recursos.
+    from database import SessionLocal
+    from models import SystemConfig
+    db = SessionLocal()
+    pref_model = db.query(SystemConfig).filter(SystemConfig.key == 'art_director_model').first()
+    model_name = pref_model.value if pref_model else "models/gemini-1.5-flash"
+    db.close()
+
+    art_director_prompt = f"""
+    You are a Senior Art Director for {getattr(brand_dna, 'brand_name', 'Tesco')}.
+    BRAND STRATEGY: {artistic_essence_dict['visual_strategy']}
+    PATTERNS: {artistic_essence_dict['visual_patterns']}
+    
+    TASK: Assign the best images and layout archetypes for each slide.
+    AVAILABLE IMAGES: {json.dumps(available_assets[:40])}
+    
+    CONTENT TO RE-LAYOUT:
+    {json.dumps([{ 'i': i, 'title': s.get('title'), 'bullets': s.get('bullets', []) } for i, s in enumerate(all_slides)])}
+    
+    RULES:
+    1. IMAGE VARIETY: Use at least 8-10 different images across the deck.
+    2. RELEVANCE: Match image tags with slide keywords.
+    3. COLLISION AVOIDANCE: If text is long, reduce font scale or pick 'clean' layouts.
+    
+    OUTPUT ONLY JSON:
+    {{
+      "assignments": [
+        {{ "i": 0, "layout": "full-bleed | split-right | accent-box", "image_id": "filename", "font_scale": 0.8 }}
+      ]
+    }}
+    """
+    
+    try:
+        planning = generate_json(art_director_prompt, model=model_name)
+        assignments = { item['i']: item for item in planning.get("assignments", []) }
+    except:
+        assignments = {}
+
+    # 4. Construcción Final
+    full_bleed_budget = {"used": 0, "max": int(total_slides * 0.3)}
     final_manifest = {
-        "theme": {
-            "primary":        visual_dna_dict["primary_color"],
-            "background":     visual_dna_dict["background_color"],
-            "font_main":      visual_dna_dict["primary_font"],
-        },
-        "canvas": {
-            "width_inches":  policy.canvas.width_inches,
-            "height_inches": policy.canvas.height_inches,
-        },
+        "theme": { "primary": visual_dna_dict["primary_color"], "background": visual_dna_dict["background_color"], "font_main": visual_dna_dict["primary_font"] },
+        "canvas": { "width_inches": policy.canvas.width_inches, "height_inches": policy.canvas.height_inches },
         "slides": []
     }
 
-    # 3. Construir Slides determinísticamente
     for i, slide in enumerate(all_slides):
-        slide_type = _infer_slide_type(slide)
-
+        plan = assignments.get(i, {})
+        # Usamos el plan del director de arte o inferimos si falló
+        stype = plan.get("layout", _infer_slide_type(slide))
+        
+        # Override de imagen semántica
+        if plan.get("image_id"):
+            slide["assigned_image"] = plan["image_id"]
+        
         elements, layout = build_slide_elements(
             slide=slide,
-            slide_type=slide_type,
+            slide_type=stype,
             slide_index=i,
             total_slides=total_slides,
             policy=policy,
             visual_dna=visual_dna_dict,
             full_bleed_budget=full_bleed_budget,
+            font_scale_override=plan.get("font_scale", 1.0)
         )
 
         final_manifest["slides"].append({
-            "slide_number":    slide.get("slide_number", i + 1),
-            "slide_type":      slide_type,
-            "layout":          layout,
-            "elements":        elements,
-            "title":           slide.get("title"),
-            "bullets":         slide.get("bullets", []),
-            "metric":          slide.get("metric"),
+            "slide_number": slide.get("slide_number", i + 1),
+            "elements": elements,
+            "layout": layout,
+            "title": slide.get("title")
         })
 
     return final_manifest

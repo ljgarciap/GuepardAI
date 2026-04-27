@@ -147,7 +147,7 @@ def _pptx_to_images(file_path: str, out_dir: str, max_slides: int = MAX_SLIDES_T
 
             except ImportError:
                 # Si no hay Pillow, crear imagen placeholder mínima
-                print(f"  [Essence] Pillow no disponible. Slide {i} sin imagen.", flush=True)
+                print(f"  [Essence] Pillow no disponible.", flush=True)
 
     return image_paths
 
@@ -157,59 +157,72 @@ def _pptx_to_images(file_path: str, out_dir: str, max_slides: int = MAX_SLIDES_T
 # ──────────────────────────────────────────────
 
 ART_DIRECTOR_PROMPT = """
-Analyze this SINGLE slide from a brand manual. 
-Identify the micro-design gestures and structural rules present in THIS image.
+You are a Senior Art Director specializing in Brand Systems. 
+Analyze this SINGLE slide from a brand manual and decompose its ARCHITECTURE.
 
-EXTRACT:
-1. MARGINS & ZONES: Precise coordinates (%) for title and content.
-2. GRAPHIC OBJECTS: Identify specific shapes (pill-banners, boxes, rounded containers, lines).
-3. BRAND PUNCTUATION: Tiny details (dots at end of titles, specific bullet symbols, page number style).
-4. COMPOSITION: Is it a 2-column grid? Is there a split between media and text?
+OBLIGATORY ANALYSIS:
+1. COLOR ZONES: Identify any solid blocks of color. 
+   - Is there a Sidebar? (e.g., "blue zone from 0% to 6% width, full height").
+   - Is there a Header/Footer? (e.g., "bottom bar from 90% to 100% height").
+2. IMAGE ARCHETYPES: How are images integrated?
+   - Full bleed? Split-screen (50/50)? Accent boxes (specify exact coordinates)?
+   - Are there decorative frames or shadows?
+3. TYPOGRAPHIC ANCHORS: Where do titles START and END? 
+   - Get the X,Y coordinates of the first letter of the Title.
+4. DECORATIVE GESTURES: Identify repetitive shapes (lines, dots, pill-banners, corner accents).
 
 Output ONLY this JSON:
 {
-  "structural": {"title_y": 10, "content_y": 40, "margin_left": 10, "grid": "2-column | 1-column"},
-  "gestures": {"pill_banners": true/false, "red_dot": true/false, "rounded_corners": true/false, "accents": "description"},
-  "density": "high | medium | low",
-  "note": "Short technical description of this specific slide"
+  "structural_blocks": [
+    {"type": "sidebar | header | footer | panel", "geometry": {"left": 0, "top": 0, "width": 6, "height": 100}, "color_role": "primary | secondary | background"}
+  ],
+  "image_integration": {
+    "layout": "full-bleed | split-right | accent-box",
+    "geometry": {"left": 65, "top": 15, "width": 30, "height": 70},
+    "style": {"corners": "sharp | rounded", "border": "none | color_hex", "shadow": true/false}
+  },
+  "gestures": ["pill-banners", "red-dot", "vertical-lines", "etc"],
+  "typography": {"title_anchor": {"x": 10, "y": 12}, "hierarchy_impact": "high | low"}
 }
 """
 
 # ──────────────────────────────────────────────
-# PROMPT: SINTETIZADOR DE IDENTIDAD (v1.0)
+# PROMPT: SINTETIZADOR DE IDENTIDAD (v2.0)
 # ──────────────────────────────────────────────
 
 SYNTHESIZER_PROMPT = """
-You are a Brand Guardian. Below are several individual analyses of slides from the same brand.
-Your task is to CONSOLIDATE these findings into a single, cohesive Architectural DNA.
+You are a Brand Architect. ConsolidATE the individual slide analyses into a MASTER DESIGN POLICY.
 
 RULES:
-1. RECURRENCE: If a gesture (like pill-banners or a red dot) appears in multiple slides, it is a CORE RULE.
-2. PROPORTIONS: Average the coordinates but favor the most common pattern.
-3. TONE: Determine if the brand is 'Airy' or 'Modular/Dense'.
+1. CONSISTENCY: If a 'sidebar' appears in 80% of slides, it's a MANDATORY STRUCTURAL BLOCK.
+2. STRATEGY: Infer the 'Visual Strategy' (e.g., "High-impact retail focus with emphasis on price clarity and bold branding").
+3. PATTERNS: Identify recurring 'Visual Patterns' (e.g., "Use of full-bleed imagery with primary-colored overlays").
 
 Output ONLY the final Brand Identity JSON:
 {
   "structural_archetypes": {
-    "title_top": 10,
-    "title_height": 20,
-    "content_start_y": 40,
-    "margin_left": 10,
-    "column_grid": "2-column | 1-column",
-    "bullet_symbol": "dot | dash | arrow"
+    "persistent_blocks": [
+       {"role": "sidebar | header | footer", "geometry": {"left": 0, "top": 0, "width": 6, "height": 100}, "color_source": "primary | secondary"}
+    ],
+    "title_safe_zone": {"left": 10, "top": 12, "width": 50, "height": 15}
+  },
+  "slide_archetypes": {
+     "title": {"layout": "centered | split", "background": "primary | background"},
+     "content": {"layout": "sidebar-left", "image_role": "supporting"},
+     "data": {"layout": "clean-centered", "accent": "bold-secondary"}
   },
   "design_gestures": {
-    "corner_style": "sharp | rounded | pill",
-    "accent_geometry": "vertical-line-left | horizontal-bar-top | title-underline | red-dot | pill-banners | none",
-    "uses_overlays": true,
-    "overlay_opacity": 0.4
+    "corner_style": "sharp | rounded",
+    "accent_elements": ["pill-banners", "lines", "dots"],
+    "image_style": {"max_ratio": 0.4, "has_frame": true}
   },
   "composition_rules": {
-    "text_safe_zone": "top-left | center-left | bottom-third",
     "visual_density": "high | medium | low",
-    "padding_level": "airy | compact"
+    "overlay_opacity": 0.4
   },
-  "art_direction_note": "A final master summary of how to replicate this specific look"
+  "visual_patterns": ["list of patterns"],
+  "visual_strategy": "Strategic description here",
+  "art_direction_note": "Art direction summary for LLM context"
 }
 """
 
@@ -233,6 +246,15 @@ def analyze_with_vision(image_paths: List[str], cb: Optional[Callable] = None) -
     import json
     from llm_provider import generate_json
     
+    from database import SessionLocal
+    from models import SystemConfig
+    db = SessionLocal()
+    v_model_cfg = db.query(SystemConfig).filter(SystemConfig.key == 'extraction_vision_model').first()
+    s_model_cfg = db.query(SystemConfig).filter(SystemConfig.key == 'extraction_synthesis_model').first()
+    v_model = v_model_cfg.value if v_model_cfg else "anthropic/claude-3.7-sonnet"
+    s_model = s_model_cfg.value if s_model_cfg else "mistral/mistral-large-latest"
+    db.close()
+
     micro_essences = []
     total = len(image_paths)
 
@@ -242,8 +264,8 @@ def analyze_with_vision(image_paths: List[str], cb: Optional[Callable] = None) -
             cb(f"Esencia Artística — Analizando slide {idx+1}/{total}...", step_pct)
         
         try:
-            # Análisis individual
-            res = generate_vision_json(ART_DIRECTOR_PROMPT, [path])
+            # Análisis individual usando el modelo de la DB
+            res = generate_vision_json(ART_DIRECTOR_PROMPT, [path], model=v_model)
             micro_essences.append(res)
             
             # Log individual
@@ -258,7 +280,7 @@ def analyze_with_vision(image_paths: List[str], cb: Optional[Callable] = None) -
     
     try:
         final_prompt = f"{SYNTHESIZER_PROMPT}\n\nINDIVIDUAL ANALYSES:\n{json.dumps(micro_essences, indent=2)}"
-        final_identity = generate_json(final_prompt, specialization="general")
+        final_identity = generate_json(final_prompt, model=s_model)
         
         with open(audit_file, "a") as f:
             f.write(f"\n[{datetime.datetime.now()}] FINAL CONSOLIDATED IDENTITY:\n{json.dumps(final_identity, indent=2)}\n")
@@ -328,11 +350,14 @@ def extract_artistic_essence(file_path: str, upload_dir: str,
     if cb:
         cb("Esencia Artística — Análisis completado.", 98)
 
-    # 4. Normalizar y retornar
+    # 4. Normalizar y retornar (v17.0)
     return {
         "structural_archetypes": vision_result.get("structural_archetypes", {}),
+        "slide_archetypes":     vision_result.get("slide_archetypes", {}),
         "design_gestures":      vision_result.get("design_gestures", {}),
         "composition_rules":    vision_result.get("composition_rules", {}),
+        "visual_patterns":      vision_result.get("visual_patterns", []),
+        "visual_strategy":      vision_result.get("visual_strategy", ""),
         "art_direction_note":   vision_result.get("art_direction_note", ""),
         "raw_vision_response":  vision_result,
     }

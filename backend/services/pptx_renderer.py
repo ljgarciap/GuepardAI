@@ -310,10 +310,20 @@ def render_pptx_manifest(design_manifest, asset_map, output_path):
         fill.solid()
         fill.fore_color.rgb = hex_to_rgb(bg_color_hex)
 
-        # 3. Z-Order Sorting
-        layer_map = {"background_color": 0, "image": 1, "shape": 2, "logo": 3, "text": 4}
+        # 3. Z-Order Sorting (v17.1 - Role Priority)
+        # Priorizamos personas y logos al frente absoluto.
+        def get_layer(el):
+            etype = el.get("type")
+            erole = el.get("role", "")
+            if erole == "person": return 10  # Frente absoluto
+            if etype == "logo": return 9
+            if etype == "text": return 8
+            if etype == "shape": return 2   # Bloques estructurales (Sidebar/Panels)
+            if etype == "image" and erole == "background": return 0
+            return 1 # Imágenes genéricas
+
         if elements is None: elements = []
-        elements.sort(key=lambda x: layer_map.get(x.get("type"), 5))
+        elements.sort(key=get_layer)
 
         for el in elements:
             try:
@@ -324,7 +334,7 @@ def render_pptx_manifest(design_manifest, asset_map, output_path):
                 
                 if el_type == "image" and role == "background":
                     render_background_image_dynamic(slide, el, asset_map, slide_w_in, slide_h_in)
-                elif el_type == "shape" or role in ("horizontal_bar", "vertical_bar", "footer_line", "header_zone", "brand_bar", "overlay", "sidebar_zone", "content_panel", "corner_accent"):
+                elif el_type == "shape" or role in ("horizontal_bar", "vertical_bar", "footer_line", "header_zone", "brand_bar", "overlay", "sidebar_zone", "content_panel", "corner_accent", "pill_accent", "brand_dot"):
                     _render_decorator_v2(slide, el, sx, sy)
                 elif el_type == "text":
                     _render_text_v2(slide, el, sx, sy)
@@ -390,7 +400,7 @@ def _render_text_v2(slide, element, sx, sy):
         p.font.bold = style.get("bold", role == "title")
 
 def _render_image_v2(slide, element, asset_map, sx, sy):
-    img_basename, geo = element.get("source"), element.get("geometry", {})
+    img_basename, geo, role = element.get("source"), element.get("geometry", {}), element.get("role", "")
     img_path = asset_map.get(img_basename)
     if not (img_path and os.path.exists(img_path)):
         img_path = os.path.join("uploads", str(img_basename))
@@ -400,6 +410,14 @@ def _render_image_v2(slide, element, asset_map, sx, sy):
             tw, th = sx(geo["width"]).emu, sy(geo["height"]).emu
             sc = min(tw / iw, th / ih)
             nw, nh = int(iw * sc), int(ih * sc)
-            ox, oy = sx(geo["left"]).emu + (tw - nw) // 2, sy(geo["top"]).emu + (th - nh) // 2
+            
+            ox = sx(geo["left"]).emu + (tw - nw) // 2
+            
+            # Si es una persona, la pegamos al fondo de su caja (para que no flote)
+            if role == "person":
+                oy = sy(geo["top"]).emu + (th - nh)
+            else:
+                oy = sy(geo["top"]).emu + (th - nh) // 2
+                
             slide.shapes.add_picture(img_path, ox, oy, nw, nh)
         except: pass

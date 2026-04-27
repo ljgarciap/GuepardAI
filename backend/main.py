@@ -281,6 +281,8 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
             record.accent_color     = dna.get("accent_color")
             record.primary_font     = dna.get("primary_font", "Arial")
             record.secondary_font   = dna.get("secondary_font")
+            record.slide_width_inches = dna.get("slide_width_inches", 13.33)
+            record.slide_height_inches = dna.get("slide_height_inches", 7.5)
             record.raw_extraction   = dna.get("raw_extraction")
 
             # --- REGISTRO EN BIBLIOTECA DE ACTIVOS (v11.0 - Governance Pass) ---
@@ -382,6 +384,16 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
             record.composition_rules      = brand_essence.get("composition_rules", {})
             record.art_direction_note     = brand_essence.get("art_direction_note", "")
             record.raw_vision_response    = brand_essence.get("raw_vision_response")
+
+            # --- SINCRONIZACIÓN LEGACY (v17.0) ---
+            legacy = db.query(models.BrandStyle).filter(
+                models.BrandStyle.client_name == source_filename
+            ).first()
+            if legacy:
+                legacy.visual_patterns  = brand_essence.get("visual_patterns", [])
+                legacy.visual_strategy  = brand_essence.get("visual_strategy", "")
+                legacy.tone_description = record.art_direction_note
+                legacy.raw_style_json   = brand_essence # Captura completa
 
             db.commit()
         finally:

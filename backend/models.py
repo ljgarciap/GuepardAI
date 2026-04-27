@@ -54,6 +54,10 @@ class BrandVisualDna(Base):
     # Captura completa del LLM para auditoría
     raw_extraction   = Column(JSONB, nullable=True)
 
+    # Dimensiones físicas del slide original (v12.5)
+    slide_width_inches   = Column(Float, default=13.33)
+    slide_height_inches  = Column(Float, default=7.5)
+
     created_at       = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at       = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     is_public        = Column(Integer, default=0) # 0=Exclusive, 1=Public
@@ -253,3 +257,16 @@ class CorporateKnowledge(Base):
 
     # Relación inversa
     brand = relationship("Brand", back_populates="knowledge")
+
+class SystemConfig(Base):
+    """
+    TABLA PARAMÉTRICA (v18.1).
+    Evita el hardcodeo de modelos y límites del sistema.
+    """
+    __tablename__ = "system_configs"
+
+    id    = Column(Integer, primary_key=True, index=True)
+    key   = Column(String(100), unique=True, index=True, nullable=False)
+    value = Column(String(500), nullable=False)
+    description = Column(String(255), nullable=True)
+    updated_at  = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)

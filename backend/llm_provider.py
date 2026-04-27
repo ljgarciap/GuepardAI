@@ -73,152 +73,138 @@ def resolve_provider(specialization: str = "general"):
     raise ValueError("API_KEY missing for required provider.")
 
 @retry_with_backoff(retries=3)
-def generate_json(prompt: str, specialization: str = "general") -> dict:
-    primary_provider = resolve_provider(specialization)
-    providers_to_try = [primary_provider, "openrouter", "gemini", "mistral"]
-    if os.getenv("OPENROUTER_API_KEY"):
-        # Prioritize OpenRouter for design if we have the key
-        providers_to_try = ["openrouter"] + [p for p in providers_to_try if p != "openrouter"]
-    
-    # De-duplicate while preserving order
-    providers_to_try = list(dict.fromkeys(providers_to_try))
-    
+def generate_json(prompt: str, model: Optional[str] = None, specialization: str = "general") -> dict:
+    """
+    UNIVERSAL AI ENGINE (v18.2) - Parametric Failover.
+    Soporta cadenas de modelos: 'models/gemini-1.5-flash,mistral/mistral-large-latest'
+    """
+    if not model:
+        # Fallback si no se especifica modelo
+        model = "models/gemini-1.5-flash,mistral/mistral-large-latest"
+        
+    models_to_try = [m.strip() for m in model.split(",")]
     last_error = None
-    for provider in providers_to_try:
+    
+    for current_model in models_to_try:
         try:
-            print(f"  [LLM] Attempting generation with {provider.upper()}...", flush=True)
-            if provider == "openrouter":
+            print(f"  [LLM] Attempting generation with {current_model}...", flush=True)
+            
+            # 1. Rutas según el prefijo del modelo
+            if current_model.startswith("models/"):
+                # NATIVE GEMINI
+                gem_key = os.getenv("GEMINI_API_KEY")
+                if not gem_key: raise ValueError("No Gemini Key")
+                genai.configure(api_key=gem_key)
+                m = genai.GenerativeModel(current_model)
+                response = m.generate_content(prompt, generation_config=genai.GenerationConfig(temperature=0.3, response_mime_type="application/json"))
+                return json.loads(response.text)
+                
+            elif current_model.startswith("mistral/"):
+                # NATIVE MISTRAL
+                mis_key = os.getenv("MISTRAL_API_KEY")
+                if not mis_key: raise ValueError("No Mistral Key")
+                client = Mistral(api_key=mis_key)
+                # Mistral slugs don't usually have the prefix, but we remove it for the API call
+                m_slug = current_model.replace("mistral/", "")
+                response = client.chat.complete(model=m_slug, messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"})
+                return json.loads(response.choices[0].message.content)
+            
+            else:
+                # OPENROUTER (Default fallback for other slugs like 'anthropic/claude-3.7-sonnet')
                 or_key = os.getenv("OPENROUTER_API_KEY")
                 if not or_key: raise ValueError("No OpenRouter Key")
-                client = openai.OpenAI(
-                    base_url="https://openrouter.ai/api/v1",
-                    api_key=or_key,
-                )
-                # Corrected slug for OpenRouter (Updated to Claude 3.7 Sonnet for 2026)
+                client = openai.OpenAI(base_url="https://openrouter.ai/api/v1", api_key=or_key)
                 response = client.chat.completions.create(
-                    model="anthropic/claude-3.7-sonnet",
+                    model=current_model,
                     messages=[{"role": "user", "content": prompt}],
                     response_format={"type": "json_object"}
                 )
                 return json.loads(response.choices[0].message.content)
 
-            elif provider == "anthropic":
-                ant_key = os.getenv("ANTHROPIC_API_KEY")
-                if not ant_key: raise ValueError("No Anthropic Key")
-                client = anthropic.Anthropic(api_key=ant_key)
-                response = client.messages.create(
-                    model="claude-opus-4-7",
-                    max_tokens=6144,
-                    system="You are an expert Strategic Architect. Return STRICT JSON ONLY.",
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                text = response.content[0].text
-                if "```json" in text: text = text.split("```json")[1].split("```")[0]
-                elif "```" in text: text = text.split("```")[1].split("```")[0]
-                return json.loads(text.strip())
-                
-            elif provider == "gemini":
-                gem_key = os.getenv("GEMINI_API_KEY")
-                if not gem_key: raise ValueError("No Gemini Key")
-                genai.configure(api_key=gem_key)
-                # Updated to Gemini 2.5 Flash for 2026
-                model = genai.GenerativeModel("models/gemini-2.5-flash")
-                response = model.generate_content(prompt, generation_config=genai.GenerationConfig(temperature=0.3, response_mime_type="application/json"))
-                return json.loads(response.text)
-                
-            elif provider == "mistral":
-                mis_key = os.getenv("MISTRAL_API_KEY")
-                if not mis_key: raise ValueError("No Mistral Key")
-                client = Mistral(api_key=mis_key)
-                response = client.chat.complete(model="mistral-large-latest", messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"})
-                return json.loads(response.choices[0].message.content)
-
         except Exception as e:
             last_error = e
             err_msg = str(e).lower()
-            if "quota" in err_msg or "credit" in err_msg or "429" in err_msg:
-                print(f"  [LLM] {provider.upper()} exhausted/limit hit. Falling back to next provider...", flush=True)
+            if "quota" in err_msg or "credit" in err_msg or "429" in err_msg or "limit" in err_msg:
+                print(f"  [LLM] Model {current_model} exhausted/limit hit. Falling back...", flush=True)
                 continue
             else:
-                # If it's a structural error (invalid JSON), maybe retry same provider or re-raise
-                print(f"  [LLM] Error with {provider.upper()}: {e}")
+                print(f"  [LLM] Error with {current_model}: {e}")
                 continue
                 
-    raise last_error or Exception("All providers failed.")
+    raise last_error or Exception("All models in chain failed.")
 
 @retry_with_backoff(retries=2)
-def generate_vision_json(prompt: str, image_paths: List[str]) -> dict:
+def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[str] = None) -> dict:
     """
-    ULTRA-POWERFUL VISION SYNTHESIS.
-    Analyzes images + text to extract high-level design intelligence.
-    Uses OpenRouter (Claude 3.5 Sonnet) or Gemini 1.5 Flash.
+    UNIVERSAL VISION ENGINE (v18.2).
+    Soporta cadenas: 'anthropic/claude-3.7-sonnet,models/gemini-1.5-flash'
     """
-    # 1. Prepare Base64 images for OpenRouter/OpenAI style (with resizing)
+    if not model:
+        model = "anthropic/claude-3.7-sonnet,models/gemini-1.5-flash"
+        
+    models_to_try = [m.strip() for m in model.split(",")]
+    
+    # Pre-procesar imágenes una sola vez
     from PIL import Image
     import io
-    import base64
 
     def prepare_image(path, max_size=(1024, 1024)):
         with Image.open(path) as img:
             img.thumbnail(max_size)
-            # Convert to RGB if necessary (Alpha channel can sometimes cause issues)
             if img.mode in ("RGBA", "P"): img = img.convert("RGB")
             buffered = io.BytesIO()
             img.save(buffered, format="JPEG", quality=85)
             return buffered.getvalue()
 
-    or_key = os.getenv("OPENROUTER_API_KEY")
-    if or_key:
+    prepared_imgs = []
+    for p in image_paths:
+        if os.path.exists(p): prepared_imgs.append(prepare_image(p))
+
+    last_error = None
+    for current_model in models_to_try:
         try:
-            print(f"  [Vision] Analyzing {len(image_paths)} assets via OPENROUTER (Claude 3.7 Sonnet)...", flush=True)
-            client = openai.OpenAI(base_url="https://openrouter.ai/api/v1", api_key=or_key)
+            print(f"  [Vision] Attempting with {current_model}...", flush=True)
             
-            content = [{"type": "text", "text": prompt}]
-            for img_path in image_paths:
-                if os.path.exists(img_path):
-                    img_data = prepare_image(img_path)
-                    content.append({
+            if current_model.startswith("models/"):
+                # NATIVE GEMINI VISION
+                gem_key = os.getenv("GEMINI_API_KEY")
+                if not gem_key: raise ValueError("No Gemini Key")
+                genai.configure(api_key=gem_key)
+                m = genai.GenerativeModel(current_model)
+                content = [prompt]
+                for img_data in prepared_imgs:
+                    content.append({"mime_type": "image/jpeg", "data": img_data})
+                
+                response = m.generate_content(content, generation_config=genai.GenerationConfig(temperature=0.2, response_mime_type="application/json"))
+                return json.loads(response.text)
+                
+            else:
+                # OPENROUTER VISION (Claude 3.7 / GPT-4o)
+                or_key = os.getenv("OPENROUTER_API_KEY")
+                if not or_key: raise ValueError("No OpenRouter Key")
+                client = openai.OpenAI(base_url="https://openrouter.ai/api/v1", api_key=or_key)
+                
+                msg_content = [{"type": "text", "text": prompt}]
+                for img_data in prepared_imgs:
+                    msg_content.append({
                         "type": "image_url",
                         "image_url": {"url": f"data:image/jpeg;base64,{base_64_encode(img_data)}"}
                     })
-            
-            response = client.chat.completions.create(
-                model="anthropic/claude-3.7-sonnet",
-                messages=[{"role": "user", "content": content}],
-                max_tokens=1000,
-                response_format={"type": "json_object"}
-            )
-            return json.loads(response.choices[0].message.content)
-        except Exception as e:
-            print(f"  [Vision] OpenRouter failed: {e}. Falling back to Gemini...")
+                
+                response = client.chat.completions.create(
+                    model=current_model,
+                    messages=[{"role": "user", "content": msg_content}],
+                    max_tokens=1000,
+                    response_format={"type": "json_object"}
+                )
+                return json.loads(response.choices[0].message.content)
 
-    # 2. Fallback to Gemini 1.5 Flash (Native)
-    gem_key = os.getenv("GEMINI_API_KEY")
-    if gem_key:
-        try:
-            print(f"  [Vision] Analyzing via NATIVE GEMINI 2.5 FLASH...", flush=True)
-            genai.configure(api_key=gem_key)
-            model = genai.GenerativeModel("models/gemini-2.5-flash")
-            content = [prompt]
-            for p in image_paths:
-                if os.path.exists(p):
-                    # Prepare bytes directly
-                    with Image.open(p) as img:
-                        img.thumbnail((1024, 1024))
-                        if img.mode in ("RGBA", "P"): img = img.convert("RGB")
-                        buffered = io.BytesIO()
-                        img.save(buffered, format="JPEG", quality=85)
-                        content.append({
-                            "mime_type": "image/jpeg",
-                            "data": buffered.getvalue()
-                        })
-            
-            response = model.generate_content(content, generation_config=genai.GenerationConfig(response_mime_type="application/json"))
-            return json.loads(response.text)
         except Exception as e:
-            print(f"  [Vision] Gemini Vision failed: {e}")
+            last_error = e
+            print(f"  [Vision] {current_model} failed: {e}. Trying next...")
+            continue
 
-    raise Exception("All Vision providers failed.")
+    raise last_error or Exception("All vision models failed.")
 
 def base_64_encode(data):
     import base64

@@ -189,6 +189,8 @@ def extract_pptx_dna(file_path: str, source_filename: str,
         "dominant_colors": [c[0] for c in color_freq.most_common(8)],
         "extracted_assets": labeled_assets,
         "source_type": "pptx",
+        "slide_width_inches": round(prs.slide_width.inches, 2),
+        "slide_height_inches": round(prs.slide_height.inches, 2),
     }
 
 
@@ -230,6 +232,8 @@ Return ONLY this JSON:
         result = generate_json(prompt, specialization="general")
         result["extracted_assets"] = raw_data.get("extracted_assets", [])
         result["raw_extraction"] = raw_data
+        result["slide_width_inches"] = raw_data.get("slide_width_inches", 13.33)
+        result["slide_height_inches"] = raw_data.get("slide_height_inches", 7.5)
         return result
     except Exception as e:
         print(f"  [DNA] LLM refinement failed: {e}", flush=True)
@@ -246,6 +250,8 @@ Return ONLY this JSON:
             "secondary_font": fonts[1] if len(fonts) > 1 else None,
             "extracted_assets": raw_data.get("extracted_assets", []),
             "raw_extraction": raw_data,
+            "slide_width_inches": raw_data.get("slide_width_inches", 13.33),
+            "slide_height_inches": raw_data.get("slide_height_inches", 7.5),
             "llm_error": str(e),
         }
 

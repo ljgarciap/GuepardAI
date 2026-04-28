@@ -2,6 +2,7 @@ import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BrandService } from '../../services/brand.service';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-asset-library',
@@ -12,6 +13,7 @@ import { BrandService } from '../../services/brand.service';
 })
 export class AssetLibraryComponent implements OnInit {
   private brandService = inject(BrandService);
+  baseUrl = environment.baseUrl;
 
   brands: any[] = [];
   selectedBrandId: number | null = null;

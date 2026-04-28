@@ -47,7 +47,7 @@ export class BrandManagerComponent implements OnInit {
       about: brand.about || '',
       coreValue: brand.core_value || ''
     };
-    this.logoPreview = brand.logo_path ? 'http://localhost:8000/' + brand.logo_path : null;
+    this.logoPreview = brand.logo_path ? 'http://localhost:8001/' + brand.logo_path : null;
     this.showCreateForm = true;
   }
 

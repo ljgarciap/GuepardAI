@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { BrandService } from '../../services/brand.service';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { interval, switchMap, takeWhile } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-generator',
@@ -153,7 +154,7 @@ export class GeneratorComponent implements OnInit {
           
           if (res.status === 'completed') {
             this.addLog('Strategic Orchestrator', 'Portfolio synthesis finalized and verified.');
-            this.downloadUrl = 'http://localhost:8000' + res.download_url;
+            this.downloadUrl = environment.baseUrl + res.download_url;
             this.isGenerating = false;
           } else if (res.status === 'error') {
             this.errorMessage = res.current_step;

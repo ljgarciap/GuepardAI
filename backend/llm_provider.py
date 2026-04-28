@@ -1,7 +1,7 @@
 import os
 import json
 import time
-from typing import List, Optional
+from typing import List, Optional, Union
 try:
     import google.generativeai as genai
 except ImportError:
@@ -73,201 +73,291 @@ def resolve_provider(specialization: str = "general"):
     raise ValueError("API_KEY missing for required provider.")
 
 @retry_with_backoff(retries=3)
-def generate_json(prompt: str, specialization: str = "general") -> dict:
-    primary_provider = resolve_provider(specialization)
-    providers_to_try = [primary_provider, "openrouter", "gemini", "mistral"]
-    if os.getenv("OPENROUTER_API_KEY"):
-        # Prioritize OpenRouter for design if we have the key
-        providers_to_try = ["openrouter"] + [p for p in providers_to_try if p != "openrouter"]
-    
-    # De-duplicate while preserving order
-    providers_to_try = list(dict.fromkeys(providers_to_try))
-    
+def generate_json(prompt: str, model: Optional[str] = None, specialization: str = "general") -> dict:
+    """
+    UNIVERSAL AI ENGINE (v18.2) - Parametric Failover.
+    Soporta cadenas de modelos: 'models/gemini-1.5-flash,mistral/mistral-large-latest'
+    """
+    if not model:
+        # Fallback si no se especifica modelo
+        model = "gemini-1.5-flash,mistral/mistral-large-latest"
+        
+    models_to_try = [m.strip() for m in model.split(",")]
     last_error = None
-    for provider in providers_to_try:
+    
+    for current_model in models_to_try:
         try:
-            print(f"  [LLM] Attempting generation with {provider.upper()}...", flush=True)
-            if provider == "openrouter":
+            print(f"  [LLM] Attempting generation with {current_model}...", flush=True)
+            
+            # 1. Rutas según el contenido del nombre del modelo
+            if "gemini" in current_model.lower():
+                # NATIVE GEMINI
+                gem_key = os.getenv("GEMINI_API_KEY")
+                if not gem_key: raise ValueError("No Gemini Key")
+                genai.configure(api_key=gem_key)
+                # Ensure it has 'models/' for the SDK if missing
+                m_name = current_model if current_model.startswith("models/") else f"models/{current_model}"
+                m = genai.GenerativeModel(m_name)
+                response = m.generate_content(prompt, generation_config=genai.GenerationConfig(temperature=0.3, response_mime_type="application/json"))
+                return json.loads(response.text)
+                
+            elif "mistral" in current_model.lower() and "/" in current_model:
+                # NATIVE MISTRAL (e.g., 'mistral/mistral-large-latest')
+                # NATIVE MISTRAL
+                mis_key = os.getenv("MISTRAL_API_KEY")
+                if not mis_key: raise ValueError("No Mistral Key")
+                client = Mistral(api_key=mis_key)
+                # Mistral slugs don't usually have the prefix, but we remove it for the API call
+                m_slug = current_model.replace("mistral/", "")
+                response = client.chat.complete(model=m_slug, messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"})
+                return json.loads(response.choices[0].message.content)
+            
+            else:
+                # OPENROUTER (Default fallback for other slugs like 'anthropic/claude-3.7-sonnet')
                 or_key = os.getenv("OPENROUTER_API_KEY")
                 if not or_key: raise ValueError("No OpenRouter Key")
-                client = openai.OpenAI(
-                    base_url="https://openrouter.ai/api/v1",
-                    api_key=or_key,
-                )
-                # Corrected slug for OpenRouter (Updated to Claude 3.7 Sonnet for 2026)
+                client = openai.OpenAI(base_url="https://openrouter.ai/api/v1", api_key=or_key)
                 response = client.chat.completions.create(
-                    model="anthropic/claude-3.7-sonnet",
+                    model=current_model,
                     messages=[{"role": "user", "content": prompt}],
                     response_format={"type": "json_object"}
                 )
                 return json.loads(response.choices[0].message.content)
 
-            elif provider == "anthropic":
-                ant_key = os.getenv("ANTHROPIC_API_KEY")
-                if not ant_key: raise ValueError("No Anthropic Key")
-                client = anthropic.Anthropic(api_key=ant_key)
-                response = client.messages.create(
-                    model="claude-opus-4-7",
-                    max_tokens=6144,
-                    system="You are an expert Strategic Architect. Return STRICT JSON ONLY.",
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                text = response.content[0].text
-                if "```json" in text: text = text.split("```json")[1].split("```")[0]
-                elif "```" in text: text = text.split("```")[1].split("```")[0]
-                return json.loads(text.strip())
-                
-            elif provider == "gemini":
-                gem_key = os.getenv("GEMINI_API_KEY")
-                if not gem_key: raise ValueError("No Gemini Key")
-                genai.configure(api_key=gem_key)
-                # Updated to Gemini 2.5 Flash for 2026
-                model = genai.GenerativeModel("models/gemini-2.5-flash")
-                response = model.generate_content(prompt, generation_config=genai.GenerationConfig(temperature=0.3, response_mime_type="application/json"))
-                return json.loads(response.text)
-                
-            elif provider == "mistral":
-                mis_key = os.getenv("MISTRAL_API_KEY")
-                if not mis_key: raise ValueError("No Mistral Key")
-                client = Mistral(api_key=mis_key)
-                response = client.chat.complete(model="mistral-large-latest", messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"})
-                return json.loads(response.choices[0].message.content)
-
         except Exception as e:
             last_error = e
             err_msg = str(e).lower()
-            if "quota" in err_msg or "credit" in err_msg or "429" in err_msg:
-                print(f"  [LLM] {provider.upper()} exhausted/limit hit. Falling back to next provider...", flush=True)
+            if "quota" in err_msg or "credit" in err_msg or "429" in err_msg or "limit" in err_msg:
+                print(f"  [LLM] Model {current_model} exhausted/limit hit. Falling back...", flush=True)
                 continue
             else:
-                # If it's a structural error (invalid JSON), maybe retry same provider or re-raise
-                print(f"  [LLM] Error with {provider.upper()}: {e}")
+                print(f"  [LLM] Error with {current_model}: {e}")
                 continue
                 
-    raise last_error or Exception("All providers failed.")
+    raise last_error or Exception("All models in chain failed.")
 
 @retry_with_backoff(retries=2)
-def generate_vision_json(prompt: str, image_paths: List[str]) -> dict:
+def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[str] = None) -> dict:
     """
-    ULTRA-POWERFUL VISION SYNTHESIS.
-    Analyzes images + text to extract high-level design intelligence.
-    Uses OpenRouter (Claude 3.5 Sonnet) or Gemini 1.5 Flash.
+    UNIVERSAL VISION ENGINE (v18.3).
+    Obtiene la cadena de modelos desde system_configs.
     """
-    # 1. Prepare Base64 images for OpenRouter/OpenAI style (with resizing)
+    if not model:
+        from database import SessionLocal
+        from models import SystemConfig
+        db = SessionLocal()
+        cfg = db.query(SystemConfig).filter(SystemConfig.key == 'extraction_vision_model').first()
+        model = cfg.value if cfg else "anthropic/claude-3.7-sonnet,gemini-1.5-flash"
+        db.close()
+        
+    models_to_try = [m.strip() for m in model.split(",")]
+    
+    # Pre-procesar imágenes una sola vez
     from PIL import Image
     import io
-    import base64
 
     def prepare_image(path, max_size=(1024, 1024)):
         with Image.open(path) as img:
             img.thumbnail(max_size)
-            # Convert to RGB if necessary (Alpha channel can sometimes cause issues)
             if img.mode in ("RGBA", "P"): img = img.convert("RGB")
             buffered = io.BytesIO()
             img.save(buffered, format="JPEG", quality=85)
             return buffered.getvalue()
 
-    or_key = os.getenv("OPENROUTER_API_KEY")
-    if or_key:
+    prepared_imgs = []
+    for p in image_paths:
+        if os.path.exists(p): prepared_imgs.append(prepare_image(p))
+
+    last_error = None
+    for current_model in models_to_try:
         try:
-            print(f"  [Vision] Analyzing {len(image_paths)} assets via OPENROUTER (Claude 3.7 Sonnet)...", flush=True)
-            client = openai.OpenAI(base_url="https://openrouter.ai/api/v1", api_key=or_key)
+            print(f"  [Vision] Attempting with {current_model}...", flush=True)
             
-            content = [{"type": "text", "text": prompt}]
-            for img_path in image_paths:
-                if os.path.exists(img_path):
-                    img_data = prepare_image(img_path)
-                    content.append({
+            if "gemini" in current_model.lower():
+                # ADAPTADOR NATIVO GEMINI
+                gem_key = os.getenv("GEMINI_API_KEY")
+                if not gem_key: raise ValueError("No Gemini Key")
+                genai.configure(api_key=gem_key)
+                
+                # El adaptador se encarga de la estructura correcta según el SDK
+                m_name = current_model if current_model.startswith("models/") else f"models/{current_model}"
+                # Pero si falla con models/, el adaptador debe saber reintentar sin él o usar el nombre base
+                
+                try:
+                    m = genai.GenerativeModel(m_name)
+                    content = [prompt]
+                    for img_data in prepared_imgs:
+                        content.append({"mime_type": "image/jpeg", "data": img_data})
+                    
+                    response = m.generate_content(
+                        content, 
+                        generation_config=genai.GenerationConfig(
+                            temperature=0.1, 
+                            response_mime_type="application/json"
+                        )
+                    )
+                    return json.loads(response.text)
+                except Exception as gem_err:
+                    if "not found" in str(gem_err).lower() and "models/" in m_name:
+                        # Reintento inteligente del adaptador: quitar prefijo
+                        print(f"  [Vision] Gemini 404 with prefix. Retrying without 'models/'...", flush=True)
+                        m = genai.GenerativeModel(m_name.replace("models/", ""))
+                        response = m.generate_content(content, generation_config=genai.GenerationConfig(temperature=0.1, response_mime_type="application/json"))
+                        return json.loads(response.text)
+                    raise gem_err
+                
+            else:
+                # OPENROUTER VISION (Claude 3.7 / GPT-4o)
+                or_key = os.getenv("OPENROUTER_API_KEY")
+                if not or_key: raise ValueError("No OpenRouter Key")
+                client = openai.OpenAI(base_url="https://openrouter.ai/api/v1", api_key=or_key)
+                
+                msg_content = [{"type": "text", "text": prompt}]
+                for img_data in prepared_imgs:
+                    msg_content.append({
                         "type": "image_url",
                         "image_url": {"url": f"data:image/jpeg;base64,{base_64_encode(img_data)}"}
                     })
-            
-            response = client.chat.completions.create(
-                model="anthropic/claude-3.7-sonnet",
-                messages=[{"role": "user", "content": content}],
-                max_tokens=1000,
-                response_format={"type": "json_object"}
-            )
-            return json.loads(response.choices[0].message.content)
-        except Exception as e:
-            print(f"  [Vision] OpenRouter failed: {e}. Falling back to Gemini...")
+                
+                response = client.chat.completions.create(
+                    model=current_model,
+                    messages=[{"role": "user", "content": msg_content}],
+                    max_tokens=1000,
+                    response_format={"type": "json_object"}
+                )
+                return json.loads(response.choices[0].message.content)
 
-    # 2. Fallback to Gemini 1.5 Flash (Native)
-    gem_key = os.getenv("GEMINI_API_KEY")
-    if gem_key:
-        try:
-            print(f"  [Vision] Analyzing via NATIVE GEMINI 2.5 FLASH...", flush=True)
-            genai.configure(api_key=gem_key)
-            model = genai.GenerativeModel("models/gemini-2.5-flash")
-            content = [prompt]
-            for p in image_paths:
-                if os.path.exists(p):
-                    # Prepare bytes directly
-                    with Image.open(p) as img:
-                        img.thumbnail((1024, 1024))
-                        if img.mode in ("RGBA", "P"): img = img.convert("RGB")
-                        buffered = io.BytesIO()
-                        img.save(buffered, format="JPEG", quality=85)
-                        content.append({
-                            "mime_type": "image/jpeg",
-                            "data": buffered.getvalue()
-                        })
-            
-            response = model.generate_content(content, generation_config=genai.GenerationConfig(response_mime_type="application/json"))
-            return json.loads(response.text)
         except Exception as e:
-            print(f"  [Vision] Gemini Vision failed: {e}")
+            last_error = e
+            print(f"  [Vision] {current_model} failed: {e}. Trying next...")
+            continue
 
-    raise Exception("All Vision providers failed.")
+    raise last_error or Exception("All vision models failed.")
 
 def base_64_encode(data):
     import base64
     return base64.b64encode(data).decode('utf-8')
 
 @retry_with_backoff(retries=2)
-def get_embeddings_batch(texts: List[str]) -> List[Optional[list]]:
+def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] = None) -> List[Optional[list]]:
     """
-    ULTRA-EFFICIENT BATCH EMBEDDING (With Redundant Fallback Chain).
+    UNIVERSAL EMBEDDING ENGINE (v18.6) - Multimodal & Normalized.
+    Garantiza salida de 1024 dimensiones para pgvector.
+    Soporta Texto (str) e Imágenes (bytes).
     """
-    if not texts: return []
+    if not inputs: return []
     
-    # Intentamos primero con el proveedor preferido (OpenRouter -> Mistral -> Gemini)
-    providers_to_try = []
-    if os.getenv("OPENROUTER_API_KEY"): providers_to_try.append("openrouter")
-    if os.getenv("MISTRAL_API_KEY"): providers_to_try.append("mistral")
-    if os.getenv("GEMINI_API_KEY"): providers_to_try.append("gemini")
+    # 1. Determinar modelos a usar
+    from database import SessionLocal
+    from models import SystemConfig
+    db = SessionLocal()
+    cfg = db.query(SystemConfig).filter(SystemConfig.key == 'embedding_model_chain').first()
+    model_chain = cfg.value if cfg else "models/text-embedding-004,models/multimodal-embedding-001"
+    db.close()
     
+    models_to_try = [m.strip() for m in model_chain.split(",")]
     last_error = None
-    for provider in providers_to_try:
+    
+    # Target dimension for the DB
+    TARGET_DIM = 1024
+
+    def normalize_vector(vec: list, target: int) -> list:
+        """Ajusta la dimensión del vector por truncamiento o padding."""
+        current = len(vec)
+        if current == target: return vec
+        if current > target: return vec[:target]
+        # Padding con ceros si es menor
+        return vec + [0.0] * (target - current)
+
+    for current_model in models_to_try:
         try:
-            print(f"  [Embeddings] Attempting with {provider.upper()}...", flush=True)
-            if provider == "openrouter":
-                client = openai.OpenAI(
-                    base_url="https://openrouter.ai/api/v1",
-                    api_key=os.getenv("OPENROUTER_API_KEY"),
-                )
-                response = client.embeddings.create(input=texts, model="mistralai/mistral-embed")
-                return [item.embedding for item in response.data]
-
-            elif provider == "gemini":
-                genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-                # Note: Gemini uses 768-dim, we might need to pad/truncate if DB is 1024
-                response = genai.embed_content(model="models/text-embedding-004", content=texts, task_type="retrieval_document")
-                embeddings = response.get("embedding", [])
-                # Handle 768 to 1024 padding if needed
-                return embeddings
-
-            elif provider == "mistral":
-                client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
-                response = client.embeddings.create(model="mistral-embed", inputs=texts)
-                return [item.embedding for item in response.data]
-        except Exception as e:
-            print(f"  [Embeddings] Provider {provider} failed: {e}")
-            last_error = e
-            continue
+            print(f"  [Embeddings] Attempting with {current_model}...", flush=True)
             
-    if last_error: raise last_error
-    return []
+            if "gemini" in current_model.lower() or "embedding" in current_model.lower():
+                # NATIVE GOOGLE EMBEDDINGS (Text or Multimodal)
+                gem_key = os.getenv("GEMINI_API_KEY")
+                if not gem_key: raise ValueError("No Gemini Key")
+                genai.configure(api_key=gem_key)
+                
+                results = []
+                for item in inputs:
+                    try:
+                        # ADAPTADOR INTELIGENTE DE EMBEDDINGS
+                        m_name = current_model if current_model.startswith("models/") else f"models/{current_model}"
+                        
+                        try:
+                            if isinstance(item, str):
+                                res = genai.embed_content(model=m_name, content=item, task_type="retrieval_document")
+                            else:
+                                res = genai.embed_content(
+                                    model=m_name,
+                                    content={'mime_type': 'image/jpeg', 'data': item},
+                                    task_type="retrieval_document"
+                                )
+                            results.append(normalize_vector(res["embedding"], TARGET_DIM))
+                        except Exception as gem_err:
+                            if "not found" in str(gem_err).lower() and "models/" in m_name:
+                                # Reintento sin prefijo
+                                alt_name = m_name.replace("models/", "")
+                                print(f"  [Embeddings] 404 with prefix. Retrying with: {alt_name}", flush=True)
+                                if isinstance(item, str):
+                                    res = genai.embed_content(model=alt_name, content=item, task_type="retrieval_document")
+                                else:
+                                    res = genai.embed_content(
+                                        model=alt_name,
+                                        content={'mime_type': 'image/jpeg', 'data': item},
+                                        task_type="retrieval_document"
+                                    )
+                                results.append(normalize_vector(res["embedding"], TARGET_DIM))
+                            else:
+                                print(f"  [Embeddings] Gemini FATAL error (prefix={m_name}): {gem_err}", flush=True)
+                                raise gem_err
+                    except Exception as e:
+                        print(f"  [Embeddings] Item failure in batch: {e}", flush=True)
+                        results.append(None)
+                
+                if any(r is not None for r in results):
+                    return results
+                else:
+                    raise Exception("All items in batch failed for Gemini.")
+
+            elif "mistral" in current_model.lower():
+                # MISTRAL EMBEDDINGS (v18.6)
+                mis_key = os.getenv("MISTRAL_API_KEY")
+                if not mis_key: raise ValueError("No Mistral Key")
+                from mistralai import Mistral
+                client = Mistral(api_key=mis_key)
+                
+                # Solo texto para Mistral
+                text_inputs = [i for i in inputs if isinstance(i, str)]
+                if not text_inputs: continue
+                
+                res = client.embeddings.create(
+                    model="mistral-embed",
+                    inputs=text_inputs
+                )
+                
+                # Mapear resultados respetando el orden original y normalizando a 1024
+                results = []
+                mistral_idx = 0
+                for item in inputs:
+                    if isinstance(item, str):
+                        vec = res.data[mistral_idx].embedding
+                        results.append(normalize_vector(vec, TARGET_DIM))
+                        mistral_idx += 1
+                    else:
+                        results.append(None) # Mistral no soporta imágenes
+                return results
+                if not text_inputs: continue
+                response = client.embeddings.create(model="mistral-embed", inputs=text_inputs)
+                return [normalize_vector(item.embedding, TARGET_DIM) for item in response.data]
+
+        except Exception as e:
+            last_error = e
+            print(f"  [Embeddings] {current_model} failed: {e}")
+            continue
+
+    raise last_error or Exception("All embedding providers failed.")
 
 def get_embedding(text: str) -> Optional[list]:
     res = get_embeddings_batch([text])

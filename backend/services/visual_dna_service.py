@@ -80,7 +80,7 @@ def extract_pdf_dna(file_path: str, source_filename: str,
                 base_img = doc.extract_image(xref)
                 data = base_img.get("image", b"")
                 ext = base_img.get("ext", "png")
-                if len(data) > 10240:  # > 10KB
+                if len(data) > 5120:  # > 5KB
                     uid = uuid.uuid4().hex[:6]
                     fname = f"{source_filename}_p{i}_{uid}.{ext}"
                     out = os.path.join(upload_dir, fname)
@@ -122,27 +122,67 @@ def extract_pptx_dna(file_path: str, source_filename: str,
     fonts, colors, assets = [], [], []
     total = len(prs.slides)
 
-    for i, slide in enumerate(prs.slides):
-        if cb:
-            cb(f"DNA Visual — PPTX slide {i+1}/{total}", int((i + 1) / total * 90))
+    def _save_img(data, prefix, idx, ext):
+        if len(data) < 4096: return None # Ignorar basura < 4KB
+        uid = uuid.uuid4().hex[:6]
+        fname = f"{source_filename}_{prefix}_{idx}_{uid}.{ext}"
+        with open(os.path.join(upload_dir, fname), "wb") as f: f.write(data)
+        return fname
 
-        for shape in slide.shapes:
-            # Imágenes
+    # 1. Cosecha Profunda: Masters, Layouts y Fondos
+    for m_idx, master in enumerate(prs.slide_masters):
+        # Fondo del Master
+        try:
+            if master.background.fill.type == 6: # Picture
+                img = master.background.fill.picture.image
+                res = _save_img(img.blob, "master_bg", m_idx, img.ext)
+                if res: assets.append(res)
+        except: pass
+        
+        for shape in master.shapes:
+            # Imágenes Directas
             if getattr(shape, "shape_type", None) == 13:
                 try:
-                    img_data = shape.image.blob
-                    ext = shape.image.ext
-                    if len(img_data) > 15360:  # > 15KB
-                        uid = uuid.uuid4().hex[:6]
-                        fname = f"{source_filename}_s{i}_{uid}.{ext}"
-                        out = os.path.join(upload_dir, fname)
-                        with open(out, "wb") as f:
-                            f.write(img_data)
-                        assets.append(fname)
-                except Exception as e:
-                    print(f"  [DNA] Error extrayendo imagen PPTX slide {i}: {e}", flush=True)
+                    res = _save_img(shape.image.blob, "master_img", m_idx, shape.image.ext)
+                    if res: assets.append(res)
+                except: pass
+            # Rellenos de Imagen (Logos ocultos)
+            try:
+                if shape.fill.type == 6:
+                    img = shape.fill.picture.image
+                    res = _save_img(img.blob, "master_fill", m_idx, img.ext)
+                    if res: assets.append(res)
+            except: pass
 
-            # Texto → fuentes y colores
+    # 2. Cosecha de Diapositivas e Imágenes Inmersas
+    for i, slide in enumerate(prs.slides):
+        if cb: cb(f"DNA Visual — Desguace slide {i+1}/{total}", int((i + 1) / total * 95))
+        
+        # Fondo del Slide
+        try:
+            if slide.background.fill.type == 6:
+                img = slide.background.fill.picture.image
+                res = _save_img(img.blob, "bg", i, img.ext)
+                if res: assets.append(res)
+        except: pass
+
+        for s_idx, shape in enumerate(slide.shapes):
+            # Imágenes Directas
+            if getattr(shape, "shape_type", None) == 13:
+                try:
+                    res = _save_img(shape.image.blob, f"s{i}_img", s_idx, shape.image.ext)
+                    if res: assets.append(res)
+                except: pass
+            
+            # Rellenos (Donde suelen estar los logos en manuales complejos)
+            try:
+                if shape.fill.type == 6:
+                    img = shape.fill.picture.image
+                    res = _save_img(img.blob, f"s{i}_fill", s_idx, img.ext)
+                    if res: assets.append(res)
+            except: pass
+
+            # Texto -> fuentes y colores
             if not shape.has_text_frame:
                 continue
             for para in shape.text_frame.paragraphs:
@@ -189,6 +229,8 @@ def extract_pptx_dna(file_path: str, source_filename: str,
         "dominant_colors": [c[0] for c in color_freq.most_common(8)],
         "extracted_assets": labeled_assets,
         "source_type": "pptx",
+        "slide_width_inches": round(prs.slide_width.inches, 2),
+        "slide_height_inches": round(prs.slide_height.inches, 2),
     }
 
 
@@ -230,6 +272,8 @@ Return ONLY this JSON:
         result = generate_json(prompt, specialization="general")
         result["extracted_assets"] = raw_data.get("extracted_assets", [])
         result["raw_extraction"] = raw_data
+        result["slide_width_inches"] = raw_data.get("slide_width_inches", 13.33)
+        result["slide_height_inches"] = raw_data.get("slide_height_inches", 7.5)
         return result
     except Exception as e:
         print(f"  [DNA] LLM refinement failed: {e}", flush=True)
@@ -246,6 +290,8 @@ Return ONLY this JSON:
             "secondary_font": fonts[1] if len(fonts) > 1 else None,
             "extracted_assets": raw_data.get("extracted_assets", []),
             "raw_extraction": raw_data,
+            "slide_width_inches": raw_data.get("slide_width_inches", 13.33),
+            "slide_height_inches": raw_data.get("slide_height_inches", 7.5),
             "llm_error": str(e),
         }
 
@@ -262,6 +308,7 @@ def extract_visual_dna(file_path: str, upload_dir: str,
     """
     source_filename = os.path.basename(file_path)
     ext = os.path.splitext(file_path)[1].lower()
+    print(f"[DNA] Starting extraction for {source_filename} (Type: {ext})", flush=True)
 
     if cb:
         cb("DNA Visual — Iniciando extracción...", 2)

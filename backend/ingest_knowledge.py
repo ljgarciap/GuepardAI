@@ -42,31 +42,35 @@ def chunk_text(text, chunk_size=1500, overlap=250):
         start += chunk_size - overlap
     return chunks
 
+import time
+
 def ingest_document(file_path, client_name="Internal", update_callback=None, brand_id=None, is_public=False, document_type="company_knowledge"):
     """
     STABLE INGESTION WITH BRAND SOVEREIGNTY, VISIBILITY & TAXONOMY (v12.0).
     """
+    start_total = time.time()
     ext = os.path.splitext(file_path)[1].lower()
     if ext not in [".pdf", ".pptx"]:
          raise ValueError(f"Format {ext} not supported.")
     
     source_filename = os.path.basename(file_path)
-    print(f"[Worker] Starting ingestion for {client_name} (Brand ID: {brand_id}). Type: {document_type}", flush=True)
+    print(f"\n[Worker] Starting ingestion for {client_name} (Brand ID: {brand_id}).", flush=True)
          
     if update_callback:
         update_callback(f"Reading document: {source_filename}", 5)
     
+    start_extract = time.time()
     if ext == ".pdf":
         if not fitz: raise ValueError("PyMuPDF missing.")
         full_text = extract_text_from_pdf(file_path)
     else:
         full_text = extract_text_from_pptx(file_path)
+    duration_extract = time.time() - start_extract
+    print(f"[Worker] Step 1: Text extraction completed in {duration_extract:.2f}s ({len(full_text)} chars).", flush=True)
         
     chunks = chunk_text(full_text)
     valid_chunks = [c for c in chunks if len(c.strip()) >= 5] 
     total_chunks = len(valid_chunks)
-    
-    print(f"[Worker] Extracted {len(full_text)} chars. Chunks: {total_chunks}", flush=True)
     
     if total_chunks == 0:
         if update_callback:
@@ -78,6 +82,7 @@ def ingest_document(file_path, client_name="Internal", update_callback=None, bra
         
     batch_size = 50
     inserted_total = 0
+    start_sync = time.time()
     
     for i in range(0, total_chunks, batch_size):
         batch_slice = slice(i, i + batch_size)
@@ -92,10 +97,8 @@ def ingest_document(file_path, client_name="Internal", update_callback=None, bra
         try:
             batch_embeddings = get_embeddings_batch(batch_texts)
             if not batch_embeddings or len(batch_embeddings) == 0:
-                 print(f"  [Failure] Batch {current_batch_idx} returned ZERO embeddings.", flush=True)
                  continue
                  
-            # Explicit cast to VECTOR format for pgvector
             with engine.connect() as conn:
                 with conn.begin():
                     for text_fragment, emb in zip(batch_texts, batch_embeddings):
@@ -124,7 +127,6 @@ def ingest_document(file_path, client_name="Internal", update_callback=None, bra
                             }
                         )
                         inserted_total += 1
-            print(f"  [DB] Consistently persisted batch {current_batch_idx} for Brand {brand_id}.", flush=True)
             
         except Exception as e:
             print(f"  [Error] Batch {current_batch_idx} failed: {e}", flush=True)
@@ -132,9 +134,14 @@ def ingest_document(file_path, client_name="Internal", update_callback=None, bra
                 update_callback(f"Fatal Sync Error: {str(e)}", -1)
             raise e
 
+    duration_sync = time.time() - start_sync
+    duration_total = time.time() - start_total
+    
     if update_callback:
         update_callback(f"Synchronization finalized ({inserted_total} items).", 100)
-    print(f"[Worker] Knowledge base synced. Total: {inserted_total} records.", flush=True)
+    
+    print(f"[Worker] Step 2: RAG sync completed in {duration_sync:.2f}s ({inserted_total} records).", flush=True)
+    print(f"[Worker] Total Ingestion Time: {duration_total:.2f}s\n", flush=True)
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

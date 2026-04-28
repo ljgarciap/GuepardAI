@@ -442,3 +442,38 @@ textarea {
 @keyframes spin {
     to { transform: rotate(360deg); }
 }
+
+@media (max-width: 1024px) {
+  .toolbar-actions {
+    flex-wrap: wrap;
+    gap: 20px;
+  }
+  .control-group {
+    padding-left: 0;
+    border-left: none;
+    flex: 1;
+    min-width: 180px;
+  }
+  .enterprise-select {
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .control-toolbar {
+    padding: 20px;
+    gap: 20px;
+  }
+  .hero-title-clean {
+    font-size: 1.5rem;
+  }
+  .preset-pills {
+    flex-wrap: wrap;
+  }
+  .input-card {
+    padding: 15px;
+  }
+  textarea {
+    font-size: 1rem;
+  }
+}

@@ -54,6 +54,10 @@ class BrandVisualDna(Base):
     # Captura completa del LLM para auditoría
     raw_extraction   = Column(JSONB, nullable=True)
 
+    # Dimensiones físicas del slide original (v12.5)
+    slide_width_inches   = Column(Float, default=13.33)
+    slide_height_inches  = Column(Float, default=7.5)
+
     created_at       = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at       = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     is_public        = Column(Integer, default=0) # 0=Exclusive, 1=Public
@@ -70,15 +74,15 @@ class BrandAsset(Base):
     brand_dna_id = Column(Integer, ForeignKey("brand_visual_dna.id"), nullable=True) # Linked to specific DNA extraction
     
     file_hash = Column(String(64), index=True) 
-    local_path = Column(String(512))
+    local_path = Column(String(1024))
     
     category = Column(String(50)) 
     tags = Column(JSON)           # AI Generated Tags
     manual_tags = Column(JSON)    # USER Specified Tags (v11.0)
-    description = Column(String(512))
+    description = Column(Text)
     
     is_public = Column(Integer, default=0) 
-    source_doc = Column(String(255))      
+    source_doc = Column(String(512))      
 
     metadata_json = Column(JSON) 
     embedding = Column(Vector(1024), nullable=True) # Vector representation for semantic search
@@ -174,6 +178,7 @@ class GenerationJob(Base):
     id          = Column(Integer, primary_key=True, index=True)
     client_name = Column(String, index=True)
     brand_id    = Column(Integer, index=True)
+    style_id    = Column(Integer, nullable=True) # v23.0: Enlace al Blueprint/Dna elegido
 
     prompt      = Column(Text)              # Prompt original del usuario
     full_llm_prompt = Column(Text, nullable=True)  # Prompt final con contexto RAG
@@ -185,6 +190,9 @@ class GenerationJob(Base):
     pptx_path   = Column(String, nullable=True)
 
     created_at  = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    # Relación con las slides granulares (v18.5)
+    slides      = relationship("PresentationSlide", back_populates="job", cascade="all, delete-orphan")
 
 
 # ============================================================
@@ -253,3 +261,46 @@ class CorporateKnowledge(Base):
 
     # Relación inversa
     brand = relationship("Brand", back_populates="knowledge")
+
+class PresentationSlide(Base):
+    """
+    ESTADO ATÓMICO DE SLIDE (v18.5).
+    Guarda la decisión final del Director de Arte para cada diapositiva.
+    """
+    __tablename__ = "presentation_slides"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    job_id       = Column(Integer, ForeignKey("generation_jobs.id"))
+    
+    slide_number = Column(Integer)
+    title        = Column(String(500))
+    content_json = Column(JSONB) # { "bullets": [...], "subtitle": "..." }
+    
+    # Decisiones del Director de Arte
+    layout_slug  = Column(String(100)) # 'split-right', 'full-bleed', etc.
+    assigned_image = Column(String(500), nullable=True)
+    reference_id = Column(Integer, nullable=True) # ID del asset de referencia (v18.7)
+    font_scale   = Column(Float, default=1.0)
+    
+    # Estados de flujo v23.0
+    status       = Column(String(50), default="pending") # pending | content_ready | planned | rendered
+    planning_json = Column(JSONB, nullable=True) # Decisiones de IA Art Director
+    
+    # Elementos finales renderizables (v18.5)
+    # Lista de diccionarios con coordenadas y estilos finales
+    render_elements = Column(JSONB, nullable=True) 
+
+    job = relationship("GenerationJob", back_populates="slides")
+
+class SystemConfig(Base):
+    """
+    TABLA PARAMÉTRICA (v18.1).
+    Evita el hardcodeo de modelos y límites del sistema.
+    """
+    __tablename__ = "system_configs"
+
+    id    = Column(Integer, primary_key=True, index=True)
+    key   = Column(String(100), unique=True, index=True, nullable=False)
+    value = Column(String(500), nullable=False)
+    description = Column(String(255), nullable=True)
+    updated_at  = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)

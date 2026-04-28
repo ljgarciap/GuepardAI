@@ -31,7 +31,7 @@
     <div class="asset-grid" *ngIf="activeTab === 'images'">
       <div class="asset-card glass-panel" *ngFor="let img of images" (click)="openDetail(img)">
         <div class="asset-preview">
-          <img [src]="'http://localhost:8000/' + img.local_path" alt="Asset">
+          <img [src]="baseUrl + '/' + img.local_path" alt="Asset">
         </div>
         <div class="asset-info">
           <span class="asset-tag">{{ img.category }}</span>
@@ -87,7 +87,7 @@
           <p>Strategic Synthesis • {{ p.created_at | date:'medium' }}</p>
         </div>
         <div class="item-actions">
-          <a [href]="'http://localhost:8000/api/generation/download/' + p.id" class="btn-mini" download>DOWNLOAD PPTX</a>
+          <a [href]="baseUrl + '/api/generation/download/' + p.id" class="btn-mini" download>DOWNLOAD PPTX</a>
         </div>
       </div>
       <div class="empty-state" *ngIf="portfolios.length === 0">
@@ -104,7 +104,7 @@
       
       <div class="modal-layout">
         <div class="modal-visual">
-          <img [src]="'http://localhost:8000/' + selectedAsset.local_path" alt="Full Asset">
+          <img [src]="baseUrl + '/' + selectedAsset.local_path" alt="Full Asset">
         </div>
         <div class="modal-data">
           <span class="asset-tag-large">{{ selectedAsset.category }}</span>
@@ -140,7 +140,7 @@
           </div>
 
           <div class="modal-actions">
-            <a [href]="'http://localhost:8000/' + selectedAsset.local_path" download class="btn-mini" style="width: 100%; text-align: center; margin-top: 1rem;">DOWNLOAD MASTER</a>
+            <a [href]="baseUrl + '/' + selectedAsset.local_path" download class="btn-mini" style="width: 100%; text-align: center; margin-top: 1rem;">DOWNLOAD MASTER</a>
           </div>
         </div>
       </div>

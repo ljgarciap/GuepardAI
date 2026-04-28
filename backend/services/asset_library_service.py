@@ -42,29 +42,53 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
         print(f"  [Library] Asset already exists. Reusing.")
         return existing_record
 
-    # 2. Análisis Semántico con Vision IA
-    print(f"  [Library] Analyzing NEW asset: {filename}...")
+    # 2. Análisis Semántico v19.0: VISION-FIRST Categorization
+    print(f"  [Library] Analyzing NEW asset with VISION: {filename}...")
+    
+    # 2.1 Visión para Identidad y Categoría Real
     tags = []
-    description = "brand asset"
+    description = f"Brand asset: {filename}"
+    category = "photos" # Default
     
     try:
-        prompt = """
-        Analyze this brand asset image for high-fidelity presentation use.
-        1. Categorize it: 'logo', 'icon', 'photo-subject', 'photo-background'.
-        2. Give 5-8 strategic semantic tags (e.g. 'growth', 'sustainability', 'executive').
-        3. One-line professional description.
-        Output ONLY JSON: {"category": "...", "tags": [...], "description": "..."}
+        vision_prompt = """
+        Analyze this image with EXTREME RIGOR and return a JSON with:
+        - 'category': Choose one: 'logos', 'photos', 'icons', 'backgrounds', 'noise'.
+        - 'is_person': boolean.
+        - 'description': A very detailed professional description.
+        - 'tags': 5 semantic keywords.
+        
+        STRICT NOISE RULES:
+        1. If the image is entirely or predominantly white/blank, category MUST be 'noise'.
+        2. If you describe it as 'blank white image', 'pristine white', or 'minimalist background', category MUST be 'noise'.
+        3. Only use 'backgrounds' for textured, colorful, or meaningful brand backgrounds.
+        4. If in doubt about usefulness, use 'noise'.
         """
-        res = generate_vision_json(prompt, [file_path])
-        category = res.get("category", category)
-        tags = res.get("tags", [])
-        description = res.get("description", description)
+        vision_res = generate_vision_json(vision_prompt, [file_path])
+        category = vision_res.get("category", "photos")
+        tags = vision_res.get("tags", [])
+        description = vision_res.get("description", description)
+        
+        # Ajuste por contenido humano
+        if vision_res.get("is_person") and category == "logos":
+            category = "photos" # Corregir error de IA si confunde persona con logo
+            
     except Exception as e:
-        print(f"  [Library] Tagging failed for {filename}: {e}")
+        print(f"  [Library] Vision failed, falling back to similarity: {e}")
+        # Fallback a similitud solo si Visión falla
+        from services.asset_intelligence import AssetIntelligence
+        from llm_provider import get_embeddings_batch
+        with open(file_path, "rb") as f:
+            image_bytes = f.read()
+        embedding_fallback = get_embeddings_batch([image_bytes])[0]
+        intel = AssetIntelligence.categorize_by_similarity(embedding_fallback)
+        category = intel["primary_category"]
 
-    # 3. Generación de Embedding Semántico (Huella digital del activo)
-    semantic_text = f"{description}. Keywords: {', '.join(tags)}"
-    embedding = get_embedding(semantic_text)
+    # 3. Generar Embedding para Búsqueda (Independiente de la categoría)
+    from llm_provider import get_embeddings_batch
+    with open(file_path, "rb") as f:
+        image_bytes = f.read()
+    embedding = get_embeddings_batch([image_bytes])[0]
 
     # 4. Guardar en DB
     new_asset = models.BrandAsset(
@@ -82,6 +106,7 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
     db.add(new_asset)
     db.commit()
     db.refresh(new_asset)
+    print(f"  [Library] Asset REGISTERED: ID={new_asset.id}, Category={new_asset.category}, Hash={f_hash[:8]}")
     
     return new_asset
 
@@ -106,14 +131,14 @@ def find_best_assets(db: Session, brand_id: int, keywords: List[str],
         print("  [AssetLibrary] Performing keyword-based fallback search.")
         query = db.query(models.BrandAsset).filter(
             or_(models.BrandAsset.brand_id == brand_id, models.BrandAsset.is_public == 1)
-        )
+        ).filter(models.BrandAsset.category != "noise") # EXCLUDE NOISE
         if category: query = query.filter(models.BrandAsset.category == category)
         if exclude_ids: query = query.filter(models.BrandAsset.id.not_in(exclude_ids))
         return query.limit(limit).all()
 
     # 2. Búsqueda Vectorial por Similitud Coseno (pgvector)
     # Primero intentamos con los de la MARCA
-    sql_query = db.query(models.BrandAsset).filter(models.BrandAsset.brand_id == brand_id)
+    sql_query = db.query(models.BrandAsset).filter(models.BrandAsset.brand_id == brand_id).filter(models.BrandAsset.category != "noise")
     if category: sql_query = sql_query.filter(models.BrandAsset.category == category)
     if exclude_ids: sql_query = sql_query.filter(models.BrandAsset.id.not_in(exclude_ids))
     
@@ -122,7 +147,7 @@ def find_best_assets(db: Session, brand_id: int, keywords: List[str],
     if not results:
         # FALLBACK: Buscar en los activos PÚBLICOS/GLOBALES
         print(f"  [Library] No brand assets found for {brand_id}. Falling back to Global Library...")
-        sql_global = db.query(models.BrandAsset).filter(models.BrandAsset.is_public == 1)
+        sql_global = db.query(models.BrandAsset).filter(models.BrandAsset.is_public == 1).filter(models.BrandAsset.category != "noise")
         if category: sql_global = sql_global.filter(models.BrandAsset.category == category)
         if exclude_ids: sql_global = sql_global.filter(models.BrandAsset.id.not_in(exclude_ids))
         results = sql_global.order_by(models.BrandAsset.embedding.cosine_distance(query_embedding)).limit(limit).all()

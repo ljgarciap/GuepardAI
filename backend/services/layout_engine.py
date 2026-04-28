@@ -31,7 +31,7 @@ from .brand_composition_dna import (
 def orchestrate_visual_coherence(content_manifest: dict, brand_dna, brand_essence=None) -> dict:
     return content_manifest
 
-def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None) -> dict:
+def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, job_id=None) -> dict:
     """
     DESIGN ARCHITECT v18.0 — SENIOR ART DIRECTOR DRIVEN.
     Analiza slide por slide para evitar colisiones y elegir las mejores imágenes.
@@ -85,26 +85,54 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None) -
     model_name = pref_model.value if pref_model else "models/gemini-1.5-flash"
     db.close()
 
+    # 3. Director de Arte Senior - Análisis Slide a Slide (v18.7)
+    # Buscamos slides de referencia del manual original para máxima fidelidad
+    from services.asset_library_service import find_best_assets
+    
+    # Intentamos encontrar las "slides maestras" del manual original
+    reference_slides = find_best_assets(
+        db, 
+        getattr(brand_dna, "brand_id", brand_dna.id),
+        keywords=["slide", "layout", "presentation"],
+        category="reference",
+        limit=20
+    )
+    
     art_director_prompt = f"""
     You are a Senior Art Director for {getattr(brand_dna, 'brand_name', 'Tesco')}.
-    BRAND STRATEGY: {artistic_essence_dict['visual_strategy']}
+    
+    BRAND DNA (STRICT ADHERENCE):
+    - Primary Color: {visual_dna_dict['primary_color']}
+    - Secondary Color: {visual_dna_dict['secondary_color']}
+    - Main Font: {visual_dna_dict['primary_font']}
+    
+    VISUAL STRATEGY: {artistic_essence_dict['visual_strategy']}
+    DESIGN GESTURES: {json.dumps(artistic_essence_dict['design_gestures'])}
     PATTERNS: {artistic_essence_dict['visual_patterns']}
     
-    TASK: Assign the best images and layout archetypes for each slide.
-    AVAILABLE IMAGES: {json.dumps(available_assets[:40])}
+    TASK: Assign the best images and layout archetypes for each slide to maximize BRAND FIDELITY.
+    AVAILABLE IMAGES: {json.dumps(available_assets[:50])}
+    REFERENCE SLIDES FROM MANUAL: {json.dumps([{'id': r.id, 'desc': r.description} for r in reference_slides])}
     
     CONTENT TO RE-LAYOUT:
     {json.dumps([{ 'i': i, 'title': s.get('title'), 'bullets': s.get('bullets', []) } for i, s in enumerate(all_slides)])}
     
-    RULES:
-    1. IMAGE VARIETY: Use at least 8-10 different images across the deck.
-    2. RELEVANCE: Match image tags with slide keywords.
-    3. COLLISION AVOIDANCE: If text is long, reduce font scale or pick 'clean' layouts.
+    ART DIRECTION RULES:
+    1. BRAND COLORS: Use {visual_dna_dict['primary_color']} for headers and important shapes.
+    2. IMAGE SELECTION: Choose images that match the semantic content. If it's a "Tesco" slide, use Tesco logos or official photos from the library.
+    3. LAYOUT VARIETY: Use at least 8-10 different images. Avoid text-only slides if an image is available.
+    4. FIDELITY: If a 'REFERENCE SLIDE' from the manual matches the content type, use its structure.
     
     OUTPUT ONLY JSON:
     {{
       "assignments": [
-        {{ "i": 0, "layout": "full-bleed | split-right | accent-box", "image_id": "filename", "font_scale": 0.8 }}
+        {{ 
+          "i": 0, 
+          "layout": "full-bleed | split-right | accent-box | title-hero", 
+          "image_id": "filename from AVAILABLE IMAGES", 
+          "font_scale": 0.9,
+          "reference_id": "optional_id_from_manual" 
+        }}
       ]
     }}
     """
@@ -115,7 +143,14 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None) -
     except:
         assignments = {}
 
-    # 4. Construcción Final
+    # 4. Construcción Final con Persistencia Granular (v18.5)
+    from database import SessionLocal
+    from models import PresentationSlide
+    db = SessionLocal()
+    
+    # Limpiamos slides previas si es un re-intento
+    db.query(PresentationSlide).filter(PresentationSlide.job_id == job_id).delete()
+
     full_bleed_budget = {"used": 0, "max": int(total_slides * 0.3)}
     final_manifest = {
         "theme": { "primary": visual_dna_dict["primary_color"], "background": visual_dna_dict["background_color"], "font_main": visual_dna_dict["primary_font"] },
@@ -143,11 +178,27 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None) -
             font_scale_override=plan.get("font_scale", 1.0)
         )
 
+        # PERSISTENCIA EN DB (v18.5)
+        new_slide = PresentationSlide(
+            job_id=job_id,
+            slide_number=i + 1,
+            title=slide.get("title", "Untitled"),
+            content_json=slide,
+            layout_slug=layout,
+            assigned_image=slide.get("assigned_image"),
+            reference_id=plan.get("reference_id"), # Inyectamos la referencia (v18.7)
+            font_scale=plan.get("font_scale", 1.0),
+            render_elements=elements
+        )
+        db.add(new_slide)
+
         final_manifest["slides"].append({
-            "slide_number": slide.get("slide_number", i + 1),
+            "slide_number": i + 1,
             "elements": elements,
             "layout": layout,
             "title": slide.get("title")
         })
 
+    db.commit()
+    db.close()
     return final_manifest

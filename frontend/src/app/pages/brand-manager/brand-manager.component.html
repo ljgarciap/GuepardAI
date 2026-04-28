@@ -56,7 +56,7 @@
       <div class="card-header">
         <div class="brand-avatar">
           <span *ngIf="!brand.logo_path">{{ brand.name.charAt(0) }}</span>
-          <img *ngIf="brand.logo_path" [src]="'http://localhost:8000/' + brand.logo_path" class="card-logo">
+          <img *ngIf="brand.logo_path" [src]="'http://localhost:8001/' + brand.logo_path" class="card-logo">
         </div>
         <div class="card-titles">
           <h3>{{ brand.name }}</h3>

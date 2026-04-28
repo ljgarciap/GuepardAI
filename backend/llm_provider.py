@@ -1,7 +1,7 @@
 import os
 import json
 import time
-from typing import List, Optional
+from typing import List, Optional, Union
 try:
     import google.generativeai as genai
 except ImportError:
@@ -80,7 +80,7 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
     """
     if not model:
         # Fallback si no se especifica modelo
-        model = "models/gemini-1.5-flash,mistral/mistral-large-latest"
+        model = "gemini-1.5-flash,mistral/mistral-large-latest"
         
     models_to_try = [m.strip() for m in model.split(",")]
     last_error = None
@@ -89,17 +89,20 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
         try:
             print(f"  [LLM] Attempting generation with {current_model}...", flush=True)
             
-            # 1. Rutas según el prefijo del modelo
-            if current_model.startswith("models/"):
+            # 1. Rutas según el contenido del nombre del modelo
+            if "gemini" in current_model.lower():
                 # NATIVE GEMINI
                 gem_key = os.getenv("GEMINI_API_KEY")
                 if not gem_key: raise ValueError("No Gemini Key")
                 genai.configure(api_key=gem_key)
-                m = genai.GenerativeModel(current_model)
+                # Ensure it has 'models/' for the SDK if missing
+                m_name = current_model if current_model.startswith("models/") else f"models/{current_model}"
+                m = genai.GenerativeModel(m_name)
                 response = m.generate_content(prompt, generation_config=genai.GenerationConfig(temperature=0.3, response_mime_type="application/json"))
                 return json.loads(response.text)
                 
-            elif current_model.startswith("mistral/"):
+            elif "mistral" in current_model.lower() and "/" in current_model:
+                # NATIVE MISTRAL (e.g., 'mistral/mistral-large-latest')
                 # NATIVE MISTRAL
                 mis_key = os.getenv("MISTRAL_API_KEY")
                 if not mis_key: raise ValueError("No Mistral Key")
@@ -136,11 +139,16 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
 @retry_with_backoff(retries=2)
 def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[str] = None) -> dict:
     """
-    UNIVERSAL VISION ENGINE (v18.2).
-    Soporta cadenas: 'anthropic/claude-3.7-sonnet,models/gemini-1.5-flash'
+    UNIVERSAL VISION ENGINE (v18.3).
+    Obtiene la cadena de modelos desde system_configs.
     """
     if not model:
-        model = "anthropic/claude-3.7-sonnet,models/gemini-1.5-flash"
+        from database import SessionLocal
+        from models import SystemConfig
+        db = SessionLocal()
+        cfg = db.query(SystemConfig).filter(SystemConfig.key == 'extraction_vision_model').first()
+        model = cfg.value if cfg else "anthropic/claude-3.7-sonnet,gemini-1.5-flash"
+        db.close()
         
     models_to_try = [m.strip() for m in model.split(",")]
     
@@ -165,18 +173,38 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
         try:
             print(f"  [Vision] Attempting with {current_model}...", flush=True)
             
-            if current_model.startswith("models/"):
-                # NATIVE GEMINI VISION
+            if "gemini" in current_model.lower():
+                # ADAPTADOR NATIVO GEMINI
                 gem_key = os.getenv("GEMINI_API_KEY")
                 if not gem_key: raise ValueError("No Gemini Key")
                 genai.configure(api_key=gem_key)
-                m = genai.GenerativeModel(current_model)
-                content = [prompt]
-                for img_data in prepared_imgs:
-                    content.append({"mime_type": "image/jpeg", "data": img_data})
                 
-                response = m.generate_content(content, generation_config=genai.GenerationConfig(temperature=0.2, response_mime_type="application/json"))
-                return json.loads(response.text)
+                # El adaptador se encarga de la estructura correcta según el SDK
+                m_name = current_model if current_model.startswith("models/") else f"models/{current_model}"
+                # Pero si falla con models/, el adaptador debe saber reintentar sin él o usar el nombre base
+                
+                try:
+                    m = genai.GenerativeModel(m_name)
+                    content = [prompt]
+                    for img_data in prepared_imgs:
+                        content.append({"mime_type": "image/jpeg", "data": img_data})
+                    
+                    response = m.generate_content(
+                        content, 
+                        generation_config=genai.GenerationConfig(
+                            temperature=0.1, 
+                            response_mime_type="application/json"
+                        )
+                    )
+                    return json.loads(response.text)
+                except Exception as gem_err:
+                    if "not found" in str(gem_err).lower() and "models/" in m_name:
+                        # Reintento inteligente del adaptador: quitar prefijo
+                        print(f"  [Vision] Gemini 404 with prefix. Retrying without 'models/'...", flush=True)
+                        m = genai.GenerativeModel(m_name.replace("models/", ""))
+                        response = m.generate_content(content, generation_config=genai.GenerationConfig(temperature=0.1, response_mime_type="application/json"))
+                        return json.loads(response.text)
+                    raise gem_err
                 
             else:
                 # OPENROUTER VISION (Claude 3.7 / GPT-4o)
@@ -211,49 +239,125 @@ def base_64_encode(data):
     return base64.b64encode(data).decode('utf-8')
 
 @retry_with_backoff(retries=2)
-def get_embeddings_batch(texts: List[str]) -> List[Optional[list]]:
+def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] = None) -> List[Optional[list]]:
     """
-    ULTRA-EFFICIENT BATCH EMBEDDING (With Redundant Fallback Chain).
+    UNIVERSAL EMBEDDING ENGINE (v18.6) - Multimodal & Normalized.
+    Garantiza salida de 1024 dimensiones para pgvector.
+    Soporta Texto (str) e Imágenes (bytes).
     """
-    if not texts: return []
+    if not inputs: return []
     
-    # Intentamos primero con el proveedor preferido (OpenRouter -> Mistral -> Gemini)
-    providers_to_try = []
-    if os.getenv("OPENROUTER_API_KEY"): providers_to_try.append("openrouter")
-    if os.getenv("MISTRAL_API_KEY"): providers_to_try.append("mistral")
-    if os.getenv("GEMINI_API_KEY"): providers_to_try.append("gemini")
+    # 1. Determinar modelos a usar
+    from database import SessionLocal
+    from models import SystemConfig
+    db = SessionLocal()
+    cfg = db.query(SystemConfig).filter(SystemConfig.key == 'embedding_model_chain').first()
+    model_chain = cfg.value if cfg else "models/text-embedding-004,models/multimodal-embedding-001"
+    db.close()
     
+    models_to_try = [m.strip() for m in model_chain.split(",")]
     last_error = None
-    for provider in providers_to_try:
+    
+    # Target dimension for the DB
+    TARGET_DIM = 1024
+
+    def normalize_vector(vec: list, target: int) -> list:
+        """Ajusta la dimensión del vector por truncamiento o padding."""
+        current = len(vec)
+        if current == target: return vec
+        if current > target: return vec[:target]
+        # Padding con ceros si es menor
+        return vec + [0.0] * (target - current)
+
+    for current_model in models_to_try:
         try:
-            print(f"  [Embeddings] Attempting with {provider.upper()}...", flush=True)
-            if provider == "openrouter":
-                client = openai.OpenAI(
-                    base_url="https://openrouter.ai/api/v1",
-                    api_key=os.getenv("OPENROUTER_API_KEY"),
-                )
-                response = client.embeddings.create(input=texts, model="mistralai/mistral-embed")
-                return [item.embedding for item in response.data]
-
-            elif provider == "gemini":
-                genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-                # Note: Gemini uses 768-dim, we might need to pad/truncate if DB is 1024
-                response = genai.embed_content(model="models/text-embedding-004", content=texts, task_type="retrieval_document")
-                embeddings = response.get("embedding", [])
-                # Handle 768 to 1024 padding if needed
-                return embeddings
-
-            elif provider == "mistral":
-                client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
-                response = client.embeddings.create(model="mistral-embed", inputs=texts)
-                return [item.embedding for item in response.data]
-        except Exception as e:
-            print(f"  [Embeddings] Provider {provider} failed: {e}")
-            last_error = e
-            continue
+            print(f"  [Embeddings] Attempting with {current_model}...", flush=True)
             
-    if last_error: raise last_error
-    return []
+            if "gemini" in current_model.lower() or "embedding" in current_model.lower():
+                # NATIVE GOOGLE EMBEDDINGS (Text or Multimodal)
+                gem_key = os.getenv("GEMINI_API_KEY")
+                if not gem_key: raise ValueError("No Gemini Key")
+                genai.configure(api_key=gem_key)
+                
+                results = []
+                for item in inputs:
+                    try:
+                        # ADAPTADOR INTELIGENTE DE EMBEDDINGS
+                        m_name = current_model if current_model.startswith("models/") else f"models/{current_model}"
+                        
+                        try:
+                            if isinstance(item, str):
+                                res = genai.embed_content(model=m_name, content=item, task_type="retrieval_document")
+                            else:
+                                res = genai.embed_content(
+                                    model=m_name,
+                                    content={'mime_type': 'image/jpeg', 'data': item},
+                                    task_type="retrieval_document"
+                                )
+                            results.append(normalize_vector(res["embedding"], TARGET_DIM))
+                        except Exception as gem_err:
+                            if "not found" in str(gem_err).lower() and "models/" in m_name:
+                                # Reintento sin prefijo
+                                alt_name = m_name.replace("models/", "")
+                                print(f"  [Embeddings] 404 with prefix. Retrying with: {alt_name}", flush=True)
+                                if isinstance(item, str):
+                                    res = genai.embed_content(model=alt_name, content=item, task_type="retrieval_document")
+                                else:
+                                    res = genai.embed_content(
+                                        model=alt_name,
+                                        content={'mime_type': 'image/jpeg', 'data': item},
+                                        task_type="retrieval_document"
+                                    )
+                                results.append(normalize_vector(res["embedding"], TARGET_DIM))
+                            else:
+                                print(f"  [Embeddings] Gemini FATAL error (prefix={m_name}): {gem_err}", flush=True)
+                                raise gem_err
+                    except Exception as e:
+                        print(f"  [Embeddings] Item failure in batch: {e}", flush=True)
+                        results.append(None)
+                
+                if any(r is not None for r in results):
+                    return results
+                else:
+                    raise Exception("All items in batch failed for Gemini.")
+
+            elif "mistral" in current_model.lower():
+                # MISTRAL EMBEDDINGS (v18.6)
+                mis_key = os.getenv("MISTRAL_API_KEY")
+                if not mis_key: raise ValueError("No Mistral Key")
+                from mistralai import Mistral
+                client = Mistral(api_key=mis_key)
+                
+                # Solo texto para Mistral
+                text_inputs = [i for i in inputs if isinstance(i, str)]
+                if not text_inputs: continue
+                
+                res = client.embeddings.create(
+                    model="mistral-embed",
+                    inputs=text_inputs
+                )
+                
+                # Mapear resultados respetando el orden original y normalizando a 1024
+                results = []
+                mistral_idx = 0
+                for item in inputs:
+                    if isinstance(item, str):
+                        vec = res.data[mistral_idx].embedding
+                        results.append(normalize_vector(vec, TARGET_DIM))
+                        mistral_idx += 1
+                    else:
+                        results.append(None) # Mistral no soporta imágenes
+                return results
+                if not text_inputs: continue
+                response = client.embeddings.create(model="mistral-embed", inputs=text_inputs)
+                return [normalize_vector(item.embedding, TARGET_DIM) for item in response.data]
+
+        except Exception as e:
+            last_error = e
+            print(f"  [Embeddings] {current_model} failed: {e}")
+            continue
+
+    raise last_error or Exception("All embedding providers failed.")
 
 def get_embedding(text: str) -> Optional[list]:
     res = get_embeddings_batch([text])

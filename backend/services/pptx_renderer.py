@@ -421,3 +421,47 @@ def _render_image_v2(slide, element, asset_map, sx, sy):
                 
             slide.shapes.add_picture(img_path, ox, oy, nw, nh)
         except: pass
+
+def render_pptx_from_db(job_id: int, asset_map: dict, output_path: str):
+    """
+    RENDERIZADOR DB-DRIVEN (v18.5).
+    Reconstruye el manifiesto directamente desde la tabla presentation_slides.
+    Garantiza que la DB sea la única fuente de verdad.
+    """
+    from database import SessionLocal
+    from models import GenerationJob, PresentationSlide, BrandVisualDna
+    
+    db = SessionLocal()
+    job = db.query(GenerationJob).filter(GenerationJob.id == job_id).first()
+    if not job:
+        db.close()
+        raise ValueError(f"Job {job_id} not found")
+        
+    dna = db.query(BrandVisualDna).filter(BrandVisualDna.brand_id == job.brand_id).order_by(BrandVisualDna.created_at.desc()).first()
+    
+    # Reconstrucción del Manifiesto Estratégico
+    slides_db = db.query(PresentationSlide).filter(PresentationSlide.job_id == job_id).order_by(PresentationSlide.slide_number.asc()).all()
+    
+    manifest = {
+        "theme": {
+            "primary": dna.primary_color if dna else "#0052A3",
+            "background": dna.background_color if dna else "#FFFFFF",
+            "font_main": dna.primary_font if dna else "Arial"
+        },
+        "canvas": {
+            "width_inches": dna.slide_width_inches if dna else 13.33,
+            "height_inches": dna.slide_height_inches if dna else 7.5
+        },
+        "slides": []
+    }
+    
+    for s in slides_db:
+        manifest["slides"].append({
+            "slide_number": s.slide_number,
+            "title": s.title,
+            "elements": s.render_elements,
+            "layout": s.layout_slug
+        })
+        
+    db.close()
+    return render_pptx_manifest(manifest, asset_map, output_path)

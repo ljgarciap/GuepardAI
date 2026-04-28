@@ -74,15 +74,15 @@ class BrandAsset(Base):
     brand_dna_id = Column(Integer, ForeignKey("brand_visual_dna.id"), nullable=True) # Linked to specific DNA extraction
     
     file_hash = Column(String(64), index=True) 
-    local_path = Column(String(512))
+    local_path = Column(String(1024))
     
     category = Column(String(50)) 
     tags = Column(JSON)           # AI Generated Tags
     manual_tags = Column(JSON)    # USER Specified Tags (v11.0)
-    description = Column(String(512))
+    description = Column(Text)
     
     is_public = Column(Integer, default=0) 
-    source_doc = Column(String(255))      
+    source_doc = Column(String(512))      
 
     metadata_json = Column(JSON) 
     embedding = Column(Vector(1024), nullable=True) # Vector representation for semantic search
@@ -189,6 +189,9 @@ class GenerationJob(Base):
     pptx_path   = Column(String, nullable=True)
 
     created_at  = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    # Relación con las slides granulares (v18.5)
+    slides      = relationship("PresentationSlide", back_populates="job", cascade="all, delete-orphan")
 
 
 # ============================================================
@@ -257,6 +260,32 @@ class CorporateKnowledge(Base):
 
     # Relación inversa
     brand = relationship("Brand", back_populates="knowledge")
+
+class PresentationSlide(Base):
+    """
+    ESTADO ATÓMICO DE SLIDE (v18.5).
+    Guarda la decisión final del Director de Arte para cada diapositiva.
+    """
+    __tablename__ = "presentation_slides"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    job_id       = Column(Integer, ForeignKey("generation_jobs.id"))
+    
+    slide_number = Column(Integer)
+    title        = Column(String(500))
+    content_json = Column(JSONB) # { "bullets": [...], "subtitle": "..." }
+    
+    # Decisiones del Director de Arte
+    layout_slug  = Column(String(100)) # 'split-right', 'full-bleed', etc.
+    assigned_image = Column(String(500), nullable=True)
+    reference_id = Column(Integer, nullable=True) # ID del asset de referencia (v18.7)
+    font_scale   = Column(Float, default=1.0)
+    
+    # Elementos finales renderizables (v18.5)
+    # Lista de diccionarios con coordenadas y estilos finales
+    render_elements = Column(JSONB, nullable=True) 
+
+    job = relationship("GenerationJob", back_populates="slides")
 
 class SystemConfig(Base):
     """

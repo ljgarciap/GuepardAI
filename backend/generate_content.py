@@ -30,7 +30,7 @@ def search_rag(query, knowledge_source, k=15):
                     """
                     SELECT content, 1 - (embedding <=> %s::vector) as similarity
                     FROM corporate_knowledge
-                    WHERE metadata->>'source' = %s
+                    WHERE source_filename = %s
                     ORDER BY embedding <=> %s::vector
                     LIMIT %s
                     """,
@@ -58,9 +58,10 @@ def generate_presentation_outline(topic, style_slug, knowledge_source, region="G
         from database import SessionLocal
         import models
         db = SessionLocal()
-        brand = db.query(models.BrandStyle).filter(models.BrandStyle.style_slug == style_slug).first()
-        if brand and brand.tone_description:
-            tone_guideline = brand.tone_description
+        # Buscamos en BrandVisualDna por el nombre del archivo de estilo
+        dna = db.query(models.BrandVisualDna).filter(models.BrandVisualDna.source_filename == style_slug).first()
+        if dna and dna.raw_extraction:
+            tone_guideline = dna.raw_extraction.get("tone_description", "Professional.")
     except Exception as e:
         print(f"Failed to fetch tone from DB, using default: {e}")
         

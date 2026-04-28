@@ -60,7 +60,7 @@ class BrandCompositionPolicy:
     canvas: SlideCanvasSpec = field(default_factory=SlideCanvasSpec)
     image_rules: ImageCompositionRule = field(default_factory=ImageCompositionRule)
     typography: TypographyCompositionRule = field(default_factory=TypographyCompositionRule)
-    image_layout_archetypes: Optional[dict] = None
+    image_layout_archetypes: dict = field(default_factory=dict)
     persistent_decorators: list = field(default_factory=list)
     available_layouts: list = field(default_factory=lambda: [
         "split-right", "text-only", "full-bleed", "two-column", "quote-hero"
@@ -85,6 +85,7 @@ class BrandCompositionPolicy:
         policy.available_layouts = data.get("available_layouts", cls().available_layouts)
         policy.visual_density = data.get("visual_density", "dense")
         policy.uses_dark_overlay = data.get("uses_dark_overlay", True)
+        policy.image_layout_archetypes = data.get("image_layout_archetypes", {})
         policy.overlay_opacity = data.get("overlay_opacity", 0.5)
         return policy
 
@@ -112,7 +113,7 @@ def parse_essence_to_policy(brand_id: int, brand_name: str, artistic_essence: di
     scale_factor = w_in / 13.33
 
     # 3. Reglas de Imagen (Densidad basada en RAG)
-    composition = artistic_essence.get("composition_rules", {})
+    composition = artistic_essence.get("composition_rules") or {}
     density = composition.get("visual_density", "balanced")
     img_role = "accent" if density == "dense" else "supporting"
     
@@ -132,7 +133,7 @@ def parse_essence_to_policy(brand_id: int, brand_name: str, artistic_essence: di
     
     # 5. Zonificación Estructural Dinámica (v17.0 - High Fidelity)
     # Ya no interpretamos gestos vagos, dibujamos bloques mapeados por la IA.
-    archetypes = artistic_essence.get("structural_archetypes", {})
+    archetypes = artistic_essence.get("structural_archetypes") or {}
     persistent_blocks = archetypes.get("persistent_blocks", [])
     
     primary_color = visual_dna.get("primary_color", "#333333")
@@ -161,11 +162,26 @@ def parse_essence_to_policy(brand_id: int, brand_name: str, artistic_essence: di
             "opacity": 1.0
         })
 
-    # 6. Reglas de Imagen e Impacto
-    design_gestures = artistic_essence.get("design_gestures", {})
+    # FALLBACK: Si no hay decoradores, inyectar acento de marca v23.2
+    if not decorators:
+        decorators.append({
+            "decorator_type": "accent_line",
+            "geometry": {"left": 0, "top": 0, "width": 100, "height": 1.5},
+            "color": primary_color,
+            "opacity": 1.0
+        })
+        decorators.append({
+            "decorator_type": "accent_dot",
+            "geometry": {"left": 5, "top": 92, "width": 1.5, "height": 2.5},
+            "color": secondary_color,
+            "opacity": 1.0
+        })
+
+    policy.persistent_decorators = decorators
+    design_gestures = artistic_essence.get("design_gestures") or {}
     policy.image_rules.corner_style = design_gestures.get("corner_style", "sharp")
     
-    policy.image_layout_archetypes = artistic_essence.get("slide_archetypes", {})
+    policy.image_layout_archetypes = artistic_essence.get("slide_archetypes") or {}
     policy.persistent_decorators = decorators
     policy.uses_dark_overlay = True
     policy.overlay_opacity = artistic_essence.get("composition_rules", {}).get("overlay_opacity", 0.4)
@@ -255,21 +271,41 @@ def _build_content_layout(slide, index, policy, primary, bg, font, typo, scale, 
         "style": img_style
     })
     
-    # 4. Textos con Aire
+    # 4. Textos con Aire Dinámico (v23.2)
     elements.append({"type": "text", "role": "page_num", "content": f"{index + 1}", "geometry": {"left": 92, "top": 93, "width": 4, "height": 3}, "style": {"font": font, "size": int(10 * scale), "color": primary, "opacity": 0.5}})
 
+    title_text = slide.get("title", "")
+    title_height = 12
+    # Heurística: Si el título es muy largo, estimar altura y empujar contenido
+    if len(title_text) > 40: title_height = 18
+    if len(title_text) > 80: title_height = 24
+
     elements.append({
-        "type": "text", "role": "title", "content": slide.get("title", ""), 
-        "geometry": {"left": 8, "top": 12, "width": 50, "height": 15}, 
+        "type": "text", "role": "title", "content": title_text, 
+        "geometry": {"left": 8, "top": 12, "width": 50, "height": title_height}, 
         "style": {"font": font, "size": int(typo.title_size_base * scale), "color": primary, "bold": True}
     })
 
     if slide.get("bullets"):
+        # El cuerpo empieza donde termina el título + un margen de 5
+        body_top = 12 + title_height + 5
         elements.append({
             "type": "text", "role": "bullets", "content": "\n".join([f"• {b}" for b in slide["bullets"]]), 
-            "geometry": {"left": 9, "top": 32, "width": 52, "height": 55}, 
+            "geometry": {"left": 9, "top": body_top, "width": 52, "height": 100 - body_top - 10}, 
             "style": {"font": font, "size": typo.body_size, "color": "#333333"}
         })
+    
+    # 5. Inyectar Logo de Marca (v23.5)
+    # Recuperamos el ID real detectado por el Art Director
+    planning = slide.get("planning_json", {})
+    logo_src = planning.get("logo_id") if planning.get("logo_id") else "logo_main.png"
+    
+    elements.append({
+        "type": "image", "role": "logo", "source": logo_src,
+        "geometry": {"left": 88, "top": 4, "width": 8, "height": 8},
+        "style": {"opacity": 1.0}
+    })
+
     return elements
 
 def _build_data_layout(slide, policy, primary, secondary, font, typo, scale, source):

@@ -178,6 +178,7 @@ class GenerationJob(Base):
     id          = Column(Integer, primary_key=True, index=True)
     client_name = Column(String, index=True)
     brand_id    = Column(Integer, index=True)
+    style_id    = Column(Integer, nullable=True) # v23.0: Enlace al Blueprint/Dna elegido
 
     prompt      = Column(Text)              # Prompt original del usuario
     full_llm_prompt = Column(Text, nullable=True)  # Prompt final con contexto RAG
@@ -280,6 +281,10 @@ class PresentationSlide(Base):
     assigned_image = Column(String(500), nullable=True)
     reference_id = Column(Integer, nullable=True) # ID del asset de referencia (v18.7)
     font_scale   = Column(Float, default=1.0)
+    
+    # Estados de flujo v23.0
+    status       = Column(String(50), default="pending") # pending | content_ready | planned | rendered
+    planning_json = Column(JSONB, nullable=True) # Decisiones de IA Art Director
     
     # Elementos finales renderizables (v18.5)
     # Lista de diccionarios con coordenadas y estilos finales

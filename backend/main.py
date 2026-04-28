@@ -429,31 +429,41 @@ def list_dialects(db: Session = Depends(get_db)):
     languages = db.query(models.Language).filter(models.Language.is_active == True).all()
     return [{"id": l.id, "code": l.code, "name": l.name} for l in languages]
 
-@app.post("/api/generate", tags=["Generation"])
+@app.post("/api/presentations/generate", tags=["Generation"])
 async def generate_presentation(
     request: PresentationRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """Dispara el motor de síntesis para generar una nueva presentación."""
+    # Buscar el ID del Style (Blueprint) para la jerarquía de activos v23.0
+    style_dna = db.query(models.BrandVisualDna).filter(
+        models.BrandVisualDna.source_filename == request.style_filename
+    ).first()
+    
     job = models.GenerationJob(
         brand_id=request.brand_id,
+        style_id=style_dna.id if style_dna else None,
         status="pending",
         progress=0,
-        current_step="Initializing synthesis engine..."
+        current_step="Initializing isolated synthesis engine v23.0..."
     )
     db.add(job)
     db.commit()
     db.refresh(job)
 
-    # Disparar orquestación en segundo plano
+    # Disparar orquestación con el nuevo formato de mensaje
+    req_payload = {
+        "style_filename": request.style_filename,
+        "knowledge_filename": request.knowledge_filename,
+        "prompt": request.prompt,
+        "region": request.region
+    }
+    
     background_tasks.add_task(
         task_generate_presentation,
         job.id,
-        request.style_filename,
-        request.knowledge_filename,
-        request.prompt,
-        request.region
+        req_payload
     )
 
     return {"job_id": job.id, "status": "pending"}

@@ -214,13 +214,18 @@ def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str,
         logger.error(f"[Orchestrator] Pure Assets error: {e}")
         set_job_status(job_key, "pure_assets", "error")
 
-def task_generate_presentation(job_id: int, req_data: dict, pptx_path: str):
-    """Generación estratégica de presentaciones (v21.0)."""
+def task_generate_presentation(job_id: int, req_data: dict):
+    """
+    Background task for generation (v23.0 - Modular).
+    """
     logger.info(f"[Orchestrator] Generation started for Job: {job_id}")
     from services.layout_engine import generate_presentation_flow
+    
     try:
         db = SessionLocal()
-        generate_presentation_flow(db, job_id, req_data, pptx_path)
+        # El motor espera db, job_id, y los datos.
+        # Asumimos que la ruta del PPTX se define dentro de generate_presentation_flow o se pasa aquí.
+        generate_presentation_flow(db, job_id, req_data)
         db.close()
     except Exception as e:
         logger.error(f"[Orchestrator] Generation error: {e}")

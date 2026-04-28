@@ -1,7 +1,11 @@
-import json
 import os
+import time
+import json
 from typing import Optional, List, Dict
+from sqlalchemy.orm import Session
 from llm_provider import generate_json
+import models
+from database import SessionLocal
 
 def _infer_slide_type(slide: dict) -> str:
     num = slide.get("slide_number", 1)
@@ -202,3 +206,75 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
     db.commit()
     db.close()
     return final_manifest
+
+def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
+    """
+    ORQUESTADOR MAESTRO v23.0 (Servicios Aislados).
+    Coordina el flujo persistente: Contenido -> Arte -> Geometría -> Pintado.
+    """
+    from services.content_service import synthesize_presentation_outline
+    from services.art_director_service import plan_presentation_design
+    from services.geometry_service import calculate_presentation_geometry
+    from services.pptx_renderer import render_pptx_from_db
+    
+    job = db.query(models.GenerationJob).get(job_id)
+    if not job: return
+    
+    # Asegurar que el job tenga el style_id si es posible (MVP fallback)
+    # style_slug = req_data.get("style_filename")
+    
+    try:
+        # FASE 1: SÍNTESIS DE CONTENIDO (Persistente)
+        job.status = "processing"
+        job.current_step = "Phase 1/4: Synthesizing strategic content..."
+        job.progress = 10
+        db.commit()
+        if not synthesize_presentation_outline(db, job_id, req_data):
+            raise Exception("Failed during Content Synthesis.")
+
+        # FASE 2: DIRECCIÓN DE ARTE (Persistente)
+        job.current_step = "Phase 2/4: Planning art direction and tiered asset selection..."
+        job.progress = 40
+        db.commit()
+        if not plan_presentation_design(db, job_id):
+            raise Exception("Failed during Art Direction.")
+
+        # FASE 3: CÁLCULO GEOMÉTRICO (Persistente)
+        job.current_step = "Phase 3/4: Calculating precision geometry and canvas mapping..."
+        job.progress = 70
+        db.commit()
+        if not calculate_presentation_geometry(db, job_id):
+            raise Exception("Failed during Geometry Calculation.")
+
+        # FASE 4: RENDERIZADO FINAL (Reactivo)
+        job.current_step = "Phase 4/4: Painting final PPTX portfolio..."
+        job.progress = 90
+        db.commit()
+        
+        output_filename = f"Portfolio_{job_id}_{int(time.time())}.pptx"
+        output_path = os.path.join("uploads", output_filename)
+        
+        # Mapa de activos (logos, fotos) - Jerarquía global para el renderer
+        asset_map = {}
+        assets = db.query(models.BrandAsset).filter(
+            (models.BrandAsset.brand_id == job.brand_id) | (models.BrandAsset.is_public == 1)
+        ).all()
+        for a in assets:
+            asset_map[os.path.basename(a.local_path)] = a.local_path
+            
+        render_pptx_from_db(job_id, asset_map, output_path)
+        
+        # FINALIZACIÓN
+        job.status = "completed"
+        job.current_step = "Synthesis complete. High-Fidelity Portfolio ready."
+        job.progress = 100
+        job.pptx_path = output_path
+        job.download_url = f"/uploads/{output_filename}"
+        db.commit()
+        
+    except Exception as e:
+        import traceback
+        print(f"  [Orchestrator v23.0] Critical Failure: {traceback.format_exc()}")
+        job.status = "error"
+        job.current_step = f"Synthesis interrupted: {str(e)}"
+        db.commit()

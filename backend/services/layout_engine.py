@@ -85,8 +85,8 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
     from database import SessionLocal
     from models import SystemConfig
     db = SessionLocal()
-    pref_model = db.query(SystemConfig).filter(SystemConfig.key == 'art_director_model').first()
-    model_name = pref_model.value if pref_model else "models/gemini-1.5-flash"
+    pref_model = db.query(models.SystemConfig).filter(models.SystemConfig.key == 'art_director_model').first()
+    model_name = pref_model.value if pref_model else "models/gemini-2.5-flash"
     db.close()
 
     # 3. Director de Arte Senior - Análisis Slide a Slide (v18.7)

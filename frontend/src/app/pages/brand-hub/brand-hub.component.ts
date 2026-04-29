@@ -44,7 +44,9 @@ export class BrandHubComponent implements OnInit, OnDestroy {
 
   loadBrands() {
     this.brandService.getBrands().subscribe(res => {
-      this.officialBrands = res;
+      // Excluimos la "Public Library" (-1) de aquí porque el usuario 
+      // ya tiene un botón dedicado para definir el scope como PUBLIC.
+      this.officialBrands = res.filter((b: any) => b.id !== -1);
     });
   }
 
@@ -128,7 +130,7 @@ export class BrandHubComponent implements OnInit, OnDestroy {
       state.manualTags
     ).subscribe({
       next: (res) => {
-        this.addLog(state, role, 'Gobernance check passed. Starting extraction...');
+        this.addLog(state, role, 'Governance check passed. Starting extraction...');
         this.startPolling(filename, type);
       },
       error: (err) => {
@@ -193,6 +195,8 @@ export class BrandHubComponent implements OnInit, OnDestroy {
   private mapStatus(step: string): string {
     return step.replace(/Gemini|Claude|OpenAI/gi, 'The Intelligence')
                .replace('Extracting', 'Mapping')
+               .replace('Architected', 'Planned')
+               .replace('Perfected', 'Finalized')
                .replace('Generating', 'Synthesizing');
   }
 

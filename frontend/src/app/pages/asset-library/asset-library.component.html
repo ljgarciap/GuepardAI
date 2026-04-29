@@ -7,7 +7,7 @@
 
     <div class="header-controls">
       <div class="control-group">
-        <label>Sovereignty Filter</label>
+        <label>Scope Filter</label>
         <select [(ngModel)]="selectedBrandId" (ngModelChange)="onBrandChange()" class="enterprise-select">
           <option [ngValue]="null">All Brands / Public</option>
           <option *ngFor="let brand of brands" [ngValue]="brand.id">
@@ -129,7 +129,7 @@
               <p class="data-value">#{{ selectedAsset.id }}</p>
             </div>
             <div>
-              <label>SOVEREIGNTY</label>
+              <label>IDENTITY SCOPE</label>
               <p class="data-value">{{ selectedAsset.brand_id ? 'Exclusive' : 'Public / Global' }}</p>
             </div>
           </div>

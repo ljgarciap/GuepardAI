@@ -1,21 +1,16 @@
 services:
-  backend:
-    build: ./backend
-    container_name: guepard-backend
+  db:
+    image: ankane/pgvector:latest
+    container_name: guepard-db
     ports:
-      - "8000:8000"
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ai_db
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
     volumes:
-      - ./backend/uploads:/app/uploads
-      - ./backend/data:/app/data
-    env_file:
-      - .env
+      - pgdata:/var/lib/postgresql/data
     restart: always
 
-  frontend:
-    build: ./frontend
-    container_name: guepard-frontend
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-    restart: always
+volumes:
+  pgdata:

@@ -75,6 +75,16 @@ def seed_data():
                 "value": "1024",
                 "description": "Dimensión de los vectores de embedding"
             },
+            {
+                "key": "global_fallback_model",
+                "value": "models/gemini-2.5-flash",
+                "description": "Modelo de seguridad absoluta si fallan las cadenas principales"
+            },
+            {
+                "key": "fallback_embedding_model",
+                "value": "models/text-embedding-004",
+                "description": "Modelo de embedding de seguridad"
+            },
         ]
         for c in configs:
             existing = db.query(models.SystemConfig).filter(

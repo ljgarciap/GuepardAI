@@ -11,7 +11,21 @@ import anthropic
 from mistralai import Mistral
 from dotenv import load_dotenv
 
+from database import SessionLocal
+import models
+
 load_dotenv()
+
+def get_system_config(key: str, default: str) -> str:
+    """Helper para obtener configuración de la DB sin hardcodeo."""
+    db = SessionLocal()
+    try:
+        cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
+        return cfg.value if cfg else default
+    except:
+        return default
+    finally:
+        db.close()
 
 def retry_with_backoff(retries=3, backoff_in_seconds=2):
     def decorator(func):
@@ -79,8 +93,8 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
     Soporta cadenas de modelos: 'models/gemini-1.5-flash,mistral/mistral-large-latest'
     """
     if not model:
-        # Fallback si no se especifica modelo
-        model = "gemini-1.5-flash,mistral/mistral-large-latest"
+        # v23.5: No hardcoded fallbacks here. Fetch from DB.
+        model = get_system_config("extraction_synthesis_model", "models/gemini-2.5-flash")
         
     models_to_try = [m.strip() for m in model.split(",")]
     last_error = None
@@ -134,7 +148,16 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
                 print(f"  [LLM] Error with {current_model}: {e}")
                 continue
                 
-    raise last_error or Exception("All models in chain failed.")
+    # FINAL ATTEMPT: Global Fallback from DB
+    fallback = get_system_config("global_fallback_model", "models/gemini-2.5-flash")
+    if model != fallback:
+        print(f"  [LLM] Chain failed. Attempting global emergency fallback ({fallback})...", flush=True)
+        try:
+            return generate_json(prompt, model=fallback, specialization=specialization)
+        except:
+            pass
+            
+    raise last_error or Exception("All models and global fallback failed.")
 
 @retry_with_backoff(retries=2)
 def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[str] = None) -> dict:
@@ -143,12 +166,7 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
     Obtiene la cadena de modelos desde system_configs.
     """
     if not model:
-        from database import SessionLocal
-        from models import SystemConfig
-        db = SessionLocal()
-        cfg = db.query(SystemConfig).filter(SystemConfig.key == 'extraction_vision_model').first()
-        model = cfg.value if cfg else "anthropic/claude-3.7-sonnet,gemini-1.5-flash"
-        db.close()
+        model = get_system_config("extraction_vision_model", "models/gemini-2.5-flash")
         
     models_to_try = [m.strip() for m in model.split(",")]
     
@@ -232,7 +250,16 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
             print(f"  [Vision] {current_model} failed: {e}. Trying next...")
             continue
 
-    raise last_error or Exception("All vision models failed.")
+    # FINAL ATTEMPT: Global Fallback
+    fallback = get_system_config("global_fallback_model", "models/gemini-2.5-flash")
+    if model != fallback:
+        print(f"  [Vision] Chain failed. Attempting global emergency fallback ({fallback})...", flush=True)
+        try:
+            return generate_vision_json(prompt, image_paths, model=fallback)
+        except:
+            pass
+            
+    raise last_error or Exception("All vision models and global fallback failed.")
 
 def base_64_encode(data):
     import base64
@@ -248,12 +275,7 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
     if not inputs: return []
     
     # 1. Determinar modelos a usar
-    from database import SessionLocal
-    from models import SystemConfig
-    db = SessionLocal()
-    cfg = db.query(SystemConfig).filter(SystemConfig.key == 'embedding_model_chain').first()
-    model_chain = cfg.value if cfg else "models/text-embedding-004,models/multimodal-embedding-001"
-    db.close()
+    model_chain = get_system_config("embedding_model_chain", "models/text-embedding-004")
     
     models_to_try = [m.strip() for m in model_chain.split(",")]
     last_error = None

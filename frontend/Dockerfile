@@ -13,7 +13,7 @@ RUN npm run build -- --configuration production
 FROM nginx:alpine
 
 # Copy built assets from build-stage
-COPY --from=build-stage /app/dist/power-ai/browser /usr/share/nginx/html
+COPY --from=build-stage /app/dist/frontend/browser /usr/share/nginx/html
 
 # Copy nginx config if needed (optional)
 # COPY nginx.conf /etc/nginx/conf.d/default.conf

@@ -12,8 +12,6 @@ from lxml import etree
 
 # --- UNIVERSAL GEOMETRY HELPERS ---
 def hex_to_rgb(hex_str: str) -> RGBColor:
-
-def hex_to_rgb(hex_str: str) -> RGBColor:
     if not isinstance(hex_str, str): return RGBColor(30, 30, 30)
     h = hex_str.lstrip('#')
     if len(h) == 3: h = ''.join([c*2 for c in h])

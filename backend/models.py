@@ -81,6 +81,10 @@ class BrandAsset(Base):
     manual_tags = Column(JSON)    # USER Specified Tags (v11.0)
     description = Column(Text)
     
+    # Dimensiones físicas reales (v34.0 - Anti-Stretching)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    
     is_public = Column(Integer, default=0) 
     source_doc = Column(String(512))      
 
@@ -291,6 +295,28 @@ class PresentationSlide(Base):
     render_elements = Column(JSONB, nullable=True) 
 
     job = relationship("GenerationJob", back_populates="slides")
+
+class ArtDirectorDecision(Base):
+    """
+    BITÁCORA DE DECISIONES (v34.0).
+    Registra el 'porqué' de cada elección visual.
+    """
+    __tablename__ = "art_director_decisions"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    job_id       = Column(Integer, ForeignKey("generation_jobs.id"))
+    slide_number = Column(Integer)
+    
+    decision_type = Column(String(50)) # 'layout', 'asset_selection', 'color_logic'
+    summary       = Column(String(500))
+    reasoning     = Column(Text)
+    
+    # Metadata técnica (ej. keywords usados, IDs considerados)
+    metadata_json = Column(JSONB, nullable=True)
+    
+    created_at   = Column(DateTime, default=datetime.datetime.utcnow)
+
+    job = relationship("GenerationJob")
 
 class SystemConfig(Base):
     """

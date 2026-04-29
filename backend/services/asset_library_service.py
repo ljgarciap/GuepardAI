@@ -22,7 +22,8 @@ def get_file_hash(file_path: str) -> str:
 def register_asset(db: Session, brand_id: Optional[int], file_path: str, 
                    category: str = "photos", force_tagging: bool = False,
                    is_public: bool = False, source_doc: Optional[str] = None,
-                   manual_tags: List[str] = None) -> models.BrandAsset:
+                   manual_tags: List[str] = None,
+                   width: Optional[int] = None, height: Optional[int] = None) -> models.BrandAsset:
     """
     Registra un activo en la biblioteca con Gobernanza y Etiquetas Manuales.
     Ahora incluye generación de Embedding Semántico (v12.0).
@@ -69,9 +70,10 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
         tags = vision_res.get("tags", [])
         description = vision_res.get("description", description)
         
-        # Ajuste por contenido humano
-        if vision_res.get("is_person") and category == "logos":
-            category = "photos" # Corregir error de IA si confunde persona con logo
+        # Ajuste por contenido humano (v28.0)
+        if vision_res.get("is_person"):
+            tags.extend(["human", "people", "lifestyle", "professional"])
+            if category == "logos": category = "photos"
             
     except Exception as e:
         print(f"  [Library] Vision failed, falling back to similarity: {e}")
@@ -99,6 +101,8 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
         tags=tags,
         manual_tags=manual_tags,
         description=description,
+        width=width,
+        height=height,
         is_public=1 if is_public else 0,
         source_doc=source_doc,
         embedding=embedding

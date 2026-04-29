@@ -239,12 +239,11 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
         if not plan_presentation_design(db, job_id):
             raise Exception("Failed during Art Direction.")
 
-        # FASE 3: CÁLCULO GEOMÉTRICO (Persistente)
-        job.current_step = "Phase 3/4: Calculating precision geometry and canvas mapping..."
+        # FASE 3: CÁLCULO GEOMÉTRICO (Obsoleto - Ya lo hizo el Art Director en Fase 2)
+        job.current_step = "Phase 3/4: Finalizing canvas mapping..."
         job.progress = 70
         db.commit()
-        if not calculate_presentation_geometry(db, job_id):
-            raise Exception("Failed during Geometry Calculation.")
+        # No llamar a calculate_presentation_geometry para evitar sobreescribir con []
 
         # FASE 4: RENDERIZADO FINAL (Reactivo)
         job.current_step = "Phase 4/4: Painting final PPTX portfolio..."

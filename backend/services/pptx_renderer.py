@@ -9,12 +9,9 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.oxml.ns import qn
 from lxml import etree
 
-# --- UNIVERSAL GEOMETRY CONFIG ---
-SLIDE_W_IN = 10.0
-SLIDE_H_IN = 7.5
 
-def scale_x(val): return Inches((val / 100.0) * SLIDE_W_IN)
-def scale_y(val): return Inches((val / 100.0) * SLIDE_H_IN)
+# --- UNIVERSAL GEOMETRY HELPERS ---
+def hex_to_rgb(hex_str: str) -> RGBColor:
 
 def hex_to_rgb(hex_str: str) -> RGBColor:
     if not isinstance(hex_str, str): return RGBColor(30, 30, 30)
@@ -75,7 +72,8 @@ def apply_corner_style(shape, style: str):
 # ELEMENT RENDERERS
 # ──────────────────────────────────────────────
 
-def render_background_image(slide, element, asset_map):
+
+def render_background_image(slide, element, asset_map, sw_in, sh_in):
     """
     Renderiza la imagen de fondo con estrategia 'Cover' usando CROP interno (v12.0).
     Garantiza 0 desbordamiento fuera del canvas.
@@ -99,15 +97,14 @@ def render_background_image(slide, element, asset_map):
             with PILImage.open(img_path) as img:
                 iw, ih = img.size
             
-            sw, sh = Inches(SLIDE_W_IN), Inches(SLIDE_H_IN)
+            sw, sh = Inches(sw_in), Inches(sh_in)
             
             # 2. Añadir imagen ajustada al slide (0,0)
             pic = slide.shapes.add_picture(img_path, 0, 0, sw, sh)
             
             # 3. Calcular y aplicar CROP semántico (Cover strategy)
             # Queremos que la imagen llene el slide manteniendo su aspect ratio
-            # r = ratio
-            aspect_slide = SLIDE_W_IN / SLIDE_H_IN
+            aspect_slide = sw_in / sh_in
             aspect_img = iw / ih
             
             if aspect_img > aspect_slide:
@@ -128,14 +125,14 @@ def render_background_image(slide, element, asset_map):
             
         except Exception as e:
             print(f"  [Renderer] Background Image failed: {e}")
-            shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, sw, sh)
+            shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, Inches(sw_in), Inches(sh_in))
             shape.fill.solid()
             shape.fill.fore_color.rgb = RGBColor(30, 30, 30)
     else:
         print(f"  [Renderer] Warning: Background asset not found for {img_basename}")
 
 
-def render_shape(slide, element):
+def render_shape(slide, element, sx, sy):
     geo = element.get("geometry", {"left": 0, "top": 0, "width": 10, "height": 10})
     style = element.get("style", {})
     
@@ -151,8 +148,8 @@ def render_shape(slide, element):
 
     shape = slide.shapes.add_shape(
         s_type, 
-        scale_x(geo["left"]), scale_y(geo["top"]), 
-        scale_x(geo["width"]), scale_y(geo["height"])
+        sx(geo["left"]), sy(geo["top"]), 
+        sx(geo["width"]), sy(geo["height"])
     )
     
     shape.fill.solid()
@@ -170,30 +167,34 @@ def render_shape(slide, element):
         apply_corner_style(shape, style.get("corner_style", "rounded"))
 
 
-def render_text(slide, element):
+def render_text(slide, element, slide_data, prs, dna, layout_slug):
     content = clean_text(element.get("content", ""))
     if not content: return
 
-    geo = element.get("geometry", {"left": 10, "top": 10, "width": 80, "height": 10})
-    style = element.get("style", {})
-    role = element.get("role", "body")
+    # 1. Obtener Geometría con conciencia de líneas del título
+    title_text = slide_data.get("title", "")
+    # Estimación de líneas: ~45 caracteres por línea en títulos grandes
+    title_lines = max(1, len(title_text) // 45 + (1 if len(title_text) % 45 > 0 else 0))
     
-    tx = slide.shapes.add_textbox(
-        scale_x(geo["left"]), scale_y(geo["top"]), 
-        scale_x(geo["width"]), scale_y(geo["height"])
-    )
-    tf = tx.text_frame
+    geo = get_layout_geometry(layout_slug, prs.slide_width.inches, prs.slide_height.inches, title_lines=title_lines)
+    
+    # 2. Renderizar Título con escalado agresivo
+    title_shape = slide.shapes.add_textbox(Inches(geo["title"]["left"]), Inches(geo["title"]["top"]), 
+                                         Inches(geo["title"]["width"]), Inches(geo["title"]["height"]))
+    tf = title_shape.text_frame
     tf.word_wrap = True
-    tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+    p = tf.paragraphs[0]
+    p.text = title_text
+    p.font.name = dna.get("primary_font", "Arial")
+    p.font.bold = True
+    p.font.color.rgb = RGBColor.from_string(dna.get("primary_color", "#000000").replace("#", ""))
     
-    # --- DYNAMIC FONT SCALING (v12.1) ---
-    # Si es título y es muy largo, bajamos la base para evitar colisiones
-    base_size = style.get("size", 18)
-    if role == "title" and len(content) > 40:
-        base_size = min(base_size, 32) # Cap titles at 32pt if long
-    if role == "title" and len(content) > 70:
-        base_size = 24 # Extreme reduction for massive titles
-        
+    # Escalado de fuente del título
+    base_size = 40
+    if len(title_text) > 40: base_size = 32
+    if len(title_text) > 80: base_size = 26
+    p.font.size = Pt(base_size)
+    
     # Manejar múltiples párrafos
     lines = content.split('\n')
     for i, line in enumerate(lines):
@@ -212,7 +213,7 @@ def render_text(slide, element):
         p.font.bold = style.get("bold", role == "title")
 
 
-def render_image(slide, element, asset_map):
+def render_image(slide, element, asset_map, sx, sy):
     img_basename = element.get("source")
     geo = element.get("geometry", {"left": 0, "top": 0, "width": 20, "height": 20})
     raw_path = asset_map.get(img_basename)
@@ -255,16 +256,16 @@ def render_image(slide, element, asset_map):
             with PILImage.open(img_path) as img:
                 iw, ih = img.size
             
-            target_w_emu = scale_x(geo["width"]).emu
-            target_h_emu = scale_y(geo["height"]).emu
+            target_w_emu = sx(geo["width"]).emu
+            target_h_emu = sy(geo["height"]).emu
             
             # Fit strategy
             scale = min(target_w_emu / iw, target_h_emu / ih)
             nw, nh = int(iw * scale), int(ih * scale)
             
             # Center within target box
-            ox = scale_x(geo["left"]).emu + (target_w_emu - nw) // 2
-            oy = scale_y(geo["top"]).emu + (target_h_emu - nh) // 2
+            ox = sx(geo["left"]).emu + (target_w_emu - nw) // 2
+            oy = sy(geo["top"]).emu + (target_h_emu - nh) // 2
             
             slide.shapes.add_picture(img_path, ox, oy, nw, nh)
             print(f"  [Renderer]   - RENDERED SUCCESSFULLY.")
@@ -315,12 +316,14 @@ def render_pptx_manifest(design_manifest, asset_map, output_path):
         def get_layer(el):
             etype = el.get("type")
             erole = el.get("role", "")
-            if erole == "person": return 10  # Frente absoluto
-            if etype == "logo": return 9
-            if etype == "text": return 8
-            if etype == "shape": return 2   # Bloques estructurales (Sidebar/Panels)
             if etype == "image" and erole == "background": return 0
-            return 1 # Imágenes genéricas
+            if etype == "image" and erole == "background_accent": return 1
+            if etype == "shape": return 2
+            if etype == "image": return 3 
+            if etype == "text": return 8
+            if etype == "logo": return 9
+            if erole == "person": return 10
+            return 1
 
         if elements is None: elements = []
         elements.sort(key=get_layer)
@@ -395,7 +398,14 @@ def _render_text_v2(slide, element, sx, sy):
         p.text = line
         p.alignment = {"center": PP_ALIGN.CENTER, "right": PP_ALIGN.RIGHT}.get(style.get("align"), PP_ALIGN.LEFT)
         p.font.name = style.get("font", "Arial")
-        p.font.size = Pt(style.get("size", 18))
+        
+        # Auto-scaling font size for long titles (v27.0)
+        f_size = style.get("size", 18)
+        if role == "title":
+            if len(content) > 35: f_size = int(f_size * 0.85)
+            if len(content) > 60: f_size = int(f_size * 0.70)
+        
+        p.font.size = Pt(f_size)
         p.font.color.rgb = hex_to_rgb(style.get("color", "#000000"))
         p.font.bold = style.get("bold", role == "title")
 
@@ -406,7 +416,11 @@ def _render_image_v2(slide, element, asset_map, sx, sy):
         img_path = os.path.join("uploads", str(img_basename))
     if img_path and os.path.exists(img_path):
         try:
-            with PILImage.open(img_path) as img: iw, ih = img.size
+            iw = element.get("width")
+            ih = element.get("height")
+            if not iw or not ih:
+                with PILImage.open(img_path) as img: iw, ih = img.size
+            
             tw, th = sx(geo["width"]).emu, sy(geo["height"]).emu
             sc = min(tw / iw, th / ih)
             nw, nh = int(iw * sc), int(ih * sc)

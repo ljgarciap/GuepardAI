@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   db:
     image: ankane/pgvector:latest
@@ -10,6 +12,36 @@ services:
       POSTGRES_PASSWORD: root
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    restart: always
+
+  backend:
+    build: ./backend
+    container_name: guepard-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./.env
+    environment:
+      - DATABASE_URL=postgresql+psycopg://root:root@db:5432/ai_db
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    volumes:
+      - ./backend:/app
+      - ./backend/uploads:/app/uploads
+    depends_on:
+      - db
+    restart: always
+
+  frontend:
+    build: ./frontend
+    container_name: guepard-frontend
+    ports:
+      - "4200:80"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     restart: always
 
 volumes:

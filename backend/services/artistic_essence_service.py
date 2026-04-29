@@ -184,6 +184,10 @@ def extract_artistic_essence(file_path: str, upload_dir: str, cb: Optional[Calla
     
     return {
         "structural_archetypes": vision_result.get("structural_archetypes", {}),
-        "visual_strategy":      vision_result.get("visual_strategy", ""),
-        "raw_vision_response":  vision_result,
+        "design_gestures":       vision_result.get("design_gestures", {}),
+        "composition_rules":     vision_result.get("composition_rules", {}),
+        "slide_archetypes":      vision_result.get("slide_archetypes", {}),
+        "visual_strategy":       vision_result.get("visual_strategy", ""),
+        "art_direction_note":    vision_result.get("visual_strategy", ""), # Mapeo directo
+        "raw_vision_response":   vision_result,
     }

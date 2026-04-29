@@ -6,6 +6,8 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
+    libreoffice-draw \
+    libreoffice-impress \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install

@@ -15,6 +15,16 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # Base class for SQLAlchemy ORM models
 Base = declarative_base()
 
+# AUTOMATIC EXTENSION INITIALIZATION (v37.0)
+from sqlalchemy import text
+try:
+    with engine.connect() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+        conn.commit()
+        print("  [DB] Success: pgvector extension is ACTIVE.")
+except Exception as e:
+    print(f"  [DB] Warning: Could not initialize pgvector: {e}")
+
 # Dependency function to manage opening and closing DB connections
 def get_db():
     db = SessionLocal()

@@ -12,6 +12,7 @@ pgvector
 anthropic
 mistralai==1.7.0
 openai
+google-generativeai
 
 # Embeddings & ML
 sentence-transformers

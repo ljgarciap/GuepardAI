@@ -16,6 +16,16 @@ import models
 
 load_dotenv()
 
+def log_audit(category: str, data: str):
+    """Guarda un registro detallado de las decisiones de la IA para auditoría estética."""
+    log_path = os.path.join(os.path.dirname(__file__), "llm_audit.log")
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    with open(log_path, "a") as f:
+        f.write(f"\n{'='*80}\n")
+        f.write(f"[{timestamp}] CATEGORY: {category}\n")
+        f.write(f"{data}\n")
+        f.write(f"{'='*80}\n")
+
 def get_system_config(key: str, default: str) -> str:
     """Helper para obtener configuración de la DB sin hardcodeo."""
     db = SessionLocal()
@@ -58,7 +68,7 @@ def retry_with_backoff(retries=3, backoff_in_seconds=2):
 
 def resolve_provider(specialization: str = "general"):
     active = os.getenv("ACTIVE_LLM", "").strip().lower()
-    gem_key = os.getenv("GEMINI_API_KEY")
+    gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
     mis_key = os.getenv("MISTRAL_API_KEY")
     ope_key = os.getenv("OPENAI_API_KEY")
     ant_key = os.getenv("ANTHROPIC_API_KEY")
@@ -106,13 +116,16 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
             # 1. Rutas según el contenido del nombre del modelo
             if "gemini" in current_model.lower():
                 # NATIVE GEMINI
-                gem_key = os.getenv("GEMINI_API_KEY")
-                if not gem_key: raise ValueError("No Gemini Key")
+                gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+                if not gem_key or genai is None: 
+                    raise ValueError("Gemini key missing or library not installed")
                 genai.configure(api_key=gem_key)
                 # Ensure it has 'models/' for the SDK if missing
                 m_name = current_model if current_model.startswith("models/") else f"models/{current_model}"
                 m = genai.GenerativeModel(m_name)
                 response = m.generate_content(prompt, generation_config=genai.GenerationConfig(temperature=0.3, response_mime_type="application/json"))
+                # LOG AUDIT (v25.0)
+                log_audit(f"GEN_JSON_{current_model}", f"PROMPT:\n{prompt}\n\nRESPONSE:\n{response.text}")
                 return json.loads(response.text)
                 
             elif "mistral" in current_model.lower() and "/" in current_model:
@@ -193,8 +206,9 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
             
             if "gemini" in current_model.lower():
                 # ADAPTADOR NATIVO GEMINI
-                gem_key = os.getenv("GEMINI_API_KEY")
-                if not gem_key: raise ValueError("No Gemini Key")
+                gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+                if not gem_key or genai is None:
+                    raise ValueError("Gemini key missing or library not installed")
                 genai.configure(api_key=gem_key)
                 
                 # El adaptador se encarga de la estructura correcta según el SDK
@@ -207,6 +221,11 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
                     for img_data in prepared_imgs:
                         content.append({"mime_type": "image/jpeg", "data": img_data})
                     
+                    m = genai.GenerativeModel(m_name)
+                    content = [prompt]
+                    for img_data in prepared_imgs:
+                        content.append({"mime_type": "image/jpeg", "data": img_data})
+                    
                     response = m.generate_content(
                         content, 
                         generation_config=genai.GenerationConfig(
@@ -214,6 +233,8 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
                             response_mime_type="application/json"
                         )
                     )
+                    # LOG AUDIT (v25.0)
+                    log_audit(f"VISION_JSON_{current_model}", f"PROMPT:\n{prompt}\n\nRESPONSE:\n{response.text}")
                     return json.loads(response.text)
                 except Exception as gem_err:
                     if "not found" in str(gem_err).lower() and "models/" in m_name:
@@ -297,8 +318,9 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
             
             if "gemini" in current_model.lower() or "embedding" in current_model.lower():
                 # NATIVE GOOGLE EMBEDDINGS (Text or Multimodal)
-                gem_key = os.getenv("GEMINI_API_KEY")
-                if not gem_key: raise ValueError("No Gemini Key")
+                gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+                if not gem_key or genai is None:
+                    raise ValueError("Gemini key missing or library not installed")
                 genai.configure(api_key=gem_key)
                 
                 results = []

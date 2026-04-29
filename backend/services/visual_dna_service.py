@@ -2,10 +2,12 @@
 visual_dna_service.py — PowerAI
 Extracción de DNA Visual: colores, fuentes, assets físicos.
 Herramienta: Programático (fitz / python-pptx) + LLM texto ligero.
+v30.0 — Syntax Corrected & Omnivorous Mode.
 """
 import os
 import json
 import uuid
+import hashlib
 from collections import Counter
 from typing import Optional, Callable
 
@@ -55,6 +57,7 @@ def extract_pdf_dna(file_path: str, source_filename: str,
 
     doc = fitz.open(file_path)
     fonts, colors, assets = [], [], []
+    seen_hashes = set()
     total = len(doc)
 
     for i, page in enumerate(doc):
@@ -73,7 +76,7 @@ def extract_pdf_dna(file_path: str, source_filename: str,
                     if not _is_neutral(hex_c):
                         colors.append(hex_c)
 
-        # Imágenes nativas
+        # Imágenes nativas con Hashing
         for img_info in page.get_images(full=True):
             xref = img_info[0]
             try:
@@ -81,25 +84,36 @@ def extract_pdf_dna(file_path: str, source_filename: str,
                 data = base_img.get("image", b"")
                 ext = base_img.get("ext", "png")
                 if len(data) > 5120:  # > 5KB
-                    uid = uuid.uuid4().hex[:6]
-                    fname = f"{source_filename}_p{i}_{uid}.{ext}"
+                    f_hash = hashlib.sha256(data).hexdigest()[:16]
+                    if f_hash in seen_hashes: continue
+                    seen_hashes.add(f_hash)
+                    
+                    fname = f"pdf_img_{f_hash}.{ext}"
                     out = os.path.join(upload_dir, fname)
-                    with open(out, "wb") as f:
-                        f.write(data)
-                    assets.append(fname)
+                    
+                    width, height = 0, 0
+                    try:
+                        import io
+                        from PIL import Image
+                        with Image.open(io.BytesIO(data)) as img:
+                            width, height = img.size
+                    except: pass
+
+                    if not os.path.exists(out):
+                        with open(out, "wb") as f: f.write(data)
+                    assets.append({"path": fname, "width": width, "height": height})
             except Exception as e:
                 print(f"  [DNA] Error extrayendo imagen PDF xref {xref}: {e}", flush=True)
 
     font_freq = Counter(fonts)
     color_freq = Counter(c for c in colors)
 
-    # --- ASSET EXTRACTION (v80.0 - Library Ready) ---
     labeled_assets = {"photos": [], "logos": [], "icons": []}
     for asset_name in assets:
         category = "photos"
         if "logo" in asset_name.lower(): category = "logos"
         elif "icon" in asset_name.lower(): category = "icons"
-        labeled_assets[category].append({"path": asset_name, "description": "extracted raw asset"})
+        labeled_assets[category].append({"path": asset_name, "description": "Extracted PDF asset"})
 
     return {
         "primary_fonts": [f[0] for f in font_freq.most_common(5)],
@@ -110,7 +124,7 @@ def extract_pdf_dna(file_path: str, source_filename: str,
 
 
 # ──────────────────────────────────────────────
-# EXTRACCIÓN PROGRAMÁTICA — PPTX
+# EXTRACCIÓN PROGRAMÁTICA — PPTX (Omnivorous v30.0)
 # ──────────────────────────────────────────────
 
 def extract_pptx_dna(file_path: str, source_filename: str,
@@ -118,115 +132,116 @@ def extract_pptx_dna(file_path: str, source_filename: str,
     if not Presentation:
         return {"error": "python-pptx no disponible."}
 
+    from pptx.enum.dml import MSO_FILL
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+
     prs = Presentation(file_path)
-    fonts, colors, assets = [], [], []
-    total = len(prs.slides)
+    fonts, colors, raw_assets_paths = [], [], []
+    seen_hashes = set()
+    total_slides = len(prs.slides)
 
-    def _save_img(data, prefix, idx, ext):
-        if len(data) < 4096: return None # Ignorar basura < 4KB
-        uid = uuid.uuid4().hex[:6]
-        fname = f"{source_filename}_{prefix}_{idx}_{uid}.{ext}"
-        with open(os.path.join(upload_dir, fname), "wb") as f: f.write(data)
-        return fname
-
-    # 1. Cosecha Profunda: Masters, Layouts y Fondos
-    for m_idx, master in enumerate(prs.slide_masters):
-        # Fondo del Master
-        try:
-            if master.background.fill.type == 6: # Picture
-                img = master.background.fill.picture.image
-                res = _save_img(img.blob, "master_bg", m_idx, img.ext)
-                if res: assets.append(res)
-        except: pass
+    def _process_img_data(blob, ext, prefix):
+        if not blob or len(blob) < 4096: return None
+        f_hash = hashlib.sha256(blob).hexdigest()[:16]
+        if f_hash in seen_hashes: return None
         
-        for shape in master.shapes:
-            # Imágenes Directas
-            if getattr(shape, "shape_type", None) == 13:
-                try:
-                    res = _save_img(shape.image.blob, "master_img", m_idx, shape.image.ext)
-                    if res: assets.append(res)
-                except: pass
-            # Rellenos de Imagen (Logos ocultos)
-            try:
-                if shape.fill.type == 6:
-                    img = shape.fill.picture.image
-                    res = _save_img(img.blob, "master_fill", m_idx, img.ext)
-                    if res: assets.append(res)
-            except: pass
-
-    # 2. Cosecha de Diapositivas e Imágenes Inmersas
-    for i, slide in enumerate(prs.slides):
-        if cb: cb(f"DNA Visual — Desguace slide {i+1}/{total}", int((i + 1) / total * 95))
+        seen_hashes.add(f_hash)
+        fname = f"{prefix}_{f_hash}.{ext}"
+        out_path = os.path.join(upload_dir, fname)
         
-        # Fondo del Slide
+        width, height = 0, 0
         try:
-            if slide.background.fill.type == 6:
-                img = slide.background.fill.picture.image
-                res = _save_img(img.blob, "bg", i, img.ext)
-                if res: assets.append(res)
+            import io
+            from PIL import Image
+            with Image.open(io.BytesIO(blob)) as img:
+                width, height = img.size
         except: pass
 
-        for s_idx, shape in enumerate(slide.shapes):
-            # Imágenes Directas
-            if getattr(shape, "shape_type", None) == 13:
-                try:
-                    res = _save_img(shape.image.blob, f"s{i}_img", s_idx, shape.image.ext)
-                    if res: assets.append(res)
-                except: pass
-            
-            # Rellenos (Donde suelen estar los logos en manuales complejos)
-            try:
-                if shape.fill.type == 6:
-                    img = shape.fill.picture.image
-                    res = _save_img(img.blob, f"s{i}_fill", s_idx, img.ext)
-                    if res: assets.append(res)
-            except: pass
+        if not os.path.exists(out_path):
+            with open(out_path, "wb") as f: f.write(blob)
+        return {"path": fname, "width": width, "height": height}
 
-            # Texto -> fuentes y colores
-            if not shape.has_text_frame:
-                continue
+    def _extract_recursive(shape):
+        paths = []
+        # 1. Imagen Directa
+        if getattr(shape, "shape_type", None) == 13: # PICTURE
+            try:
+                res = _process_img_data(shape.image.blob, shape.image.ext, "img")
+                if res: paths.append(res)
+            except: pass
+        # 2. Relleno de Imagen
+        try:
+            if hasattr(shape, "fill") and shape.fill.type == 6: # PICTURE FILL
+                img = shape.fill.picture.image
+                res = _process_img_data(img.blob, img.ext, "fill")
+                if res: paths.append(res)
+        except: pass
+        # 3. Grupos
+        if getattr(shape, "shape_type", None) == 6: # GROUP
+            for s in shape.shapes:
+                paths.extend(_extract_recursive(s))
+        
+        # Fuentes y Colores
+        if shape.has_text_frame:
             for para in shape.text_frame.paragraphs:
                 for run in para.runs:
-                    if run.font.name:
-                        fonts.append(run.font.name)
+                    if run.font.name: fonts.append(run.font.name)
                     try:
                         col = run.font.color
                         if col and hasattr(col, "rgb") and col.rgb:
-                            r, g, b = col.rgb
-                            hex_c = _hex(r, g, b)
-                            if not _is_neutral(hex_c):
-                                colors.append(hex_c)
-                    except AttributeError:
-                        pass
+                            colors.append(_hex(*col.rgb))
+                    except: pass
+        return paths
 
-        # Colores de fondo del slide
+    # --- 1. MASTERS & LAYOUTS ---
+    print(f"  [DNA] Scanning Masters and Layouts (Omnivorous Mode)...", flush=True)
+    for master in prs.slide_masters:
         try:
-            bg = slide.background.fill
-            if bg.type is not None and hasattr(bg, "fore_color"):
-                fc = bg.fore_color
-                if fc and hasattr(fc, "rgb") and fc.rgb:
-                    r, g, b = fc.rgb
-                    colors.append(_hex(r, g, b))
-        except Exception:
-            pass
-
-    font_freq = Counter(fonts)
-    color_freq = Counter(c for c in colors)
-
-    # --- ASSET EXTRACTION (v80.0 - Library Ready) ---
-    labeled_assets = {"photos": [], "logos": [], "icons": []}
-    
-    for asset_name in assets:
-        category = "photos"
-        if "logo" in asset_name.lower(): category = "logos"
-        elif "icon" in asset_name.lower(): category = "icons"
+            if master.background.fill.type == 6:
+                img = master.background.fill.picture.image
+                res = _process_img_data(img.blob, img.ext, "master_bg")
+                if res: raw_assets_paths.append(res)
+        except: pass
+        for shape in master.shapes: raw_assets_paths.extend(_extract_recursive(shape))
         
-        # Ya no etiquetamos aquí, la Biblioteca lo hará en main.py con Hashing
-        labeled_assets[category].append({"path": asset_name, "description": "extracted raw asset"})
+        for layout in master.slide_layouts:
+            try:
+                if layout.background.fill.type == 6:
+                    img = layout.background.fill.picture.image
+                    res = _process_img_data(img.blob, img.ext, "layout_bg")
+                    if res: raw_assets_paths.append(res)
+            except: pass
+            for shape in layout.shapes: raw_assets_paths.extend(_extract_recursive(shape))
+
+    # --- 2. SLIDES ---
+    print(f"  [DNA] Scanning Slides...", flush=True)
+    for i, slide in enumerate(prs.slides):
+        if cb: cb(f"DNA Visual — Slide {i+1}/{total_slides}", int((i+1)/total_slides * 90))
+        try:
+            if slide.background.fill.type == 6:
+                img = slide.background.fill.picture.image
+                res = _process_img_data(img.blob, img.ext, "bg")
+                if res: raw_assets_paths.append(res)
+        except: pass
+        for shape in slide.shapes: raw_assets_paths.extend(_extract_recursive(shape))
+
+    # --- 3. CATEGORIZACIÓN ---
+    labeled_assets = {"photos": [], "logos": [], "icons": []}
+    for asset_info in raw_assets_paths:
+        fname = asset_info["path"]
+        category = "photos"
+        if "logo" in fname.lower(): category = "logos"
+        elif "icon" in fname.lower(): category = "icons"
+        labeled_assets[category].append({
+            "path": fname, 
+            "width": asset_info["width"], 
+            "height": asset_info["height"],
+            "description": "Extracted DNA asset"
+        })
 
     return {
-        "primary_fonts": [f[0] for f in font_freq.most_common(5)],
-        "dominant_colors": [c[0] for c in color_freq.most_common(8)],
+        "primary_fonts": [f[0] for f in Counter(fonts).most_common(5)],
+        "dominant_colors": [c[0] for c in Counter(colors).most_common(8)],
         "extracted_assets": labeled_assets,
         "source_type": "pptx",
         "slide_width_inches": round(prs.slide_width.inches, 2),
@@ -277,7 +292,6 @@ Return ONLY this JSON:
         return result
     except Exception as e:
         print(f"  [DNA] LLM refinement failed: {e}", flush=True)
-        # Fallback determinístico
         fonts = raw_data.get("primary_fonts", ["Arial"])
         colors = raw_data.get("dominant_colors", ["#333333"])
         return {
@@ -302,10 +316,6 @@ Return ONLY this JSON:
 
 def extract_visual_dna(file_path: str, upload_dir: str,
                        cb: Optional[Callable] = None) -> dict:
-    """
-    Punto de entrada principal.
-    Retorna el diccionario de DNA visual listo para persistir en brand_visual_dna.
-    """
     source_filename = os.path.basename(file_path)
     ext = os.path.splitext(file_path)[1].lower()
     print(f"[DNA] Starting extraction for {source_filename} (Type: {ext})", flush=True)

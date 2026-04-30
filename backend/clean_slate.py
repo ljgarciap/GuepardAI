@@ -9,17 +9,9 @@ engine = create_engine(DATABASE_URL)
 
 def clean_slate():
     print("--- TABULA RASA INITIATED ---")
-    with engine.connect() as conn:
-        print("Dropping all existing tables...")
-        # Drop with CASCADE to ensure everything is removed
-        tables = ["brand_visual_dna", "brand_artistic_essence", "ingestion_jobs", "generation_jobs", "corporate_knowledge", "brand_styles"]
-        for table in tables:
-            try:
-                conn.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE;"))
-                print(f"Dropped {table}")
-            except Exception as e:
-                print(f"Error dropping {table}: {e}")
-        conn.commit()
+    
+    print("Dropping all existing tables...")
+    models.Base.metadata.drop_all(bind=engine)
     
     print("Recreating all tables with new schema...")
     models.Base.metadata.create_all(bind=engine)

@@ -11,7 +11,31 @@ import anthropic
 from mistralai import Mistral
 from dotenv import load_dotenv
 
+from database import SessionLocal
+import models
+
 load_dotenv()
+
+def log_audit(category: str, data: str):
+    """Saves a detailed record de las AI decisions para aesthetic audit."""
+    log_path = os.path.join(os.path.dirname(__file__), "llm_audit.log")
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    with open(log_path, "a") as f:
+        f.write(f"\n{'='*80}\n")
+        f.write(f"[{timestamp}] CATEGORY: {category}\n")
+        f.write(f"{data}\n")
+        f.write(f"{'='*80}\n")
+
+def get_system_config(key: str, default: str) -> str:
+    """Helper to get DB config without hardcoding."""
+    db = SessionLocal()
+    try:
+        cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
+        return cfg.value if cfg else default
+    except:
+        return default
+    finally:
+        db.close()
 
 def retry_with_backoff(retries=3, backoff_in_seconds=2):
     def decorator(func):
@@ -44,7 +68,7 @@ def retry_with_backoff(retries=3, backoff_in_seconds=2):
 
 def resolve_provider(specialization: str = "general"):
     active = os.getenv("ACTIVE_LLM", "").strip().lower()
-    gem_key = os.getenv("GEMINI_API_KEY")
+    gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
     mis_key = os.getenv("MISTRAL_API_KEY")
     ope_key = os.getenv("OPENAI_API_KEY")
     ant_key = os.getenv("ANTHROPIC_API_KEY")
@@ -79,8 +103,8 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
     Soporta cadenas de modelos: 'models/gemini-1.5-flash,mistral/mistral-large-latest'
     """
     if not model:
-        # Fallback si no se especifica modelo
-        model = "gemini-1.5-flash,mistral/mistral-large-latest"
+        # v23.5: No hardcoded fallbacks here. Fetch from DB.
+        model = get_system_config("extraction_synthesis_model", "models/gemini-2.5-flash")
         
     models_to_try = [m.strip() for m in model.split(",")]
     last_error = None
@@ -89,16 +113,19 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
         try:
             print(f"  [LLM] Attempting generation with {current_model}...", flush=True)
             
-            # 1. Rutas según el contenido del nombre del modelo
+            # 1. Routes according to model name content
             if "gemini" in current_model.lower():
                 # NATIVE GEMINI
-                gem_key = os.getenv("GEMINI_API_KEY")
-                if not gem_key: raise ValueError("No Gemini Key")
+                gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+                if not gem_key or genai is None: 
+                    raise ValueError("Gemini key missing or library not installed")
                 genai.configure(api_key=gem_key)
                 # Ensure it has 'models/' for the SDK if missing
                 m_name = current_model if current_model.startswith("models/") else f"models/{current_model}"
                 m = genai.GenerativeModel(m_name)
                 response = m.generate_content(prompt, generation_config=genai.GenerationConfig(temperature=0.3, response_mime_type="application/json"))
+                # LOG AUDIT (v25.0)
+                log_audit(f"GEN_JSON_{current_model}", f"PROMPT:\n{prompt}\n\nRESPONSE:\n{response.text}")
                 return json.loads(response.text)
                 
             elif "mistral" in current_model.lower() and "/" in current_model:
@@ -134,7 +161,16 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
                 print(f"  [LLM] Error with {current_model}: {e}")
                 continue
                 
-    raise last_error or Exception("All models in chain failed.")
+    # FINAL ATTEMPT: Global Fallback from DB
+    fallback = get_system_config("global_fallback_model", "models/gemini-2.5-flash")
+    if model != fallback:
+        print(f"  [LLM] Chain failed. Attempting global emergency fallback ({fallback})...", flush=True)
+        try:
+            return generate_json(prompt, model=fallback, specialization=specialization)
+        except:
+            pass
+            
+    raise last_error or Exception("All models and global fallback failed.")
 
 @retry_with_backoff(retries=2)
 def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[str] = None) -> dict:
@@ -143,16 +179,11 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
     Obtiene la cadena de modelos desde system_configs.
     """
     if not model:
-        from database import SessionLocal
-        from models import SystemConfig
-        db = SessionLocal()
-        cfg = db.query(SystemConfig).filter(SystemConfig.key == 'extraction_vision_model').first()
-        model = cfg.value if cfg else "anthropic/claude-3.7-sonnet,gemini-1.5-flash"
-        db.close()
+        model = get_system_config("extraction_vision_model", "models/gemini-2.5-flash")
         
     models_to_try = [m.strip() for m in model.split(",")]
     
-    # Pre-procesar imágenes una sola vez
+    # Pre-process images once
     from PIL import Image
     import io
 
@@ -175,15 +206,21 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
             
             if "gemini" in current_model.lower():
                 # ADAPTADOR NATIVO GEMINI
-                gem_key = os.getenv("GEMINI_API_KEY")
-                if not gem_key: raise ValueError("No Gemini Key")
+                gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+                if not gem_key or genai is None:
+                    raise ValueError("Gemini key missing or library not installed")
                 genai.configure(api_key=gem_key)
                 
-                # El adaptador se encarga de la estructura correcta según el SDK
+                # The adapter handles the correct structure according to the SDK
                 m_name = current_model if current_model.startswith("models/") else f"models/{current_model}"
-                # Pero si falla con models/, el adaptador debe saber reintentar sin él o usar el nombre base
+                # But if it fails with models/, the adapter must know how to retry without it or use the base name
                 
                 try:
+                    m = genai.GenerativeModel(m_name)
+                    content = [prompt]
+                    for img_data in prepared_imgs:
+                        content.append({"mime_type": "image/jpeg", "data": img_data})
+                    
                     m = genai.GenerativeModel(m_name)
                     content = [prompt]
                     for img_data in prepared_imgs:
@@ -196,6 +233,8 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
                             response_mime_type="application/json"
                         )
                     )
+                    # LOG AUDIT (v25.0)
+                    log_audit(f"VISION_JSON_{current_model}", f"PROMPT:\n{prompt}\n\nRESPONSE:\n{response.text}")
                     return json.loads(response.text)
                 except Exception as gem_err:
                     if "not found" in str(gem_err).lower() and "models/" in m_name:
@@ -232,7 +271,16 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
             print(f"  [Vision] {current_model} failed: {e}. Trying next...")
             continue
 
-    raise last_error or Exception("All vision models failed.")
+    # FINAL ATTEMPT: Global Fallback
+    fallback = get_system_config("global_fallback_model", "models/gemini-2.5-flash")
+    if model != fallback:
+        print(f"  [Vision] Chain failed. Attempting global emergency fallback ({fallback})...", flush=True)
+        try:
+            return generate_vision_json(prompt, image_paths, model=fallback)
+        except:
+            pass
+            
+    raise last_error or Exception("All vision models and global fallback failed.")
 
 def base_64_encode(data):
     import base64
@@ -243,17 +291,13 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
     """
     UNIVERSAL EMBEDDING ENGINE (v18.6) - Multimodal & Normalized.
     Garantiza salida de 1024 dimensiones para pgvector.
-    Soporta Texto (str) e Imágenes (bytes).
+    Supports Text (str) and Images (bytes).
     """
     if not inputs: return []
     
     # 1. Determinar modelos a usar
-    from database import SessionLocal
-    from models import SystemConfig
-    db = SessionLocal()
-    cfg = db.query(SystemConfig).filter(SystemConfig.key == 'embedding_model_chain').first()
-    model_chain = cfg.value if cfg else "models/text-embedding-004,models/multimodal-embedding-001"
-    db.close()
+    # v41.0: Use a more robust chain and fix Gemini names
+    model_chain = get_system_config("embedding_model_chain", "models/text-embedding-004,mistral-embed")
     
     models_to_try = [m.strip() for m in model_chain.split(",")]
     last_error = None
@@ -262,7 +306,7 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
     TARGET_DIM = 1024
 
     def normalize_vector(vec: list, target: int) -> list:
-        """Ajusta la dimensión del vector por truncamiento o padding."""
+        """Adjusts vector dimension by truncation or padding."""
         current = len(vec)
         if current == target: return vec
         if current > target: return vec[:target]
@@ -273,10 +317,11 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
         try:
             print(f"  [Embeddings] Attempting with {current_model}...", flush=True)
             
-            if "gemini" in current_model.lower() or "embedding" in current_model.lower():
+            if "gemini" in current_model.lower() or "text-embedding" in current_model.lower():
                 # NATIVE GOOGLE EMBEDDINGS (Text or Multimodal)
-                gem_key = os.getenv("GEMINI_API_KEY")
-                if not gem_key: raise ValueError("No Gemini Key")
+                gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+                if not gem_key or genai is None:
+                    raise ValueError("Gemini key missing or library not installed")
                 genai.configure(api_key=gem_key)
                 
                 results = []
@@ -296,7 +341,7 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
                                 )
                             results.append(normalize_vector(res["embedding"], TARGET_DIM))
                         except Exception as gem_err:
-                            if "not found" in str(gem_err).lower() and "models/" in m_name:
+                            if ("not found" in str(gem_err).lower() or "404" in str(gem_err)) and "models/" in m_name:
                                 # Reintento sin prefijo
                                 alt_name = m_name.replace("models/", "")
                                 print(f"  [Embeddings] 404 with prefix. Retrying with: {alt_name}", flush=True)
@@ -332,25 +377,27 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
                 text_inputs = [i for i in inputs if isinstance(i, str)]
                 if not text_inputs: continue
                 
-                res = client.embeddings.create(
-                    model="mistral-embed",
-                    inputs=text_inputs
-                )
+                # Use a higher timeout to prevent hanging
+                try:
+                    response = client.embeddings.create(
+                        model="mistral-embed",
+                        inputs=text_inputs
+                    )
+                except Exception as mis_err:
+                    print(f"  [Embeddings] Mistral actual call failed: {mis_err}")
+                    raise mis_err
                 
                 # Mapear resultados respetando el orden original y normalizando a 1024
-                results = []
+                final_results = []
                 mistral_idx = 0
                 for item in inputs:
                     if isinstance(item, str):
-                        vec = res.data[mistral_idx].embedding
-                        results.append(normalize_vector(vec, TARGET_DIM))
+                        vec = response.data[mistral_idx].embedding
+                        final_results.append(normalize_vector(vec, TARGET_DIM))
                         mistral_idx += 1
                     else:
-                        results.append(None) # Mistral no soporta imágenes
-                return results
-                if not text_inputs: continue
-                response = client.embeddings.create(model="mistral-embed", inputs=text_inputs)
-                return [normalize_vector(item.embedding, TARGET_DIM) for item in response.data]
+                        final_results.append(None) # Mistral does not support images
+                return final_results
 
         except Exception as e:
             last_error = e

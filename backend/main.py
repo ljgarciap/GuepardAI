@@ -44,27 +44,14 @@ print("[System] PowerAI Engine v11.0 (Clean Architecture) IS LIVE.", flush=True)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+from seed import seed_data
+
 Base.metadata.create_all(bind=engine)
+try:
+    seed_data()
+except Exception as e:
+    print(f"  [System] Warning: Seeding failed: {e}")
 
-# SEED LANGUAGES
-def seed_languages():
-    db = SessionLocal()
-    try:
-        if db.query(models.Language).count() == 0:
-            logger.info("Seeding default languages...")
-            langs = [
-                models.Language(code="UK", name="English (UK)"),
-                models.Language(code="USA", name="English (USA)"),
-                models.Language(code="LATAM", name="Español (LATAM)")
-            ]
-            db.add_all(langs)
-            db.commit()
-    except Exception as e:
-        logger.error(f"Error seeding languages: {e}")
-    finally:
-        db.close()
-
-seed_languages()
 
 app = FastAPI(title="PowerAI API — Clean Architecture")
 

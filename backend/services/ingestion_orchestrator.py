@@ -13,8 +13,26 @@ import models
 from services.asset_library_service import register_asset
 from services.visual_dna_service import extract_visual_dna as run_visual_dna_extraction
 from services.artistic_essence_service import extract_artistic_essence as run_artistic_essence_extraction
+import subprocess
 
 logger = logging.getLogger(__name__)
+
+def convert_pptx_to_pdf(pptx_path: str, output_dir: str) -> Optional[str]:
+    """Usa LibreOffice para convertir PPTX a PDF para análisis de visión fiel."""
+    try:
+        logger.info(f"  [Orchestrator] Converting {pptx_path} to PDF...")
+        cmd = [
+            "libreoffice", "--headless", "--convert-to", "pdf",
+            "--outdir", output_dir, pptx_path
+        ]
+        subprocess.run(cmd, check=True, capture_output=True)
+        pdf_name = os.path.splitext(os.path.basename(pptx_path))[0] + ".pdf"
+        pdf_path = os.path.join(output_dir, pdf_name)
+        if os.path.exists(pdf_path):
+            return pdf_path
+    except Exception as e:
+        logger.warning(f"  [Orchestrator] PPTX to PDF failed: {e}")
+    return None
 
 def update_job_step(job_key: str, ingestion_type: str, step_details: str, progress: int):
     db = SessionLocal()
@@ -44,9 +62,10 @@ def set_job_status(job_key: str, ingestion_type: str, status: str):
         db.close()
 
 def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
-    """Extrae el DNA Visual (v21.0) con registro atómico de activos."""
+    """Extracts Visual DNA (v21.0) with atomic asset registration."""
     logger.info(f"[Orchestrator] Visual DNA started: {source_filename}")
-    cb = lambda msg, p=0: update_job_step(job_key, "visual_dna", msg, p)
+    # v41.0: Reportar a brand_style para visibilidad granular en la UI
+    cb = lambda msg, p=0: update_job_step(job_key, "brand_style", msg, p)
     is_public = (visibility_scope == "public")
     
     try:
@@ -69,36 +88,74 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
             record.primary_font     = dna.get("primary_font", "Arial")
             record.raw_extraction   = dna
 
-            # REGISTRO ATÓMICO DE ACTIVOS (v20.5)
+            # REGISTRO ATÓMICO DE ACTIVOS (v20.5 - PARALLEL BATCHING v24.0)
             final_library_assets = {}
             raw_assets = dna.get("extracted_assets", {})
+            
+            # 1. Aplanar lista de activos a procesar
+            flat_items = []
             for cat, items in raw_assets.items():
                 for item in items:
+                    flat_items.append((cat, item))
+                    
+            total_items = len(flat_items)
+            processed_count = 0
+            
+            if total_items > 0:
+                import concurrent.futures
+                
+                # Isolated (Thread-Safe) function for each worker
+                def process_asset_worker(cat, item):
+                    from database import SessionLocal
+                    local_db = SessionLocal()
                     try:
-                        with db.begin_nested():
-                            raw_path = os.path.join(upload_dir, item["path"])
-                            if os.path.exists(raw_path):
-                                asset_record = register_asset(
-                                    db, brand_id, raw_path, category=cat,
-                                    is_public=is_public, source_doc=source_filename,
-                                    manual_tags=manual_tags
-                                )
-                                # Asegurar que local_path sea solo el nombre del archivo
-                                asset_record.local_path = os.path.basename(asset_record.local_path)
-                                db.commit()
-                                
-                                real_cat = asset_record.category
-                                if real_cat != "noise":
-                                    if real_cat not in final_library_assets: final_library_assets[real_cat] = []
-                                    final_library_assets[real_cat].append({
-                                        "id": asset_record.id,
-                                        "path": os.path.basename(asset_record.local_path),
-                                        "category": real_cat
-                                    })
-                        db.commit()
+                        raw_path = os.path.join(upload_dir, item["path"])
+                        if os.path.exists(raw_path):
+                            asset_record = register_asset(
+                                local_db, brand_id, raw_path, category=cat,
+                                is_public=is_public, source_doc=source_filename,
+                                manual_tags=manual_tags,
+                                width=item.get("width"), height=item.get("height")
+                            )
+                            # Ensure local_path is just the filename
+                            asset_record.local_path = os.path.basename(asset_record.local_path)
+                            local_db.commit() # Local commit per thread
+                            
+                            real_cat = asset_record.category
+                            return {
+                                "success": True,
+                                "real_cat": real_cat,
+                                "id": asset_record.id,
+                                "path": os.path.basename(asset_record.local_path)
+                            }
+                        return {"success": False, "error": "File not found"}
                     except Exception as asset_err:
-                        db.rollback()
+                        local_db.rollback()
                         logger.warning(f"  [Orchestrator] Skip asset {item.get('path')}: {asset_err}")
+                        return {"success": False, "error": str(asset_err)}
+                    finally:
+                        local_db.close()
+                
+                # Controlled Parallel Execution (Batch of 3)
+                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                    future_to_item = {executor.submit(process_asset_worker, cat, item): item for cat, item in flat_items}
+                    for future in concurrent.futures.as_completed(future_to_item):
+                        processed_count += 1
+                        
+                        # DYNAMIC PROGRESS BAR: 50% to 95%
+                        prog_percent = 50 + int((processed_count / total_items) * 45)
+                        cb(f"Analyzing images with Vision LLM ({processed_count}/{total_items})...", prog_percent)
+                        
+                        res = future.result()
+                        if res and res.get("success"):
+                            real_cat = res["real_cat"]
+                            if real_cat != "noise":
+                                if real_cat not in final_library_assets: final_library_assets[real_cat] = []
+                                final_library_assets[real_cat].append({
+                                    "id": res["id"],
+                                    "path": res["path"],
+                                    "category": real_cat
+                                })
             
             record.extracted_assets = final_library_assets
             db.commit()
@@ -110,7 +167,7 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
         set_job_status(job_key, "visual_dna", "error")
 
 def task_extract_artistic_essence(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
-    """Extrae la Esencia Artística (v21.0) de forma aislada."""
+    """Extracts Artistic Essence (v21.0) in isolation."""
     logger.info(f"[Orchestrator] Artistic Essence started: {source_filename}")
     cb = lambda msg, p=0: update_job_step(job_key, "artistic", msg, p)
 
@@ -127,6 +184,7 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
             
             record.source_filename       = source_filename
             record.visual_strategy       = brand_essence.get("visual_strategy", "")
+            record.art_direction_note    = brand_essence.get("branding_rulebook", "")
             record.structural_archetypes = brand_essence.get("structural_archetypes", {})
             record.design_gestures       = brand_essence.get("design_gestures", {})
             record.composition_rules     = brand_essence.get("composition_rules", {})
@@ -140,20 +198,31 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
         set_job_status(job_key, "artistic", "error")
 
 def task_extract_full_brand_style(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
-    """Orquestación desacoplada de identidad de marca."""
+    """Decoupled brand identity orchestration (Context-Aware v22.0)."""
     cb = lambda msg, p=0: update_job_step(job_key, "brand_style", msg, p)
     
-    # DNA (Aislado)
+    # 1. Esencia (Aislada) - USAR PDF SI ES POSIBLE (v34.0)
+    # Se extrae PRIMERO para generar el Contexto de Marca (Brand Rulebook)
     try:
-        cb("Extracting Visual DNA (Atomic)...", 10)
-        task_extract_visual_dna(job_key, file_path, source_filename, visibility_scope, brand_id, manual_tags)
-    except: pass
+        cb("Analyzing Artistic Essence (Vision High-Fidelity)...", 10)
+        essence_file = file_path
+        if file_path.lower().endswith(".pptx"):
+            pdf_path = convert_pptx_to_pdf(file_path, os.path.dirname(file_path))
+            if pdf_path:
+                essence_file = pdf_path
+                logger.info(f"  [Orchestrator] Using PDF for essence: {pdf_path}")
+        
+        task_extract_artistic_essence(job_key, essence_file, source_filename, visibility_scope, brand_id, manual_tags)
+    except Exception as e:
+        logger.error(f"  [Orchestrator] Failed Artistic Essence: {e}")
 
-    # Esencia (Aislada)
+    # 2. DNA (Aislado) - Context-Aware
+    # Se ejecuta DESPUÉS para que el modelo de Visión tenga acceso al Brand Rulebook al clasificar imágenes
     try:
-        cb("Analyzing Artistic Essence (Vision)...", 50)
-        task_extract_artistic_essence(job_key, file_path, source_filename, visibility_scope, brand_id, manual_tags)
-    except: pass
+        cb("Extracting Visual DNA (Atomic & Context-Aware)...", 50)
+        task_extract_visual_dna(job_key, file_path, source_filename, visibility_scope, brand_id, manual_tags)
+    except Exception as e:
+        logger.error(f"  [Orchestrator] Failed Visual DNA: {e}")
 
     update_job_step(job_key, "brand_style", "Process finished.", 100)
     set_job_status(job_key, "brand_style", "completed")
@@ -172,7 +241,7 @@ def task_ingest_knowledge(job_key: str, file_path: str, source_filename: str, br
         set_job_status(job_key, "knowledge", "error")
 
 def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
-    """Cosecha pura de activos (v21.0). Soporta imágenes individuales y documentos."""
+    """Pure asset harvest (v21.0). Supports individual images and documents."""
     logger.info(f"[Orchestrator] Pure Asset Harvest: {source_filename}")
     cb = lambda msg, p=0: update_job_step(job_key, "pure_assets", msg, p)
     
@@ -185,12 +254,15 @@ def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str,
         try:
             # Si es una imagen individual, registrarla directamente
             if ext in [".png", ".jpg", ".jpeg", ".svg", ".webp"]:
-                cb("Registering individual image asset...", 50)
-                category = "photos"
-                if "logo" in source_filename.lower(): category = "logos"
-                if "icon" in source_filename.lower(): category = "icons"
+                # Extraer dimensiones (v36.5)
+                width, height = 0, 0
+                try:
+                    from PIL import Image
+                    with Image.open(file_path) as img:
+                        width, height = img.size
+                except: pass
                 
-                register_asset(db, brand_id, file_path, category=category, is_public=is_public, source_doc=source_filename, manual_tags=manual_tags)
+                register_asset(db, brand_id, file_path, category=category, is_public=is_public, source_doc=source_filename, manual_tags=manual_tags, width=width, height=height)
                 db.commit()
             else:
                 # Si es un documento, intentar extraer activos de él

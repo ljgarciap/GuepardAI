@@ -18,22 +18,42 @@ def get_hex_from_rgb(r, g, b):
     return f"#{int(r):02x}{int(g):02x}{int(b):02x}".upper()
 
 def extract_pptx_images_recursive(shape, upload_dir):
-    """Fase 1: Extracción bruta de todos los binarios de imagen."""
+    """Fase 1: Extracción bruta de todos los binarios de imagen (Pictures, Fills y Groups)."""
     assets = []
+    
+    # 1. Caso Estándar: Es una Imagen
     if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
         try:
             img = shape.image
             f_hash = hashlib.sha256(img.blob).hexdigest()[:12]
             ext = img.ext
-            img_filename = f"raw_{f_hash}.{ext}"
+            img_filename = f"asset_raw_{f_hash}.{ext}"
             out_path = os.path.join(upload_dir, img_filename)
             if not os.path.exists(out_path):
                 with open(out_path, "wb") as f: f.write(img.blob)
             assets.append(out_path)
         except: pass
+        
+    # 2. Caso Especial: Forma con Relleno de Imagen (Común en humanos/personas)
+    elif hasattr(shape, "fill") and hasattr(shape.fill, "type"):
+        from pptx.enum.dml import MSO_FILL
+        if shape.fill.type == MSO_FILL.PICTURE:
+            try:
+                img = shape.fill.picture
+                f_hash = hashlib.sha256(img.blob).hexdigest()[:12]
+                ext = img.ext
+                img_filename = f"fill_raw_{f_hash}.{ext}"
+                out_path = os.path.join(upload_dir, img_filename)
+                if not os.path.exists(out_path):
+                    with open(out_path, "wb") as f: f.write(img.blob)
+                assets.append(out_path)
+            except: pass
+
+    # 3. Recursividad para Grupos
     elif shape.shape_type == MSO_SHAPE_TYPE.GROUP:
         for s in shape.shapes:
             assets.extend(extract_pptx_images_recursive(s, upload_dir))
+            
     return assets
 
 def extract_pptx_style(file_path, client_name="brand", update_callback=None):
@@ -49,10 +69,55 @@ def extract_pptx_style(file_path, client_name="brand", update_callback=None):
     print(f"  [DNA] Phase 1: Raw Extraction...")
     
     # --- PASO 1: EXTRACCIÓN BRUTA ---
+    from pptx.enum.dml import MSO_FILL
+    
+    # 1.1 Barrer PATRONES (Masters) y DISEÑOS (Layouts)
+    print(f"  [DNA] Scanning Slide Masters and Layouts...")
+    for master in prs.slide_masters:
+        try:
+            if master.background.fill.type == MSO_FILL.PICTURE:
+                img = master.background.fill.picture
+                f_hash = hashlib.sha256(img.blob).hexdigest()[:12]
+                out_path = os.path.join(upload_dir, f"master_bg_raw_{f_hash}.{img.ext}")
+                if not os.path.exists(out_path):
+                    with open(out_path, "wb") as f: f.write(img.blob)
+                raw_assets.append(out_path)
+        except: pass
+        
+        for shape in master.shapes:
+            raw_assets.extend(extract_pptx_images_recursive(shape, upload_dir))
+            
+        for layout in master.slide_layouts:
+            try:
+                if layout.background.fill.type == MSO_FILL.PICTURE:
+                    img = layout.background.fill.picture
+                    f_hash = hashlib.sha256(img.blob).hexdigest()[:12]
+                    out_path = os.path.join(upload_dir, f"layout_bg_raw_{f_hash}.{img.ext}")
+                    if not os.path.exists(out_path):
+                        with open(out_path, "wb") as f: f.write(img.blob)
+                    raw_assets.append(out_path)
+            except: pass
+            
+            for shape in layout.shapes:
+                raw_assets.extend(extract_pptx_images_recursive(shape, upload_dir))
+
+    # 1.2 Barrer DIAPOSITIVAS (Slides)
+    print(f"  [DNA] Scanning Slides...")
     for i, slide in enumerate(prs.slides):
         if update_callback:
-            perc = int(((i + 1) / total_slides) * 50) # 50% de la barra para extracción
+            perc = int(((i + 1) / total_slides) * 50) 
             update_callback(f"Extracting Raw Assets: Slide {i+1} of {total_slides}...", perc)
+
+        # Fondo de la Slide
+        try:
+            if slide.background.fill.type == MSO_FILL.PICTURE:
+                img = slide.background.fill.picture
+                f_hash = hashlib.sha256(img.blob).hexdigest()[:12]
+                out_path = os.path.join(upload_dir, f"bg_raw_{f_hash}.{img.ext}")
+                if not os.path.exists(out_path):
+                    with open(out_path, "wb") as f: f.write(img.blob)
+                raw_assets.append(out_path)
+        except: pass
 
         for shape in slide.shapes:
             raw_assets.extend(extract_pptx_images_recursive(shape, upload_dir))

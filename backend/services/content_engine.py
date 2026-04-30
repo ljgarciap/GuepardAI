@@ -143,7 +143,7 @@ RESPONSE ONLY with this JSON (no additional text outside the JSON):
   ]
 }}
 """
-    print(f"[ContentEngine] Sintetizando en {target_lang}...", flush=True)
+    print(f"[ContentEngine] Synthesizing in {target_lang}...", flush=True)
     manifest = generate_json(prompt, specialization="general")
     
     # --- INTEGRITY FILTER (v29.1) ---

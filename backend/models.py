@@ -81,6 +81,10 @@ class BrandAsset(Base):
     manual_tags = Column(JSON)    # USER Specified Tags (v11.0)
     description = Column(Text)
     
+    # Real physical dimensions (v34.0 - Anti-Stretching)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    
     is_public = Column(Integer, default=0) 
     source_doc = Column(String(512))      
 
@@ -94,8 +98,8 @@ class BrandAsset(Base):
 
 # ============================================================
 # TABLA NUEVA: brand_artistic_essence
-# Extracción interpretativa: layouts, gestos de diseñador, composición
-# Herramienta: Vision LLM (Claude Sonnet con visión)
+# Extraction interpretativa: layouts, gestos de diseñador, composición
+# Tool: Vision LLM (Claude Sonnet con visión)
 # ============================================================
 class BrandArtisticEssence(Base):
     __tablename__ = "brand_artistic_essence"
@@ -116,7 +120,7 @@ class BrandArtisticEssence(Base):
     slide_archetypes   = Column(JSONB, nullable=True)
     structural_archetypes = Column(JSONB, nullable=True) # ADN Estructural (rejillas, columnas)
 
-    # Gestos distintivos del diseñador
+    # Gestures distintivos del diseñador
     # {
     #   "uses_glassmorphism": false,
     #   "uses_gradients": true,
@@ -128,7 +132,7 @@ class BrandArtisticEssence(Base):
     # }
     design_gestures    = Column(JSONB, nullable=True)
 
-    # Reglas de composición y espacio
+    # Rules de composición y espacio
     # {
     #   "logo_position": "top-right|top-left|bottom-right|bottom-left",
     #   "content_gravity": "left|center|right",
@@ -139,10 +143,10 @@ class BrandArtisticEssence(Base):
     # }
     composition_rules  = Column(JSONB, nullable=True)
 
-    # Descripción en lenguaje natural del estilo (útil para el prompt de generación)
+    # Description en lenguaje natural del estilo (útil para el prompt de generación)
     art_direction_note = Column(Text, nullable=True)
 
-    # Respuesta raw del Vision LLM por slide (para auditoría)
+    # Response raw del Vision LLM por slide (para auditoría)
     raw_vision_response = Column(JSONB, nullable=True)
 
     created_at         = Column(DateTime, default=datetime.datetime.utcnow)
@@ -152,7 +156,7 @@ class BrandArtisticEssence(Base):
 
 # ============================================================
 # TABLA EXISTENTE: ingestion_jobs (actualizada)
-# ingestion_type válidos: 'visual_dna' | 'artistic' | 'knowledge'
+# ingestion_type valid: 'visual_dna' | 'artistic' | 'knowledge'
 # ============================================================
 class IngestionJob(Base):
     __tablename__ = "ingestion_jobs"
@@ -191,36 +195,11 @@ class GenerationJob(Base):
 
     created_at  = Column(DateTime, default=datetime.datetime.utcnow)
     
-    # Relación con las slides granulares (v18.5)
+    # Relationship con las slides granulares (v18.5)
     slides      = relationship("PresentationSlide", back_populates="job", cascade="all, delete-orphan")
 
 
-# ============================================================
-# TABLA LEGACY: brand_styles
-# Mantenida temporalmente para no romper el flujo existente.
-# Se eliminará una vez validado el nuevo flujo completo.
-# ============================================================
-class BrandStyle(Base):
-    __tablename__ = "brand_styles"
 
-    id               = Column(Integer, primary_key=True, index=True)
-    client_name      = Column(String, index=True)
-    style_slug       = Column(String, index=True, default="default")
-
-    primary_color    = Column(String, default="#000000")
-    secondary_color  = Column(String, default="#404040")
-    background_color = Column(String, default="#FFFFFF")
-    text_main_color  = Column(String, default="#111111")
-    font_family      = Column(String, default="Arial")
-
-    tone_description = Column(Text, default="Professional.")
-    visual_patterns  = Column(JSON, nullable=True)
-    visual_profile   = Column(String, default="modern")
-    raw_style_json   = Column(JSON, nullable=True)
-    extracted_assets = Column(JSON, nullable=True)
-    visual_strategy  = Column(JSON, nullable=True)
-    
-    updated_at       = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
 class Language(Base):
     __tablename__ = "languages"
@@ -237,7 +216,7 @@ class Language(Base):
 class CorporateKnowledge(Base):
     """
     BANCO DE CONOCIMIENTO (RAG).
-    Datos estratégicos blindados por marca.
+    Armored strategic data por marca.
     """
     __tablename__ = "corporate_knowledge"
 
@@ -247,7 +226,7 @@ class CorporateKnowledge(Base):
     source_filename = Column(String(255))
     content = Column(Text)
     
-    # Taxonomía: brand_identity, company_knowledge, case_studies, etc.
+    # Taxonomy: brand_identity, company_knowledge, case_studies, etc.
     document_type = Column(String(50), nullable=True)
     
     # Metadata para RAG y Embeddings (v12.0)
@@ -259,13 +238,13 @@ class CorporateKnowledge(Base):
     
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    # Relación inversa
+    # Relationship inversa
     brand = relationship("Brand", back_populates="knowledge")
 
 class PresentationSlide(Base):
     """
     ESTADO ATÓMICO DE SLIDE (v18.5).
-    Guarda la decisión final del Director de Arte para cada diapositiva.
+    Saves final decision del Director de Arte para cada diapositiva.
     """
     __tablename__ = "presentation_slides"
 
@@ -292,6 +271,28 @@ class PresentationSlide(Base):
 
     job = relationship("GenerationJob", back_populates="slides")
 
+class ArtDirectorDecision(Base):
+    """
+    BITÁCORA DE DECISIONES (v34.0).
+    Records the 'porqué' de cada visual choice.
+    """
+    __tablename__ = "art_director_decisions"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    job_id       = Column(Integer, ForeignKey("generation_jobs.id"))
+    slide_number = Column(Integer)
+    
+    decision_type = Column(String(50)) # 'layout', 'asset_selection', 'color_logic'
+    summary       = Column(String(500))
+    reasoning     = Column(Text)
+    
+    # Metadata técnica (ej. keywords usados, IDs considerados)
+    metadata_json = Column(JSONB, nullable=True)
+    
+    created_at   = Column(DateTime, default=datetime.datetime.utcnow)
+
+    job = relationship("GenerationJob")
+
 class SystemConfig(Base):
     """
     TABLA PARAMÉTRICA (v18.1).
@@ -301,6 +302,6 @@ class SystemConfig(Base):
 
     id    = Column(Integer, primary_key=True, index=True)
     key   = Column(String(100), unique=True, index=True, nullable=False)
-    value = Column(String(500), nullable=False)
+    value = Column(Text, nullable=False)
     description = Column(String(255), nullable=True)
     updated_at  = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)

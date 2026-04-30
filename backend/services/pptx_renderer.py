@@ -9,13 +9,8 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.oxml.ns import qn
 from lxml import etree
 
-# --- UNIVERSAL GEOMETRY CONFIG ---
-SLIDE_W_IN = 10.0
-SLIDE_H_IN = 7.5
 
-def scale_x(val): return Inches((val / 100.0) * SLIDE_W_IN)
-def scale_y(val): return Inches((val / 100.0) * SLIDE_H_IN)
-
+# --- UNIVERSAL GEOMETRY HELPERS ---
 def hex_to_rgb(hex_str: str) -> RGBColor:
     if not isinstance(hex_str, str): return RGBColor(30, 30, 30)
     h = hex_str.lstrip('#')
@@ -75,7 +70,8 @@ def apply_corner_style(shape, style: str):
 # ELEMENT RENDERERS
 # ──────────────────────────────────────────────
 
-def render_background_image(slide, element, asset_map):
+
+def render_background_image(slide, element, asset_map, sw_in, sh_in):
     """
     Renderiza la imagen de fondo con estrategia 'Cover' usando CROP interno (v12.0).
     Garantiza 0 desbordamiento fuera del canvas.
@@ -99,15 +95,14 @@ def render_background_image(slide, element, asset_map):
             with PILImage.open(img_path) as img:
                 iw, ih = img.size
             
-            sw, sh = Inches(SLIDE_W_IN), Inches(SLIDE_H_IN)
+            sw, sh = Inches(sw_in), Inches(sh_in)
             
             # 2. Añadir imagen ajustada al slide (0,0)
             pic = slide.shapes.add_picture(img_path, 0, 0, sw, sh)
             
             # 3. Calcular y aplicar CROP semántico (Cover strategy)
             # Queremos que la imagen llene el slide manteniendo su aspect ratio
-            # r = ratio
-            aspect_slide = SLIDE_W_IN / SLIDE_H_IN
+            aspect_slide = sw_in / sh_in
             aspect_img = iw / ih
             
             if aspect_img > aspect_slide:
@@ -128,14 +123,14 @@ def render_background_image(slide, element, asset_map):
             
         except Exception as e:
             print(f"  [Renderer] Background Image failed: {e}")
-            shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, sw, sh)
+            shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, Inches(sw_in), Inches(sh_in))
             shape.fill.solid()
             shape.fill.fore_color.rgb = RGBColor(30, 30, 30)
     else:
         print(f"  [Renderer] Warning: Background asset not found for {img_basename}")
 
 
-def render_shape(slide, element):
+def render_shape(slide, element, sx, sy):
     geo = element.get("geometry", {"left": 0, "top": 0, "width": 10, "height": 10})
     style = element.get("style", {})
     
@@ -151,8 +146,8 @@ def render_shape(slide, element):
 
     shape = slide.shapes.add_shape(
         s_type, 
-        scale_x(geo["left"]), scale_y(geo["top"]), 
-        scale_x(geo["width"]), scale_y(geo["height"])
+        sx(geo["left"]), sy(geo["top"]), 
+        sx(geo["width"]), sy(geo["height"])
     )
     
     shape.fill.solid()
@@ -170,32 +165,33 @@ def render_shape(slide, element):
         apply_corner_style(shape, style.get("corner_style", "rounded"))
 
 
-def render_text(slide, element):
+def render_text(slide, element, slide_data, prs, dna, layout_slug):
     content = clean_text(element.get("content", ""))
     if not content: return
 
-    geo = element.get("geometry", {"left": 10, "top": 10, "width": 80, "height": 10})
-    style = element.get("style", {})
+    # 1. Extraer Geometría y Estilo que dictó el Art Director
     role = element.get("role", "body")
+    geo = element.get("geometry", {"left": 10.0, "top": 10.0, "width": 80.0, "height": 10.0})
+    style = element.get("style", {})
     
-    tx = slide.shapes.add_textbox(
-        scale_x(geo["left"]), scale_y(geo["top"]), 
-        scale_x(geo["width"]), scale_y(geo["height"])
+    # 2. Funciones helper para porcentajes (sx, sy equivalentes)
+    sx = prs.slide_width.inches / 100.0
+    sy = prs.slide_height.inches / 100.0
+    
+    # 3. Crear el cuadro de texto
+    text_shape = slide.shapes.add_textbox(
+        Inches(geo.get("left", 0) * sx), 
+        Inches(geo.get("top", 0) * sy), 
+        Inches(geo.get("width", 50) * sx), 
+        Inches(geo.get("height", 10) * sy)
     )
-    tf = tx.text_frame
+    tf = text_shape.text_frame
     tf.word_wrap = True
-    tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
     
-    # --- DYNAMIC FONT SCALING (v12.1) ---
-    # Si es título y es muy largo, bajamos la base para evitar colisiones
-    base_size = style.get("size", 18)
-    if role == "title" and len(content) > 40:
-        base_size = min(base_size, 32) # Cap titles at 32pt if long
-    if role == "title" and len(content) > 70:
-        base_size = 24 # Extreme reduction for massive titles
-        
-    # Manejar múltiples párrafos
+    # 4. Manejar múltiples párrafos (Bullets o líneas)
     lines = content.split('\n')
+    base_size = style.get("size", 24)
+    
     for i, line in enumerate(lines):
         if i == 0:
             p = tf.paragraphs[0]
@@ -203,51 +199,61 @@ def render_text(slide, element):
             p = tf.add_paragraph()
             
         p.text = line
+        
+        # Alineación
         align_map = {"center": PP_ALIGN.CENTER, "right": PP_ALIGN.RIGHT, "left": PP_ALIGN.LEFT}
         p.alignment = align_map.get(style.get("align", "left"), PP_ALIGN.LEFT)
         
-        p.font.name = style.get("font", "Arial")
-        p.font.size = Pt(base_size)
-        p.font.color.rgb = hex_to_rgb(style.get("color", "#000000"))
-        p.font.bold = style.get("bold", role == "title")
+        # IMPORTANTE: python-pptx requiere aplicar las fuentes a nivel de 'Run'
+        if p.runs:
+            for run in p.runs:
+                run.font.name = style.get("font", "Arial")
+                run.font.size = Pt(base_size)
+                run.font.color.rgb = hex_to_rgb(style.get("color", "#000000"))
+                run.font.bold = style.get("bold", False)
 
 
-def render_image(slide, element, asset_map):
+def render_image(slide, element, asset_map, sx, sy):
+    # Soporte para ruta directa (path) o nombre de archivo (source) v16.5
+    provided_path = element.get("path")
     img_basename = element.get("source")
     geo = element.get("geometry", {"left": 0, "top": 0, "width": 20, "height": 20})
-    raw_path = asset_map.get(img_basename)
-
-    print(f"  [Renderer] Attempting to render slide asset: {img_basename}")
-    print(f"  [Renderer]   - Raw path from map: {raw_path}")
     
     img_path = None
-    if raw_path:
-        # 1. Intentar como ruta absoluta
-        if os.path.exists(raw_path):
-            img_path = raw_path
-            print(f"  [Renderer]   - Success: Found as absolute path.")
-        # 2. Intentar como relativo a uploads
-        else:
-            potential = os.path.join("uploads", os.path.basename(raw_path))
-            print(f"  [Renderer]   - Checking potential relative: {potential}")
+    print(f"  [Renderer] Attempting to render slide asset: path='{provided_path}', source='{img_basename}'")
+    
+    # 1. Intentar con provided_path
+    if provided_path:
+        filename = os.path.basename(provided_path)
+        potential_uploads = os.path.join("uploads", filename)
+        if os.path.exists(potential_uploads):
+            img_path = potential_uploads
+            print(f"  [Renderer]   - Success: Found by filename in uploads/: {img_path}")
+        elif os.path.exists(provided_path):
+            img_path = provided_path
+            print(f"  [Renderer]   - Success: Found at provided path: {img_path}")
+            
+    # 2. Intentar con asset_map y source
+    if not img_path and img_basename:
+        raw_path = asset_map.get(img_basename)
+        if raw_path:
+            if os.path.exists(raw_path):
+                img_path = raw_path
+            else:
+                potential = os.path.join("uploads", os.path.basename(raw_path))
+                if os.path.exists(potential):
+                    img_path = potential
+                    
+        # 3. Intentar nombre de archivo
+        if not img_path:
+            potential = os.path.join("uploads", str(img_basename))
             if os.path.exists(potential):
                 img_path = potential
-                print(f"  [Renderer]     - Success: Found in uploads/.")
-            
+            elif os.path.exists(str(img_basename)):
+                img_path = str(img_basename)
+
     if not img_path:
-        # 3. Intentar solo por nombre de archivo en uploads
-        potential = os.path.join("uploads", str(img_basename))
-        print(f"  [Renderer]   - Checking filename fallback: {potential}")
-        if os.path.exists(potential):
-            img_path = potential
-            print(f"  [Renderer]     - Success: Found by filename.")
-        # 4. Intentar en raíz del backend
-        elif os.path.exists(str(img_basename)):
-            img_path = str(img_basename)
-            print(f"  [Renderer]     - Success: Found in root.")
-    
-    if not img_path:
-        print(f"  [Renderer]   - CRITICAL: No file found for asset {img_basename} in any location.")
+        print(f"  [Renderer]   - CRITICAL: No file found for asset {provided_path or img_basename} in any location.")
 
     if img_path and os.path.exists(img_path):
         try:
@@ -255,16 +261,16 @@ def render_image(slide, element, asset_map):
             with PILImage.open(img_path) as img:
                 iw, ih = img.size
             
-            target_w_emu = scale_x(geo["width"]).emu
-            target_h_emu = scale_y(geo["height"]).emu
+            target_w_emu = sx(geo["width"]).emu
+            target_h_emu = sy(geo["height"]).emu
             
             # Fit strategy
             scale = min(target_w_emu / iw, target_h_emu / ih)
             nw, nh = int(iw * scale), int(ih * scale)
             
             # Center within target box
-            ox = scale_x(geo["left"]).emu + (target_w_emu - nw) // 2
-            oy = scale_y(geo["top"]).emu + (target_h_emu - nh) // 2
+            ox = sx(geo["left"]).emu + (target_w_emu - nw) // 2
+            oy = sy(geo["top"]).emu + (target_h_emu - nh) // 2
             
             slide.shapes.add_picture(img_path, ox, oy, nw, nh)
             print(f"  [Renderer]   - RENDERED SUCCESSFULLY.")
@@ -276,12 +282,64 @@ def render_image(slide, element, asset_map):
 # MAIN RENDERER
 # ──────────────────────────────────────────────
 
+def _render_table_v1(slide, element, sx, sy):
+    """
+    Dibuja una tabla profesional en PPTX a partir de una matriz de datos.
+    """
+    rows_data = element.get("data", [])
+    if not rows_data: return
+    
+    rows = len(rows_data)
+    cols = len(rows_data[0])
+    geo = element.get("geometry", {"top": 40, "left": 10, "width": 80, "height": 40})
+    
+    left = sx(geo["left"])
+    top = sy(geo["top"])
+    width = sx(geo["width"])
+    height = sy(geo["height"])
+    
+    table_shape = slide.shapes.add_table(rows, cols, left, top, width, height)
+    table = table_shape.table
+    
+    # TIPOGRAFÍA DINÁMICA DE CELDA (v23.0)
+    # Evitar desbordamiento vertical escaneando la celda más larga
+    max_len = max([len(str(c)) for r in rows_data for c in r] + [0])
+    base_f_size = 14
+    if max_len > 100: base_f_size = 12
+    if max_len > 150: base_f_size = 10
+    if max_len > 250: base_f_size = 9
+
+    # Estilo de Celda (v16.3 - Corporate Style)
+    for r_idx, row in enumerate(rows_data):
+        for c_idx, cell_text in enumerate(row):
+            cell = table.cell(r_idx, c_idx)
+            cell.text = str(cell_text)
+            
+            # Formatear texto de la celda
+            para = cell.text_frame.paragraphs[0]
+            para.font.size = Pt(base_f_size)
+            para.font.bold = (r_idx == 0) # Header bold
+            para.font.name = "Helvetica Neue"
+            
+            # Color de fondo (Header vs Body)
+            fill = cell.fill
+            fill.solid()
+            if r_idx == 0:
+                fill.fore_color.rgb = RGBColor(0, 82, 163) # Tesco Blue
+                para.font.color.rgb = RGBColor(255, 255, 255)
+            else:
+                fill.fore_color.rgb = RGBColor(245, 245, 245)
+                para.font.color.rgb = RGBColor(30, 30, 30)
+
+    print(f"  [Renderer]   - TABLE RENDERED ({rows}x{cols}).")
+
+
 def render_pptx_manifest(design_manifest, asset_map, output_path):
     """
     ENGINE RENDERER v16.1 — ANALYST VISION DRIVEN.
     Aplica el manifest de diseño con soporte para Canvas Ultra-Wide y Decoradores.
     """
-    print(f"[Renderer v16.1] Creando presentación: {output_path}...", flush=True)
+    print(f"[Renderer v16.1] Creating presentation: {output_path}...", flush=True)
     
     # ── 1. Inicializar Canvas Dinámico ────────────────────────────────────
     canvas = design_manifest.get("canvas", {})
@@ -310,17 +368,22 @@ def render_pptx_manifest(design_manifest, asset_map, output_path):
         fill.solid()
         fill.fore_color.rgb = hex_to_rgb(bg_color_hex)
 
-        # 3. Z-Order Sorting (v17.1 - Role Priority)
-        # Priorizamos personas y logos al frente absoluto.
+        # 3. Z-Order Sorting (v17.2 - Table Priority)
+        # Priorizamos tablas y textos al frente, imágenes al fondo.
         def get_layer(el):
             etype = el.get("type")
             erole = el.get("role", "")
-            if erole == "person": return 10  # Frente absoluto
-            if etype == "logo": return 9
-            if etype == "text": return 8
-            if etype == "shape": return 2   # Bloques estructurales (Sidebar/Panels)
             if etype == "image" and erole == "background": return 0
-            return 1 # Imágenes genéricas
+            if etype == "image" and erole == "background_accent": return 1
+            if etype == "shape": return 2
+            if etype == "image" and erole == "main": return 3
+            if etype == "image" and erole == "accent": return 4
+            if etype == "image": return 5
+            if etype == "table": return 7  # IMPORTANTE: Tablas siempre encima de las imágenes
+            if etype == "text": return 8
+            if etype == "logo": return 9
+            if erole == "person": return 10
+            return 1
 
         if elements is None: elements = []
         elements.sort(key=get_layer)
@@ -338,13 +401,15 @@ def render_pptx_manifest(design_manifest, asset_map, output_path):
                     _render_decorator_v2(slide, el, sx, sy)
                 elif el_type == "text":
                     _render_text_v2(slide, el, sx, sy)
+                elif el_type == "table":
+                    _render_table_v1(slide, el, sx, sy)
                 elif el_type in ["image", "logo"]:
                     _render_image_v2(slide, el, asset_map, sx, sy)
             except Exception as e:
                 print(f"  [Renderer] Error en elemento {el.get('type')}: {e}")
 
     prs.save(output_path)
-    print(f"[Renderer v16.1] PPTX guardado con éxito.", flush=True)
+    print(f"[Renderer v16.1] PPTX saved successfully.", flush=True)
     return output_path
 
 # ──────────────────────────────────────────────
@@ -386,41 +451,71 @@ def _render_text_v2(slide, element, sx, sy):
     content = clean_text(element.get("content", ""))
     if not content: return
     geo, style, role = element.get("geometry", {}), element.get("style", {}), element.get("role", "")
+    
     tx = slide.shapes.add_textbox(sx(geo["left"]), sy(geo["top"]), sx(geo["width"]), sy(geo["height"]))
     tf = tx.text_frame
     tf.word_wrap = True
-    tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+    
+    # IMPORTANTE: No usar TEXT_TO_FIT_SHAPE para que respete nuestro font.size
+    # tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE 
+    
+    base_size = style.get("size", 18)
+    
     for i, line in enumerate(content.split('\n')):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.text = line
         p.alignment = {"center": PP_ALIGN.CENTER, "right": PP_ALIGN.RIGHT}.get(style.get("align"), PP_ALIGN.LEFT)
-        p.font.name = style.get("font", "Arial")
-        p.font.size = Pt(style.get("size", 18))
-        p.font.color.rgb = hex_to_rgb(style.get("color", "#000000"))
-        p.font.bold = style.get("bold", role == "title")
+        
+        # Aplicar estilos a cada RUN para que PowerPoint no los ignore
+        if p.runs:
+            for run in p.runs:
+                run.font.name = style.get("font", "Helvetica Neue")
+                run.font.size = Pt(base_size)
+                run.font.color.rgb = hex_to_rgb(style.get("color", "#000000"))
+                run.font.bold = style.get("bold", role == "title")
 
 def _render_image_v2(slide, element, asset_map, sx, sy):
-    img_basename, geo, role = element.get("source"), element.get("geometry", {}), element.get("role", "")
-    img_path = asset_map.get(img_basename)
-    if not (img_path and os.path.exists(img_path)):
-        img_path = os.path.join("uploads", str(img_basename))
+    geo, role = element.get("geometry", {}), element.get("role", "")
+    
+    # Soportar ambas nomenclaturas
+    provided_path = element.get("path")
+    img_basename = element.get("source")
+    
+    img_path = None
+    if provided_path:
+        filename = os.path.basename(provided_path)
+        if os.path.exists(os.path.join("uploads", filename)):
+            img_path = os.path.join("uploads", filename)
+        elif os.path.exists(provided_path):
+            img_path = provided_path
+            
+    if not img_path and img_basename:
+        raw = asset_map.get(img_basename)
+        if raw and os.path.exists(raw): img_path = raw
+        elif os.path.exists(os.path.join("uploads", str(img_basename))):
+            img_path = os.path.join("uploads", str(img_basename))
+
     if img_path and os.path.exists(img_path):
         try:
-            with PILImage.open(img_path) as img: iw, ih = img.size
+            iw = element.get("width")
+            ih = element.get("height")
+            if not iw or not ih:
+                with PILImage.open(img_path) as img: iw, ih = img.size
+            
             tw, th = sx(geo["width"]).emu, sy(geo["height"]).emu
             sc = min(tw / iw, th / ih)
             nw, nh = int(iw * sc), int(ih * sc)
             
             ox = sx(geo["left"]).emu + (tw - nw) // 2
             
-            # Si es una persona, la pegamos al fondo de su caja (para que no flote)
             if role == "person":
                 oy = sy(geo["top"]).emu + (th - nh)
             else:
                 oy = sy(geo["top"]).emu + (th - nh) // 2
                 
             slide.shapes.add_picture(img_path, ox, oy, nw, nh)
-        except: pass
+        except Exception as e:
+            print(f"  [Renderer] Failed to insert image {img_path}: {e}")
 
 def render_pptx_from_db(job_id: int, asset_map: dict, output_path: str):
     """

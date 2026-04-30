@@ -50,7 +50,7 @@
 
         <!-- Visibility Selector -->
         <div class="visibility-orchestrator" *ngIf="!identityState.loading && !identityState.successMessage">
-          <label class="visibility-label">SOVEREIGNTY SCOPE</label>
+          <label class="visibility-label">IDENTITY SCOPE</label>
           <div class="visibility-options">
             <button class="opt-btn" [class.active]="identityState.visibilityScope === 'exclusive'" (click)="identityState.visibilityScope = 'exclusive'">
               <span class="opt-dot"></span> EXCLUSIVE
@@ -99,7 +99,7 @@
             <span class="success-icon">✓</span>
           </div>
           <div class="success-content">
-            <h4>Blueprint Finalized</h4>
+            <h4>Blueprint Complete</h4>
             <p>Visual DNA and Artistic Essence archived in Directory.</p>
           </div>
           <button class="btn-action-outline" (click)="reset('brand_style')">LOAD ANOTHER</button>
@@ -142,7 +142,7 @@
 
         <!-- Visibility Selector for Knowledge -->
         <div class="visibility-orchestrator" *ngIf="!knowledgeState.loading && !knowledgeState.successMessage">
-          <label class="visibility-label">KNOWLEDGE SOVEREIGNTY</label>
+          <label class="visibility-label">KNOWLEDGE SCOPE</label>
           <div class="visibility-options">
             <button class="opt-btn" [class.active]="knowledgeState.visibilityScope === 'exclusive'" (click)="knowledgeState.visibilityScope = 'exclusive'">
               <span class="opt-dot"></span> EXCLUSIVE
@@ -206,7 +206,7 @@
     <div class="elite-card">
       <div class="card-step">PHASE 03</div>
       <div class="card-header">
-        <h3>Asset Treasury</h3>
+        <h3>Strategic Library</h3>
         <p class="card-desc">Isolated image harvesting with manual metadata enrichment.</p>
       </div>
 
@@ -239,7 +239,7 @@
 
         <!-- Visibility Selector -->
         <div class="visibility-orchestrator" *ngIf="!assetState.loading && !assetState.successMessage">
-          <label class="visibility-label">ASSET OWNERSHIP</label>
+          <label class="visibility-label">IDENTITY SCOPE</label>
           <div class="visibility-options">
             <button class="opt-btn" [class.active]="assetState.visibilityScope === 'exclusive'" (click)="assetState.visibilityScope = 'exclusive'">
               <span class="opt-dot"></span> EXCLUSIVE
@@ -252,7 +252,7 @@
 
         <div class="synthesis-console" *ngIf="assetState.loading">
           <div class="console-header">
-            <span class="console-title">TREASURY LOG</span>
+            <span class="console-title">GOVERNANCE LOG</span>
             <div class="spinner-mini"></div>
           </div>
           <div class="console-body">
@@ -288,7 +288,7 @@
           </div>
           <div class="success-content">
             <h4>Assets Archived</h4>
-            <p>Treasury updated with new visual assets.</p>
+            <p>Library updated with new visual assets.</p>
           </div>
           <button class="btn-action-outline" (click)="reset('pure_assets')">LOAD ANOTHER</button>
         </div>

@@ -68,10 +68,9 @@ export class GeneratorComponent implements OnInit {
   loadBrands() {
     this.brandService.getBrands().subscribe({
       next: (res) => {
-        this.brands = res;
-        if (this.brands.length > 0) {
-          // No auto-select, force user to be intentional
-        }
+        // Filtramos el ID -1 (Public Library) para que no aparezca como un "dossier" 
+        // en la lista, ya que se maneja con la opción SUPERUSER.
+        this.brands = res.filter((b: any) => b.id !== -1);
       }
     });
   }

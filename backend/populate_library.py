@@ -19,14 +19,14 @@ def populate():
         ).first()
         
         if not brand:
-            print("Error: No se encontró la marca Tesco en la DB.")
+            print("Error: Tesco brand not found in DB.")
             return
 
         print(f"--- Poblando Biblioteca para Brand ID: {brand.id} (Tesco) ---")
         
         # Escanear carpeta uploads para esta marca
         upload_dir = "uploads"
-        # Buscamos archivos que empiecen con el nombre de la marca (patrón de extracción)
+        # Searching for files starting with brand name (patrón de extracción)
         prefix = "brand_style_Tesco Style_2.pptx"
         
         files = [f for f in os.listdir(upload_dir) if f.startswith(prefix)]
@@ -42,7 +42,7 @@ def populate():
             
             print(f"[{i+1}/{len(files)}] Registrando: {filename}...")
             try:
-                # Usamos una sub-transacción para cada activo
+                # Using a sub-transaction for each asset
                 asset_record = register_asset(db, brand.id, file_path, category=category)
                 final_library_assets[category].append({
                     "id": asset_record.id,
@@ -59,7 +59,7 @@ def populate():
         # Actualizar el JSON de activos del DNA final
         brand.extracted_assets = final_library_assets
         db.commit()
-        print(f"\n✓ BIBLIOTECA POBLADA CON ÉXITO: {sum(len(v) for v in final_library_assets.values())} activos registrados.")
+        print(f"\n✓ LIBRARY POPULATED SUCCESSFULLY: {sum(len(v) for v in final_library_assets.values())} assets registered.")
 
     finally:
         db.close()

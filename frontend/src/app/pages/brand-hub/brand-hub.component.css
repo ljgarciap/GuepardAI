@@ -293,6 +293,36 @@
   flex: 1;
 }
 
+.log-entry {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.75rem;
+  display: flex;
+  gap: 16px;
+  line-height: 1.4;
+  margin-bottom: 8px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.log-timestamp {
+  color: #475569;
+  white-space: nowrap;
+  opacity: 0.7;
+}
+
+.log-role {
+  color: #60a5fa; /* Blue role */
+  font-weight: 800;
+  white-space: nowrap;
+  min-width: 140px;
+  flex-shrink: 0; /* Important: prevents overlap */
+  text-transform: uppercase;
+}
+
+.log-message {
+  color: #f1f5f9;
+  word-break: break-word;
+}
+
 .reset-label {
   font-size: 0.78rem;
   font-weight: 700;
@@ -334,17 +364,7 @@
 }
 
 .progress-cheetah {
-  position: absolute;
-  top: -32px; /* Posición optimizada para visibilidad */
-  transform: translateX(-50%);
-  filter: drop-shadow(0 4px 10px rgba(0,0,0,0.3));
-  z-index: 100; /* Siempre al frente */
-}
-
-.cheetah-gif {
-  width: 80px; /* Tamaño estratégico */
-  height: auto;
-  display: block;
+  display: none;
 }
 
 @keyframes gallop {

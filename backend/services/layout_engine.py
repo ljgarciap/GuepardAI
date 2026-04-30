@@ -85,8 +85,8 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
     from database import SessionLocal
     from models import SystemConfig
     db = SessionLocal()
-    pref_model = db.query(SystemConfig).filter(SystemConfig.key == 'art_director_model').first()
-    model_name = pref_model.value if pref_model else "models/gemini-1.5-flash"
+    pref_model = db.query(models.SystemConfig).filter(models.SystemConfig.key == 'art_director_model').first()
+    model_name = pref_model.value if pref_model else "models/gemini-2.5-flash"
     db.close()
 
     # 3. Director de Arte Senior - Análisis Slide a Slide (v18.7)
@@ -239,12 +239,11 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
         if not plan_presentation_design(db, job_id):
             raise Exception("Failed during Art Direction.")
 
-        # FASE 3: CÁLCULO GEOMÉTRICO (Persistente)
-        job.current_step = "Phase 3/4: Calculating precision geometry and canvas mapping..."
+        # FASE 3: CÁLCULO GEOMÉTRICO (Obsoleto - Ya lo hizo el Art Director en Fase 2)
+        job.current_step = "Phase 3/4: Finalizing canvas mapping..."
         job.progress = 70
         db.commit()
-        if not calculate_presentation_geometry(db, job_id):
-            raise Exception("Failed during Geometry Calculation.")
+        # No llamar a calculate_presentation_geometry para evitar sobreescribir con []
 
         # FASE 4: RENDERIZADO FINAL (Reactivo)
         job.current_step = "Phase 4/4: Painting final PPTX portfolio..."

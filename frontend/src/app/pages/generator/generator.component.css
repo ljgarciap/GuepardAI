@@ -236,10 +236,11 @@ textarea {
 }
 
 .log-role {
-  color: var(--primary-blue);
-  font-weight: 700;
+  color: #60a5fa;
+  font-weight: 800;
   white-space: nowrap;
-  min-width: 120px;
+  min-width: 140px;
+  flex-shrink: 0;
 }
 
 .log-message {
@@ -286,17 +287,7 @@ textarea {
 }
 
 .progress-cheetah {
-  position: absolute;
-  top: -35px; /* Altura optimizada para visibilidad en Studio */
-  transform: translateX(-50%);
-  filter: drop-shadow(0 4px 10px rgba(0,0,0,0.3));
-  z-index: 100;
-}
-
-.cheetah-gif {
-  width: 90px; /* Un poco más grande para el Studio */
-  height: auto;
-  display: block;
+  display: none;
 }
 
 @keyframes gallop {

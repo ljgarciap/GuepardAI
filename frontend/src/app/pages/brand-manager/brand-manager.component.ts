@@ -34,7 +34,9 @@ export class BrandManagerComponent implements OnInit {
   loadBrands() {
     this.brandService.getBrands().subscribe({
       next: (res) => {
-        this.brands = res;
+        // Excluimos la "Public Library" (-1) del directorio de marcas editables, 
+        // ya que es un contenedor de sistema y no una marca corporativa.
+        this.brands = res.filter((b: any) => b.id !== -1);
       },
       error: (err) => console.error('Error loading brands:', err)
     });
@@ -47,7 +49,7 @@ export class BrandManagerComponent implements OnInit {
       about: brand.about || '',
       coreValue: brand.core_value || ''
     };
-    this.logoPreview = brand.logo_path ? 'http://localhost:8001/' + brand.logo_path : null;
+    this.logoPreview = brand.logo_path ? '/' + brand.logo_path : null;
     this.showCreateForm = true;
   }
 

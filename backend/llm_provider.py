@@ -17,7 +17,7 @@ import models
 load_dotenv()
 
 def log_audit(category: str, data: str):
-    """Guarda un registro detallado de las decisiones de la IA para auditoría estética."""
+    """Saves a detailed record de las AI decisions para aesthetic audit."""
     log_path = os.path.join(os.path.dirname(__file__), "llm_audit.log")
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     with open(log_path, "a") as f:
@@ -27,7 +27,7 @@ def log_audit(category: str, data: str):
         f.write(f"{'='*80}\n")
 
 def get_system_config(key: str, default: str) -> str:
-    """Helper para obtener configuración de la DB sin hardcodeo."""
+    """Helper to get DB config without hardcoding."""
     db = SessionLocal()
     try:
         cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
@@ -113,7 +113,7 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
         try:
             print(f"  [LLM] Attempting generation with {current_model}...", flush=True)
             
-            # 1. Rutas según el contenido del nombre del modelo
+            # 1. Routes according to model name content
             if "gemini" in current_model.lower():
                 # NATIVE GEMINI
                 gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
@@ -183,7 +183,7 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
         
     models_to_try = [m.strip() for m in model.split(",")]
     
-    # Pre-procesar imágenes una sola vez
+    # Pre-process images once
     from PIL import Image
     import io
 
@@ -211,9 +211,9 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
                     raise ValueError("Gemini key missing or library not installed")
                 genai.configure(api_key=gem_key)
                 
-                # El adaptador se encarga de la estructura correcta según el SDK
+                # The adapter handles the correct structure according to the SDK
                 m_name = current_model if current_model.startswith("models/") else f"models/{current_model}"
-                # Pero si falla con models/, el adaptador debe saber reintentar sin él o usar el nombre base
+                # But if it fails with models/, the adapter must know how to retry without it or use the base name
                 
                 try:
                     m = genai.GenerativeModel(m_name)
@@ -291,12 +291,12 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
     """
     UNIVERSAL EMBEDDING ENGINE (v18.6) - Multimodal & Normalized.
     Garantiza salida de 1024 dimensiones para pgvector.
-    Soporta Texto (str) e Imágenes (bytes).
+    Supports Text (str) and Images (bytes).
     """
     if not inputs: return []
     
     # 1. Determinar modelos a usar
-    # v41.0: Usar una cadena más robusta y corregir nombres de Gemini
+    # v41.0: Use a more robust chain and fix Gemini names
     model_chain = get_system_config("embedding_model_chain", "models/text-embedding-004,mistral-embed")
     
     models_to_try = [m.strip() for m in model_chain.split(",")]
@@ -306,7 +306,7 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
     TARGET_DIM = 1024
 
     def normalize_vector(vec: list, target: int) -> list:
-        """Ajusta la dimensión del vector por truncamiento o padding."""
+        """Adjusts vector dimension by truncation or padding."""
         current = len(vec)
         if current == target: return vec
         if current > target: return vec[:target]
@@ -396,7 +396,7 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
                         final_results.append(normalize_vector(vec, TARGET_DIM))
                         mistral_idx += 1
                     else:
-                        final_results.append(None) # Mistral no soporta imágenes
+                        final_results.append(None) # Mistral does not support images
                 return final_results
 
         except Exception as e:

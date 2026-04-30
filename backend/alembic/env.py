@@ -4,7 +4,7 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
-# Añadir el directorio actual al path para importar modelos y base de datos
+# Add current directory to path to import models and database
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import models
@@ -50,7 +50,7 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
     
-    # Obtener URL de la base de datos de forma dinámica v23.5
+    # Get DB URL dynamically v23.5
     db_url = os.getenv("DATABASE_URL", "postgresql://root:root@localhost:5432/ai_db").replace("+psycopg", "")
     
     configuration = config.get_section(config.config_ini_section, {})

@@ -1,6 +1,6 @@
 """
 seed.py — PowerAI
-Script de datos iniciales. Idempotente: se puede correr múltiples veces sin duplicar.
+Initial data script. Idempotent: can be run multiple times without duplicating.
 Uso: ./venv/bin/python3 seed.py
 """
 from database import SessionLocal
@@ -12,19 +12,19 @@ def seed_data():
     try:
         print("[Seeder] Iniciando sembrado de datos...")
 
-        # 1. Marca Maestra / Pública (ID -1)
+        # 1. Master Brand / Pública (ID -1)
         public_brand = db.query(models.Brand).filter(models.Brand.id == -1).first()
         if not public_brand:
-            print("  [+] Creando Marca Pública (ID -1)...")
+            print("  [+] Creating Public Brand (ID -1)...")
             db.add(models.Brand(
                 id=-1,
                 name="Public Library",
-                about="Contenedor global para activos y conocimiento público.",
+                about="Global container for public assets and knowledge.",
                 core_value="Universal Knowledge"
             ))
             db.commit()
         else:
-            print("  [=] Marca Pública ya existe, omitiendo.")
+            print("  [=] Public Brand already exists, skipping.")
 
         # 2. Idiomas (Prioridad correcta)
         langs = [
@@ -42,7 +42,7 @@ def seed_data():
                 db.add(models.Language(**l))
                 print(f"  [+] Idioma {l['name']} creado.")
 
-        # 3. Configuraciones de Sistema (Modelos Reales de Producción)
+        # 3. System Configurations (Real Production Models)
         # Eliminar placeholders errados de ejecuciones previas
         stale_keys = ["default_llm_model", "vision_llm_model", "max_slides_default"]
         db.query(models.SystemConfig).filter(
@@ -53,7 +53,7 @@ def seed_data():
             {
                 "key": "extraction_synthesis_model",
                 "value": "mistral/mistral-large-latest,models/gemini-2.5-flash",
-                "description": "Cadena de modelos para síntesis de texto y RAG"
+                "description": "Model chain for text synthesis y RAG"
             },
             {
                 "key": "art_director_model",
@@ -63,17 +63,17 @@ def seed_data():
             {
                 "key": "extraction_vision_model",
                 "value": "models/gemini-2.5-flash",
-                "description": "Modelo Vision para extracción de DNA Visual (PPTX/PDF)"
+                "description": "Vision Model for Visual DNA extraction (PPTX/PDF)"
             },
             {
                 "key": "embedding_model_chain",
                 "value": "mistral-embed,models/gemini-embedding-2",
-                "description": "Cadena de embeddings para búsqueda semántica RAG"
+                "description": "Embedding chain for semantic search RAG"
             },
             {
                 "key": "vector_dim",
                 "value": "1024",
-                "description": "Dimensión de los vectores de embedding"
+                "description": "Embedding vector dimension"
             },
             {
                 "key": "global_fallback_model",
@@ -119,7 +119,7 @@ Return ONLY JSON:
   }},
   "reasoning": "Strategy-driven explanation."
 }}""",
-                "description": "Prompt dinámico para el Art Director"
+                "description": "Dynamic prompt for Art Director"
             },
             {
                 "key": "prompt_analyst_v1",
@@ -141,7 +141,7 @@ OUTPUT ONLY JSON:
   },
   "design_gestures": { "corner_style": "sharp", "spacing": "airy" }
 }""",
-                "description": "Prompt dinámico para el Analista de Marca"
+                "description": "Dynamic prompt for Brand Analyst"
             },
             {
                 "key": "prompt_classifier_v1",
@@ -156,7 +156,7 @@ OUTPUT ONLY JSON:
 - 'background_type': 'transparent', 'solid_white', 'solid_black', 'complex', or 'other'.
 - 'description': CRITICAL INSTRUCTION: Provide a CONCISE, analytical description (Max 3 sentences). Focus strictly on the strategic value, emotional tone, and subject matter, rather than exhaustive physical details.
 - 'tags': 5 semantic keywords.""",
-                "description": "Prompt dinámico para clasificación de activos"
+                "description": "Dynamic prompt for asset classification"
             }
         ]
         for c in configs:

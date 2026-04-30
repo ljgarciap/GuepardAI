@@ -81,7 +81,7 @@ class BrandAsset(Base):
     manual_tags = Column(JSON)    # USER Specified Tags (v11.0)
     description = Column(Text)
     
-    # Dimensiones físicas reales (v34.0 - Anti-Stretching)
+    # Real physical dimensions (v34.0 - Anti-Stretching)
     width = Column(Integer, nullable=True)
     height = Column(Integer, nullable=True)
     
@@ -98,8 +98,8 @@ class BrandAsset(Base):
 
 # ============================================================
 # TABLA NUEVA: brand_artistic_essence
-# Extracción interpretativa: layouts, gestos de diseñador, composición
-# Herramienta: Vision LLM (Claude Sonnet con visión)
+# Extraction interpretativa: layouts, gestos de diseñador, composición
+# Tool: Vision LLM (Claude Sonnet con visión)
 # ============================================================
 class BrandArtisticEssence(Base):
     __tablename__ = "brand_artistic_essence"
@@ -120,7 +120,7 @@ class BrandArtisticEssence(Base):
     slide_archetypes   = Column(JSONB, nullable=True)
     structural_archetypes = Column(JSONB, nullable=True) # ADN Estructural (rejillas, columnas)
 
-    # Gestos distintivos del diseñador
+    # Gestures distintivos del diseñador
     # {
     #   "uses_glassmorphism": false,
     #   "uses_gradients": true,
@@ -132,7 +132,7 @@ class BrandArtisticEssence(Base):
     # }
     design_gestures    = Column(JSONB, nullable=True)
 
-    # Reglas de composición y espacio
+    # Rules de composición y espacio
     # {
     #   "logo_position": "top-right|top-left|bottom-right|bottom-left",
     #   "content_gravity": "left|center|right",
@@ -143,10 +143,10 @@ class BrandArtisticEssence(Base):
     # }
     composition_rules  = Column(JSONB, nullable=True)
 
-    # Descripción en lenguaje natural del estilo (útil para el prompt de generación)
+    # Description en lenguaje natural del estilo (útil para el prompt de generación)
     art_direction_note = Column(Text, nullable=True)
 
-    # Respuesta raw del Vision LLM por slide (para auditoría)
+    # Response raw del Vision LLM por slide (para auditoría)
     raw_vision_response = Column(JSONB, nullable=True)
 
     created_at         = Column(DateTime, default=datetime.datetime.utcnow)
@@ -156,7 +156,7 @@ class BrandArtisticEssence(Base):
 
 # ============================================================
 # TABLA EXISTENTE: ingestion_jobs (actualizada)
-# ingestion_type válidos: 'visual_dna' | 'artistic' | 'knowledge'
+# ingestion_type valid: 'visual_dna' | 'artistic' | 'knowledge'
 # ============================================================
 class IngestionJob(Base):
     __tablename__ = "ingestion_jobs"
@@ -195,7 +195,7 @@ class GenerationJob(Base):
 
     created_at  = Column(DateTime, default=datetime.datetime.utcnow)
     
-    # Relación con las slides granulares (v18.5)
+    # Relationship con las slides granulares (v18.5)
     slides      = relationship("PresentationSlide", back_populates="job", cascade="all, delete-orphan")
 
 
@@ -216,7 +216,7 @@ class Language(Base):
 class CorporateKnowledge(Base):
     """
     BANCO DE CONOCIMIENTO (RAG).
-    Datos estratégicos blindados por marca.
+    Armored strategic data por marca.
     """
     __tablename__ = "corporate_knowledge"
 
@@ -226,7 +226,7 @@ class CorporateKnowledge(Base):
     source_filename = Column(String(255))
     content = Column(Text)
     
-    # Taxonomía: brand_identity, company_knowledge, case_studies, etc.
+    # Taxonomy: brand_identity, company_knowledge, case_studies, etc.
     document_type = Column(String(50), nullable=True)
     
     # Metadata para RAG y Embeddings (v12.0)
@@ -238,13 +238,13 @@ class CorporateKnowledge(Base):
     
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    # Relación inversa
+    # Relationship inversa
     brand = relationship("Brand", back_populates="knowledge")
 
 class PresentationSlide(Base):
     """
     ESTADO ATÓMICO DE SLIDE (v18.5).
-    Guarda la decisión final del Director de Arte para cada diapositiva.
+    Saves final decision del Director de Arte para cada diapositiva.
     """
     __tablename__ = "presentation_slides"
 
@@ -274,7 +274,7 @@ class PresentationSlide(Base):
 class ArtDirectorDecision(Base):
     """
     BITÁCORA DE DECISIONES (v34.0).
-    Registra el 'porqué' de cada elección visual.
+    Records the 'porqué' de cada visual choice.
     """
     __tablename__ = "art_director_decisions"
 

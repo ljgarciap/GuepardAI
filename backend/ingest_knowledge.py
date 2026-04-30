@@ -80,59 +80,64 @@ def ingest_document(file_path, client_name="Internal", update_callback=None, bra
     if update_callback:
         update_callback(f"Analyzing {total_chunks} tactical fragments...", 10)
         
-    batch_size = 50
+    batch_size = 30 # Reduced batch size for better stability and more frequent updates
     inserted_total = 0
     start_sync = time.time()
     
-    for i in range(0, total_chunks, batch_size):
-        batch_slice = slice(i, i + batch_size)
-        batch_texts = valid_chunks[batch_slice]
-        current_batch_idx = (i // batch_size) + 1
-        total_batches = (total_chunks + batch_size - 1) // batch_size
-        
-        if update_callback:
-            perc = 10 + int((i / total_chunks) * 85)
-            update_callback(f"Indexing (Batch {current_batch_idx}/{total_batches})...", perc)
-        
-        try:
-            batch_embeddings = get_embeddings_batch(batch_texts)
-            if not batch_embeddings or len(batch_embeddings) == 0:
-                 continue
-                 
-            with engine.connect() as conn:
-                with conn.begin():
-                    for text_fragment, emb in zip(batch_texts, batch_embeddings):
-                        if emb is None: continue
-                        emb_pg = f"[{','.join(map(str, emb))}]"
+    try:
+        with engine.connect() as conn:
+            for i in range(0, total_chunks, batch_size):
+                batch_slice = slice(i, i + batch_size)
+                batch_texts = valid_chunks[batch_slice]
+                current_batch_idx = (i // batch_size) + 1
+                total_batches = (total_chunks + batch_size - 1) // batch_size
+                
+                if update_callback:
+                    perc = 10 + int((i / total_chunks) * 85)
+                    update_callback(f"Indexing (Batch {current_batch_idx}/{total_batches})...", perc)
+                
+                try:
+                    batch_embeddings = get_embeddings_batch(batch_texts)
+                    if not batch_embeddings or len(batch_embeddings) == 0:
+                        continue
                         
-                        conn.execute(
-                            text("""
-                            INSERT INTO corporate_knowledge (content, meta_data, embedding, brand_id, is_public, source_filename, document_type)
-                            VALUES (:content, :meta_data, cast(:embedding as vector), :brand_id, :is_public, :source_filename, :document_type)
-                            """),
-                            {
-                                "content": text_fragment,
-                                "meta_data": json.dumps({
-                                    "source": source_filename, 
-                                    "client": client_name,
+                    # Transactional block for this batch
+                    with conn.begin():
+                        for text_fragment, emb in zip(batch_texts, batch_embeddings):
+                            if emb is None: continue
+                            emb_pg = f"[{','.join(map(str, emb))}]"
+                            
+                            conn.execute(
+                                text("""
+                                INSERT INTO corporate_knowledge (content, meta_data, embedding, brand_id, is_public, source_filename, document_type)
+                                VALUES (:content, :meta_data, cast(:embedding as vector), :brand_id, :is_public, :source_filename, :document_type)
+                                """),
+                                {
+                                    "content": text_fragment,
+                                    "meta_data": json.dumps({
+                                        "source": source_filename, 
+                                        "client": client_name,
+                                        "brand_id": brand_id,
+                                        "is_public": is_public,
+                                        "document_type": document_type
+                                    }),
+                                    "embedding": emb_pg,
                                     "brand_id": brand_id,
-                                    "is_public": is_public,
+                                    "is_public": 1 if is_public else 0,
+                                    "source_filename": source_filename,
                                     "document_type": document_type
-                                }),
-                                "embedding": emb_pg,
-                                "brand_id": brand_id,
-                                "is_public": 1 if is_public else 0,
-                                "source_filename": source_filename,
-                                "document_type": document_type
-                            }
-                        )
-                        inserted_total += 1
-            
-        except Exception as e:
-            print(f"  [Error] Batch {current_batch_idx} failed: {e}", flush=True)
-            if update_callback:
-                update_callback(f"Fatal Sync Error: {str(e)}", -1)
-            raise e
+                                }
+                            )
+                            inserted_total += 1
+                except Exception as batch_err:
+                    print(f"  [Error] Batch {current_batch_idx} skipped due to error: {batch_err}", flush=True)
+                    # We continue with next batch instead of failing the whole document
+                    continue
+    except Exception as e:
+        print(f"  [Fatal] Knowledge Sync Error: {str(e)}", flush=True)
+        if update_callback:
+            update_callback(f"Fatal Sync Error: {str(e)}", -1)
+        raise e
 
     duration_sync = time.time() - start_sync
     duration_total = time.time() - start_total

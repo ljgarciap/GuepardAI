@@ -6,8 +6,13 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 # Uses `postgresql+psycopg` for the modern drivers (psycopg3)
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg://root:root@localhost:5432/ai_db")
 
-# Engine handles the PostgreSQL connection pool
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+# Engine handles the PostgreSQL connection pool (v40.0 - Parallel Ready)
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    pool_size=20,        # Aumentar para soportar hilos paralelos
+    max_overflow=10,     # Permitir exceso temporal
+    pool_timeout=30      # Esperar 30s antes de fallar
+)
 
 # Session maker for CRUD operations in each request
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -40,7 +40,7 @@ def fetch_single_asset(idx, narrative, entropy_seed):
 
 def orchestrate_assets(content_manifest, brand=None, db=None):
     """
-    Orquestador de Activos v90.1: Búsqueda Vectorial Semántica Corregida.
+    Orquestador de Activos v90.1: Corrected Semantic Vector Search.
     """
     print(f"[AssetEngine] Orchestrating assets with Vectorized Treasury Protocol v90.1...")
     

@@ -339,7 +339,7 @@ def render_pptx_manifest(design_manifest, asset_map, output_path):
     ENGINE RENDERER v16.1 — ANALYST VISION DRIVEN.
     Aplica el manifest de diseño con soporte para Canvas Ultra-Wide y Decoradores.
     """
-    print(f"[Renderer v16.1] Creando presentación: {output_path}...", flush=True)
+    print(f"[Renderer v16.1] Creating presentation: {output_path}...", flush=True)
     
     # ── 1. Inicializar Canvas Dinámico ────────────────────────────────────
     canvas = design_manifest.get("canvas", {})
@@ -409,7 +409,7 @@ def render_pptx_manifest(design_manifest, asset_map, output_path):
                 print(f"  [Renderer] Error en elemento {el.get('type')}: {e}")
 
     prs.save(output_path)
-    print(f"[Renderer v16.1] PPTX guardado con éxito.", flush=True)
+    print(f"[Renderer v16.1] PPTX saved successfully.", flush=True)
     return output_path
 
 # ──────────────────────────────────────────────
@@ -515,7 +515,7 @@ def _render_image_v2(slide, element, asset_map, sx, sy):
                 
             slide.shapes.add_picture(img_path, ox, oy, nw, nh)
         except Exception as e:
-            print(f"  [Renderer] Fallo al insertar imagen {img_path}: {e}")
+            print(f"  [Renderer] Failed to insert image {img_path}: {e}")
 
 def render_pptx_from_db(job_id: int, asset_map: dict, output_path: str):
     """

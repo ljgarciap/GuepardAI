@@ -5,13 +5,14 @@ from sqlalchemy.orm import Session
 from llm_provider import generate_json
 from services.asset_library_service import find_best_assets
 from typing import List, Dict
+from services.font_service import ensure_brand_fonts
 
 from services.asset_library_service import find_best_assets
 
 def plan_presentation_design(db: Session, job_id: int):
     """
-    FASE 2: Dirección de Arte (Planificación).
-    Itera slide por slide para tomar decisiones estéticas.
+    PHASE 2: Art Direction (Planning).
+    Iterates slide by slide to make aesthetic decisions.
     """
     job = db.query(models.GenerationJob).get(job_id)
     if not job: return False
@@ -39,9 +40,14 @@ def plan_presentation_design(db: Session, job_id: int):
         models.BrandArtisticEssence.brand_id == job.brand_id
     ).order_by(models.BrandArtisticEssence.created_at.desc()).first()
     
-    archetypes = ["split-right", "full-bleed", "two-column", "quote-hero", "data-grid"]
+    archetypes = ["split-right", "full-bleed", "two-column", "quote-hero", "data-grid", "asymmetric-overlay", "editorial-magazine", "dark-hero"]
     if essence and essence.slide_archetypes:
         archetypes = list(essence.slide_archetypes.keys())
+    
+    # v71.0: Dynamic Font Synchronization and Database Persistence
+    if dna_record:
+        dna_dict = dna_record.to_dict() if hasattr(dna_record, "to_dict") else vars(dna_record)
+        ensure_brand_fonts(db, job.brand_id, dna_dict)
 
     # 1. Buscar el LOGO real de la marca v23.5
     logo_asset = db.query(models.BrandAsset).filter(
@@ -89,7 +95,7 @@ def plan_presentation_design(db: Session, job_id: int):
             })
         
         if not found_assets:
-            # Fallback a búsqueda simple sin logos ni basura
+            # Fallback to simple search without logos or noise
             asset_records = db.query(models.BrandAsset).filter(models.BrandAsset.category.notin_(["logos", "noise"])).limit(5).all()
             found_assets = [{"id": a.id, "category": a.category, "path": a.local_path, "description": a.description} for a in asset_records]
 
@@ -143,23 +149,32 @@ def plan_presentation_design(db: Session, job_id: int):
         print(f"    [ArtDirector] Planning Slide {slide.slide_number} for {client_name}...")
         decision = generate_json(prompt)
         
-        # C. Generar Manifiesto de Renderizado (v32.0 - Collision Protection)
+        # C. Generate Rendering Manifesto (v32.0 - Collision Protection)
         from services.brand_composition_dna import get_layout_geometry
         
-        # 1. Obtener IDs de la Decisión
-        primary_id = decision.get("primary_asset_id")
-        accent_id = decision.get("accent_id")
+        # 1. Obtener IDs de la Decisión (v67.5 - SAFE PARSING)
+        def safe_int_id(val):
+            if val is None: return None
+            try: return int(val)
+            except: return None
+
+        primary_id = safe_int_id(decision.get("primary_asset_id"))
+        accent_id = safe_int_id(decision.get("accent_id"))
         layout_slug = decision.get("layout_slug", "split-right")
         
-        # ESCUDO DEFINITIVO Y FORZADO
-        # Si la IA intenta usar un elemento decorativo como fondo gigante, lo anulamos.
+        # VALIDACIÓN DE ARQUETIPO (v71.0)
+        if layout_slug not in archetypes:
+            layout_slug = "split-right"
+        
+        # STRATEGIC SHIELD
+        # If the AI tries to use a decorative element as a giant background, we override it.
         if primary_id:
             primary_asset_record = db.query(models.BrandAsset).get(primary_id)
             if primary_asset_record and primary_asset_record.category == "design_elements":
                 if not accent_id: accent_id = primary_id
                 primary_id = None
                 
-        # Si la IA se pone exigente y decide "no usar imagen", LA FORZAMOS (sin importar si es la portada o interna).
+        # If the AI is picky and decides "not to use image", WE FORCE IT.
         if not primary_id:
             fallback_photo = db.query(models.BrandAsset).filter(
                 models.BrandAsset.category == "lifestyle_photos",
@@ -284,6 +299,18 @@ def plan_presentation_design(db: Session, job_id: int):
                 "type": "shape", "role": "brand_bar",
                 "geometry": {"top": 16.0, "left": 7.0, "width": 30.0, "height": 0.4},
                 "style": {"color": dna_record.secondary_color, "opacity": 1.0}
+            })
+            
+        # 9. Fondo Especial (v71.0 - Layouts Premium)
+        bg_shape_geo = geo.get("background_shape")
+        if bg_shape_geo:
+            render_elements.insert(0, { # Insertar al principio para que esté detrás
+                "type": "shape", "role": "background_box",
+                "geometry": bg_shape_geo,
+                "style": {
+                    "color": dna_record.primary_color if dna_record else "#0052A3",
+                    "opacity": 0.15 # Sutil traslúcido
+                }
             })
 
         # 8. Guardar Decisión y Bitácora

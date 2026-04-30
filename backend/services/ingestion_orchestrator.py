@@ -62,9 +62,10 @@ def set_job_status(job_key: str, ingestion_type: str, status: str):
         db.close()
 
 def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
-    """Extrae el DNA Visual (v21.0) con registro atómico de activos."""
+    """Extracts Visual DNA (v21.0) with atomic asset registration."""
     logger.info(f"[Orchestrator] Visual DNA started: {source_filename}")
-    cb = lambda msg, p=0: update_job_step(job_key, "visual_dna", msg, p)
+    # v41.0: Reportar a brand_style para visibilidad granular en la UI
+    cb = lambda msg, p=0: update_job_step(job_key, "brand_style", msg, p)
     is_public = (visibility_scope == "public")
     
     try:
@@ -87,35 +88,74 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
             record.primary_font     = dna.get("primary_font", "Arial")
             record.raw_extraction   = dna
 
-            # REGISTRO ATÓMICO DE ACTIVOS (v20.5)
+            # REGISTRO ATÓMICO DE ACTIVOS (v20.5 - PARALLEL BATCHING v24.0)
             final_library_assets = {}
             raw_assets = dna.get("extracted_assets", {})
+            
+            # 1. Aplanar lista de activos a procesar
+            flat_items = []
             for cat, items in raw_assets.items():
                 for item in items:
+                    flat_items.append((cat, item))
+                    
+            total_items = len(flat_items)
+            processed_count = 0
+            
+            if total_items > 0:
+                import concurrent.futures
+                
+                # Isolated (Thread-Safe) function for each worker
+                def process_asset_worker(cat, item):
+                    from database import SessionLocal
+                    local_db = SessionLocal()
                     try:
-                        with db.begin_nested():
-                            raw_path = os.path.join(upload_dir, item["path"])
-                            if os.path.exists(raw_path):
-                                asset_record = register_asset(
-                                    db, brand_id, raw_path, category=cat,
-                                    is_public=is_public, source_doc=source_filename,
-                                    manual_tags=manual_tags,
-                                    width=item.get("width"), height=item.get("height")
-                                )
-                                # Asegurar que local_path sea solo el nombre del archivo
-                                asset_record.local_path = os.path.basename(asset_record.local_path)
-                                
-                                real_cat = asset_record.category
-                                if real_cat != "noise":
-                                    if real_cat not in final_library_assets: final_library_assets[real_cat] = []
-                                    final_library_assets[real_cat].append({
-                                        "id": asset_record.id,
-                                        "path": os.path.basename(asset_record.local_path),
-                                        "category": real_cat
-                                    })
+                        raw_path = os.path.join(upload_dir, item["path"])
+                        if os.path.exists(raw_path):
+                            asset_record = register_asset(
+                                local_db, brand_id, raw_path, category=cat,
+                                is_public=is_public, source_doc=source_filename,
+                                manual_tags=manual_tags,
+                                width=item.get("width"), height=item.get("height")
+                            )
+                            # Ensure local_path is just the filename
+                            asset_record.local_path = os.path.basename(asset_record.local_path)
+                            local_db.commit() # Local commit per thread
+                            
+                            real_cat = asset_record.category
+                            return {
+                                "success": True,
+                                "real_cat": real_cat,
+                                "id": asset_record.id,
+                                "path": os.path.basename(asset_record.local_path)
+                            }
+                        return {"success": False, "error": "File not found"}
                     except Exception as asset_err:
-                        db.rollback()
+                        local_db.rollback()
                         logger.warning(f"  [Orchestrator] Skip asset {item.get('path')}: {asset_err}")
+                        return {"success": False, "error": str(asset_err)}
+                    finally:
+                        local_db.close()
+                
+                # Controlled Parallel Execution (Batch of 3)
+                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                    future_to_item = {executor.submit(process_asset_worker, cat, item): item for cat, item in flat_items}
+                    for future in concurrent.futures.as_completed(future_to_item):
+                        processed_count += 1
+                        
+                        # DYNAMIC PROGRESS BAR: 50% to 95%
+                        prog_percent = 50 + int((processed_count / total_items) * 45)
+                        cb(f"Analyzing images with Vision LLM ({processed_count}/{total_items})...", prog_percent)
+                        
+                        res = future.result()
+                        if res and res.get("success"):
+                            real_cat = res["real_cat"]
+                            if real_cat != "noise":
+                                if real_cat not in final_library_assets: final_library_assets[real_cat] = []
+                                final_library_assets[real_cat].append({
+                                    "id": res["id"],
+                                    "path": res["path"],
+                                    "category": real_cat
+                                })
             
             record.extracted_assets = final_library_assets
             db.commit()
@@ -127,7 +167,7 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
         set_job_status(job_key, "visual_dna", "error")
 
 def task_extract_artistic_essence(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
-    """Extrae la Esencia Artística (v21.0) de forma aislada."""
+    """Extracts Artistic Essence (v21.0) in isolation."""
     logger.info(f"[Orchestrator] Artistic Essence started: {source_filename}")
     cb = lambda msg, p=0: update_job_step(job_key, "artistic", msg, p)
 
@@ -158,7 +198,7 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
         set_job_status(job_key, "artistic", "error")
 
 def task_extract_full_brand_style(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
-    """Orquestación desacoplada de identidad de marca (Context-Aware v22.0)."""
+    """Decoupled brand identity orchestration (Context-Aware v22.0)."""
     cb = lambda msg, p=0: update_job_step(job_key, "brand_style", msg, p)
     
     # 1. Esencia (Aislada) - USAR PDF SI ES POSIBLE (v34.0)
@@ -201,7 +241,7 @@ def task_ingest_knowledge(job_key: str, file_path: str, source_filename: str, br
         set_job_status(job_key, "knowledge", "error")
 
 def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
-    """Cosecha pura de activos (v21.0). Soporta imágenes individuales y documentos."""
+    """Pure asset harvest (v21.0). Supports individual images and documents."""
     logger.info(f"[Orchestrator] Pure Asset Harvest: {source_filename}")
     cb = lambda msg, p=0: update_job_step(job_key, "pure_assets", msg, p)
     

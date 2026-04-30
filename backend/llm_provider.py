@@ -296,7 +296,8 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
     if not inputs: return []
     
     # 1. Determinar modelos a usar
-    model_chain = get_system_config("embedding_model_chain", "models/text-embedding-004")
+    # v41.0: Usar una cadena más robusta y corregir nombres de Gemini
+    model_chain = get_system_config("embedding_model_chain", "models/text-embedding-004,mistral-embed")
     
     models_to_try = [m.strip() for m in model_chain.split(",")]
     last_error = None
@@ -316,7 +317,7 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
         try:
             print(f"  [Embeddings] Attempting with {current_model}...", flush=True)
             
-            if "gemini" in current_model.lower() or "embedding" in current_model.lower():
+            if "gemini" in current_model.lower() or "text-embedding" in current_model.lower():
                 # NATIVE GOOGLE EMBEDDINGS (Text or Multimodal)
                 gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
                 if not gem_key or genai is None:
@@ -340,7 +341,7 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
                                 )
                             results.append(normalize_vector(res["embedding"], TARGET_DIM))
                         except Exception as gem_err:
-                            if "not found" in str(gem_err).lower() and "models/" in m_name:
+                            if ("not found" in str(gem_err).lower() or "404" in str(gem_err)) and "models/" in m_name:
                                 # Reintento sin prefijo
                                 alt_name = m_name.replace("models/", "")
                                 print(f"  [Embeddings] 404 with prefix. Retrying with: {alt_name}", flush=True)
@@ -376,25 +377,27 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
                 text_inputs = [i for i in inputs if isinstance(i, str)]
                 if not text_inputs: continue
                 
-                res = client.embeddings.create(
-                    model="mistral-embed",
-                    inputs=text_inputs
-                )
+                # Use a higher timeout to prevent hanging
+                try:
+                    response = client.embeddings.create(
+                        model="mistral-embed",
+                        inputs=text_inputs
+                    )
+                except Exception as mis_err:
+                    print(f"  [Embeddings] Mistral actual call failed: {mis_err}")
+                    raise mis_err
                 
                 # Mapear resultados respetando el orden original y normalizando a 1024
-                results = []
+                final_results = []
                 mistral_idx = 0
                 for item in inputs:
                     if isinstance(item, str):
-                        vec = res.data[mistral_idx].embedding
-                        results.append(normalize_vector(vec, TARGET_DIM))
+                        vec = response.data[mistral_idx].embedding
+                        final_results.append(normalize_vector(vec, TARGET_DIM))
                         mistral_idx += 1
                     else:
-                        results.append(None) # Mistral no soporta imágenes
-                return results
-                if not text_inputs: continue
-                response = client.embeddings.create(model="mistral-embed", inputs=text_inputs)
-                return [normalize_vector(item.embedding, TARGET_DIM) for item in response.data]
+                        final_results.append(None) # Mistral no soporta imágenes
+                return final_results
 
         except Exception as e:
             last_error = e

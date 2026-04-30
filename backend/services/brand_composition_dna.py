@@ -164,7 +164,8 @@ def get_layout_geometry(layout_slug: str, slide_width: float, slide_height: floa
         "content": {"top": content_y, "left": margin_x, "width": usable_w, "height": remaining_h},
         "image": None,
         "accent": {"top": margin_y + 1.0, "left": 85.0, "width": 8.0, "height": 8.0}, # Slot para decoración (Kiwi, etc)
-        "table": {"top": 45.0, "left": margin_x, "width": usable_w, "height": 45.0} # Nuevo slot para tablas
+        "table": {"top": 45.0, "left": margin_x, "width": usable_w, "height": 45.0}, # Nuevo slot para tablas
+        "background_shape": None
     }
 
     if layout_slug in ["marketing-hero", "split-right"]:
@@ -178,6 +179,26 @@ def get_layout_geometry(layout_slug: str, slide_width: float, slide_height: floa
         }
         geo["accent"]["left"] = 40.0 # Mover acento cerca del título en hero
     
+    elif layout_slug == "asymmetric-overlay":
+        # Look de revista: Imagen grande de fondo, texto en caja flotante
+        geo["image"] = {"top": 0, "left": 0, "width": 100, "height": 100}
+        # Caja de texto flotante asimétrica
+        geo["title"] = {"top": 15.0, "left": 10.0, "width": 40.0, "height": 15.0}
+        geo["content"] = {"top": 32.0, "left": 10.0, "width": 35.0, "height": 50.0}
+        geo["background_shape"] = {"top": 10.0, "left": 5.0, "width": 50.0, "height": 80.0} # Caja translúcida detrás
+        
+    elif layout_slug == "editorial-magazine":
+        # Espacio negativo y jerarquía tipográfica masiva
+        geo["title"] = {"top": 20.0, "left": 50.0, "width": 45.0, "height": 40.0}
+        geo["content"] = {"top": 65.0, "left": 50.0, "width": 40.0, "height": 25.0}
+        geo["image"] = {"top": 10.0, "left": 5.0, "width": 40.0, "height": 80.0}
+        
+    elif layout_slug == "dark-hero":
+        # Fondo oscuro, texto centrado, minimalismo
+        geo["title"] = {"top": 30.0, "left": 20.0, "width": 60.0, "height": 20.0}
+        geo["content"] = {"top": 55.0, "left": 25.0, "width": 50.0, "height": 30.0}
+        geo["image"] = {"top": 0, "left": 0, "width": 100, "height": 100} # Background image
+
     elif layout_slug == "two-column":
         col_w = (usable_w - 4.0) / 2
         geo["content_left"] = {"top": content_y, "left": margin_x, "width": col_w, "height": remaining_h}

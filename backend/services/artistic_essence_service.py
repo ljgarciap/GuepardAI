@@ -1,6 +1,6 @@
 """
 artistic_essence_service.py — PowerAI
-Extracción de Esencia Artística: layouts, gestos de diseñador, composición.
+Artistic Essence Extraction: layouts, gestos de diseñador, composición.
 """
 import os
 import json
@@ -92,8 +92,8 @@ def _cleanup_images(image_paths: List[str]):
 
 def analyze_with_vision(image_paths: List[str], cb: Optional[Callable] = None) -> dict:
     """
-    ANÁLISIS ESTRATÉGICO MULTIMODAL (v18.7).
-    Usa Gemini Vision para extraer el ADN estructural de las diapositivas de referencia.
+    STRATEGIC MULTIMODAL ANALYSIS (v18.7).
+    Use Gemini Vision to extract structural DNA from reference slides.
     """
     if not image_paths:
         return {}
@@ -119,10 +119,10 @@ def analyze_with_vision(image_paths: List[str], cb: Optional[Callable] = None) -
         
         from llm_provider import generate_vision_json
         result = generate_vision_json(prompt, sample_images)
-        print(f"[Vision] Respuesta RAW de la IA:\n{json.dumps(result, indent=2)}", flush=True)
+        print(f"[Vision] AI RAW Response:\n{json.dumps(result, indent=2)}", flush=True)
         return result
     except Exception as e:
-        print(f"  [Vision] Error en análisis: {e}")
+        print(f"  [Vision] Analysis error: {e}")
         return {
             "visual_strategy": "Fallback: Standard corporate style",
             "structural_archetypes": {"persistent_blocks": []},
@@ -136,7 +136,7 @@ import time
 def extract_artistic_essence(file_path: str, upload_dir: str, cb: Optional[Callable] = None, brand_id: Optional[int] = None) -> dict:
     start_total = time.time()
     fn_lower = file_path.lower()
-    print(f"\n[Essence] === INICIO DE EXTRACCIÓN (Brand: {brand_id}) ===", flush=True)
+    print(f"\n[Essence] === EXTRACTION START (Brand: {brand_id}) ===", flush=True)
     
     if cb: cb("Esencia Artística — Analizando...", 5)
     image_paths = []
@@ -150,28 +150,28 @@ def extract_artistic_essence(file_path: str, upload_dir: str, cb: Optional[Calla
             image_paths = _pptx_to_images(file_path, upload_dir)
         
         duration_conv = time.time() - start_conv
-        print(f"[Essence] Fase 1: Conversión completada en {duration_conv:.2f}s. ({len(image_paths)} imágenes)", flush=True)
+        print(f"[Essence] Phase 1: Conversion completed en {duration_conv:.2f}s. ({len(image_paths)} images)", flush=True)
     except Exception as e: 
-        print(f"[Essence] ERROR en conversión: {e}", flush=True)
+        print(f"[Essence] Conversion ERROR: {e}", flush=True)
         return {"error": f"Procesamiento fallido: {e}"}
 
     # REGISTRO DE REFERENCIAS (v20.0: Desactivado para evitar ruido en biblioteca)
-    # Las imágenes de visión se usan solo para análisis, no se registran como activos estratégicos.
-    print(f"[Essence] Fase 2: Análisis de Estructura (Sin registro de biblioteca para evitar ruido)", flush=True)
+    # Las images de visión se usan solo para análisis, no se registran como activos estratégicos.
+    print(f"[Essence] Phase 2: Structure Analysis (Without library registration to avoid noise)", flush=True)
 
     # ANÁLISIS DE VISIÓN
     start_vision = time.time()
-    print("[Essence] Fase 3: Iniciando Análisis de Visión Multimodal...", flush=True)
+    print("[Essence] Phase 3: Starting Multimodal Vision Analysis...", flush=True)
     vision_result = analyze_with_vision(image_paths, cb)
     duration_vision = time.time() - start_vision
     
     if vision_result.get("error"):
         print(f"[Essence] ERROR en Vision LLM tras {duration_vision:.2f}s.", flush=True)
     else:
-        print(f"[Essence] Fase 3: Análisis de Visión completado en {duration_vision:.2f}s.", flush=True)
+        print(f"[Essence] Phase 3: Vision Analysis completed en {duration_vision:.2f}s.", flush=True)
 
     duration_total = time.time() - start_total
-    print(f"[Essence] === EXTRACCIÓN FINALIZADA EN {duration_total:.2f}s ===\n", flush=True)
+    print(f"[Essence] === EXTRACTION FINISHED EN {duration_total:.2f}s ===\n", flush=True)
     
     return {
         "structural_archetypes": vision_result.get("structural_archetypes", {}),

@@ -1,7 +1,7 @@
 """
 visual_dna_service.py — PowerAI
-Extracción de DNA Visual: colores, fuentes, assets físicos.
-Herramienta: Programático (fitz / python-pptx) + LLM texto ligero.
+Visual DNA Extraction: colors, fonts, physical assets.
+Tool: Programmatic (fitz / python-pptx) + LLM texto ligero.
 v30.0 — Syntax Corrected & Omnivorous Mode.
 """
 import os
@@ -36,7 +36,7 @@ def _hex(r, g, b) -> str:
 
 
 def _is_neutral(hex_color: str) -> bool:
-    """Descarta blancos, negros y grises muy puros."""
+    """Discard pure whites, blacks and grays."""
     h = hex_color.upper().lstrip("#")
     if len(h) != 6:
         return True
@@ -53,7 +53,7 @@ def _is_neutral(hex_color: str) -> bool:
 def extract_pdf_dna(file_path: str, source_filename: str,
                     upload_dir: str, cb: Optional[Callable] = None) -> dict:
     if not fitz:
-        return {"error": "PyMuPDF no disponible."}
+        return {"error": "PyMuPDF not available."}
 
     doc = fitz.open(file_path)
     fonts, colors, assets = [], [], []
@@ -62,7 +62,7 @@ def extract_pdf_dna(file_path: str, source_filename: str,
 
     for i, page in enumerate(doc):
         if cb:
-            cb(f"DNA Visual — PDF página {i+1}/{total}", int((i + 1) / total * 90))
+            cb(f"DNA Visual — PDF page {i+1}/{total}", int((i + 1) / total * 90))
 
         # Texto → fuentes y colores
         for block in page.get_text("dict").get("blocks", []):
@@ -76,7 +76,7 @@ def extract_pdf_dna(file_path: str, source_filename: str,
                     if not _is_neutral(hex_c):
                         colors.append(hex_c)
 
-        # Imágenes nativas con Hashing
+        # Native images with Hashing
         for img_info in page.get_images(full=True):
             xref = img_info[0]
             try:
@@ -103,7 +103,7 @@ def extract_pdf_dna(file_path: str, source_filename: str,
                         with open(out, "wb") as f: f.write(data)
                     assets.append({"path": fname, "width": width, "height": height})
             except Exception as e:
-                print(f"  [DNA] Error extrayendo imagen PDF xref {xref}: {e}", flush=True)
+                print(f"  [DNA] Error extracting PDF image xref {xref}: {e}", flush=True)
 
     font_freq = Counter(fonts)
     color_freq = Counter(c for c in colors)
@@ -130,7 +130,7 @@ def extract_pdf_dna(file_path: str, source_filename: str,
 def extract_pptx_dna(file_path: str, source_filename: str,
                      upload_dir: str, cb: Optional[Callable] = None) -> dict:
     if not Presentation:
-        return {"error": "python-pptx no disponible."}
+        return {"error": "python-pptx not available."}
 
     from pptx.enum.dml import MSO_FILL
     from pptx.enum.shapes import MSO_SHAPE_TYPE
@@ -194,7 +194,7 @@ def extract_pptx_dna(file_path: str, source_filename: str,
         return paths
 
     # --- 1. MASTERS & LAYOUTS ---
-    print(f"  [DNA] Scanning Masters and Layouts (Omnivorous Mode)...", flush=True)
+    print(f"  [DNA] Scanning Masters and Layouts (Omnivorous Mode)... ", flush=True)
     for master in prs.slide_masters:
         try:
             if master.background.fill.type == 6:
@@ -214,7 +214,7 @@ def extract_pptx_dna(file_path: str, source_filename: str,
             for shape in layout.shapes: raw_assets_paths.extend(_extract_recursive(shape))
 
     # --- 2. SLIDES ---
-    print(f"  [DNA] Scanning Slides...", flush=True)
+    print(f"  [DNA] Scanning Slides... ", flush=True)
     for i, slide in enumerate(prs.slides):
         if cb: cb(f"DNA Visual — Slide {i+1}/{total_slides}", int((i+1)/total_slides * 90))
         try:

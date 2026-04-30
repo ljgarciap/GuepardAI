@@ -57,10 +57,7 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
     
     try:
         # Carga dinámica del Prompt desde la DB (v19.1)
-        from database import SessionLocal
-        db_session = SessionLocal()
-        config_record = db_session.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_classifier_v1").first()
-        db_session.close()
+        config_record = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_classifier_v1").first()
         
         if config_record:
             vision_prompt = config_record.value
@@ -72,10 +69,10 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
         brand_name = "Unknown Brand"
         rulebook = ""
         if brand_id:
-            brand_record = db_session.query(models.Brand).get(brand_id)
+            brand_record = db.query(models.Brand).get(brand_id)
             if brand_record: brand_name = brand_record.name
             
-            essence_record = db_session.query(models.BrandArtisticEssence).filter(models.BrandArtisticEssence.brand_id == brand_id).first()
+            essence_record = db.query(models.BrandArtisticEssence).filter(models.BrandArtisticEssence.brand_id == brand_id).first()
             if essence_record and essence_record.art_direction_note:
                 rulebook = essence_record.art_direction_note
                 

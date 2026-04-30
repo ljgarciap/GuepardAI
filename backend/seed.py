@@ -110,9 +110,9 @@ INSTRUCTION: Pick a layout and assign assets.
 
 Return ONLY JSON:
 {{ 
-  "layout_slug": "marketing-hero | split-right | full-bleed | two-column", 
-  "primary_asset_id": "ID", 
-  "accent_id": "ID (optional fruit/accent)",
+  "layout_slug": "marketing-hero | split-right | full-bleed | two-column | asymmetric-overlay | editorial-magazine | dark-hero", 
+  "primary_asset_id": INTEGER_ID_OR_NULL, 
+  "accent_id": INTEGER_ID_OR_NULL,
   "table": {{
      "data": [["Header1", "Header2"], ["Row1Col1", "Row1Col2"]],
      "reasoning": "Why a table is needed here."

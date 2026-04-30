@@ -104,7 +104,6 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
                                 )
                                 # Asegurar que local_path sea solo el nombre del archivo
                                 asset_record.local_path = os.path.basename(asset_record.local_path)
-                                db.commit()
                                 
                                 real_cat = asset_record.category
                                 if real_cat != "noise":
@@ -114,7 +113,6 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
                                         "path": os.path.basename(asset_record.local_path),
                                         "category": real_cat
                                     })
-                        db.commit()
                     except Exception as asset_err:
                         db.rollback()
                         logger.warning(f"  [Orchestrator] Skip asset {item.get('path')}: {asset_err}")
@@ -146,6 +144,7 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
             
             record.source_filename       = source_filename
             record.visual_strategy       = brand_essence.get("visual_strategy", "")
+            record.art_direction_note    = brand_essence.get("branding_rulebook", "")
             record.structural_archetypes = brand_essence.get("structural_archetypes", {})
             record.design_gestures       = brand_essence.get("design_gestures", {})
             record.composition_rules     = brand_essence.get("composition_rules", {})
@@ -159,18 +158,13 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
         set_job_status(job_key, "artistic", "error")
 
 def task_extract_full_brand_style(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
-    """Orquestación desacoplada de identidad de marca."""
+    """Orquestación desacoplada de identidad de marca (Context-Aware v22.0)."""
     cb = lambda msg, p=0: update_job_step(job_key, "brand_style", msg, p)
     
-    # DNA (Aislado)
+    # 1. Esencia (Aislada) - USAR PDF SI ES POSIBLE (v34.0)
+    # Se extrae PRIMERO para generar el Contexto de Marca (Brand Rulebook)
     try:
-        cb("Extracting Visual DNA (Atomic)...", 10)
-        task_extract_visual_dna(job_key, file_path, source_filename, visibility_scope, brand_id, manual_tags)
-    except: pass
-
-    # Esencia (Aislada) - USAR PDF SI ES POSIBLE (v34.0)
-    try:
-        cb("Analyzing Artistic Essence (Vision High-Fidelity)...", 50)
+        cb("Analyzing Artistic Essence (Vision High-Fidelity)...", 10)
         essence_file = file_path
         if file_path.lower().endswith(".pptx"):
             pdf_path = convert_pptx_to_pdf(file_path, os.path.dirname(file_path))
@@ -179,7 +173,16 @@ def task_extract_full_brand_style(job_key: str, file_path: str, source_filename:
                 logger.info(f"  [Orchestrator] Using PDF for essence: {pdf_path}")
         
         task_extract_artistic_essence(job_key, essence_file, source_filename, visibility_scope, brand_id, manual_tags)
-    except: pass
+    except Exception as e:
+        logger.error(f"  [Orchestrator] Failed Artistic Essence: {e}")
+
+    # 2. DNA (Aislado) - Context-Aware
+    # Se ejecuta DESPUÉS para que el modelo de Visión tenga acceso al Brand Rulebook al clasificar imágenes
+    try:
+        cb("Extracting Visual DNA (Atomic & Context-Aware)...", 50)
+        task_extract_visual_dna(job_key, file_path, source_filename, visibility_scope, brand_id, manual_tags)
+    except Exception as e:
+        logger.error(f"  [Orchestrator] Failed Visual DNA: {e}")
 
     update_job_step(job_key, "brand_style", "Process finished.", 100)
     set_job_status(job_key, "brand_style", "completed")

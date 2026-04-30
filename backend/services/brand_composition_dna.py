@@ -138,24 +138,33 @@ def parse_essence_to_policy(brand_id: int, brand_name: str, artistic_essence: di
 def get_layout_geometry(layout_slug: str, slide_width: float, slide_height: float, title_lines: int = 1) -> dict:
     """
     Calcula la geometría en PORCENTAJES (0-100).
-    Compatible con los helpers sx() y sy() del renderizador.
+    v62.0: Manejo inteligente de colisiones y slots de acento.
     """
     margin_x = 7.0
     margin_y = 7.0
     usable_w = 100.0 - (2 * margin_x)
     
-    # Altura del título en %
-    title_h = 10.0 * title_lines
-    if title_lines > 2: title_h = 8.0 * title_lines
-    if title_h > 35.0: title_h = 35.0
+    # Ajuste por Layout (v62.0): Si el layout es estrecho, el texto se envuelve más.
+    wrap_multiplier = 1.0
+    if layout_slug in ["marketing-hero", "split-right"]:
+        wrap_multiplier = 2.2 # El texto ocupa más del doble de líneas al reducir ancho a < 50%
     
-    content_y = margin_y + title_h + 3.0
+    adjusted_lines = max(title_lines, int(title_lines * wrap_multiplier))
+    
+    # Altura del título en %
+    title_h = 9.0 * adjusted_lines
+    if adjusted_lines > 2: title_h = 7.5 * adjusted_lines
+    if title_h > 40.0: title_h = 40.0 # Cap para no comerse toda la slide
+    
+    content_y = margin_y + title_h + 4.0
     remaining_h = 93.0 - content_y
 
     geo = {
         "title": {"top": margin_y, "left": margin_x, "width": usable_w, "height": title_h},
         "content": {"top": content_y, "left": margin_x, "width": usable_w, "height": remaining_h},
-        "image": None
+        "image": None,
+        "accent": {"top": margin_y + 1.0, "left": 85.0, "width": 8.0, "height": 8.0}, # Slot para decoración (Kiwi, etc)
+        "table": {"top": 45.0, "left": margin_x, "width": usable_w, "height": 45.0} # Nuevo slot para tablas
     }
 
     if layout_slug in ["marketing-hero", "split-right"]:
@@ -167,6 +176,7 @@ def get_layout_geometry(layout_slug: str, slide_width: float, slide_height: floa
             "width": 38.0,
             "height": 100.0 - (2 * margin_y)
         }
+        geo["accent"]["left"] = 40.0 # Mover acento cerca del título en hero
     
     elif layout_slug == "two-column":
         col_w = (usable_w - 4.0) / 2

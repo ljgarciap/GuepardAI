@@ -199,32 +199,7 @@ class GenerationJob(Base):
     slides      = relationship("PresentationSlide", back_populates="job", cascade="all, delete-orphan")
 
 
-# ============================================================
-# TABLA LEGACY: brand_styles
-# Mantenida temporalmente para no romper el flujo existente.
-# Se eliminará una vez validado el nuevo flujo completo.
-# ============================================================
-class BrandStyle(Base):
-    __tablename__ = "brand_styles"
 
-    id               = Column(Integer, primary_key=True, index=True)
-    client_name      = Column(String, index=True)
-    style_slug       = Column(String, index=True, default="default")
-
-    primary_color    = Column(String, default="#000000")
-    secondary_color  = Column(String, default="#404040")
-    background_color = Column(String, default="#FFFFFF")
-    text_main_color  = Column(String, default="#111111")
-    font_family      = Column(String, default="Arial")
-
-    tone_description = Column(Text, default="Professional.")
-    visual_patterns  = Column(JSON, nullable=True)
-    visual_profile   = Column(String, default="modern")
-    raw_style_json   = Column(JSON, nullable=True)
-    extracted_assets = Column(JSON, nullable=True)
-    visual_strategy  = Column(JSON, nullable=True)
-    
-    updated_at       = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
 class Language(Base):
     __tablename__ = "languages"
@@ -327,6 +302,6 @@ class SystemConfig(Base):
 
     id    = Column(Integer, primary_key=True, index=True)
     key   = Column(String(100), unique=True, index=True, nullable=False)
-    value = Column(String(500), nullable=False)
+    value = Column(Text, nullable=False)
     description = Column(String(255), nullable=True)
     updated_at  = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)

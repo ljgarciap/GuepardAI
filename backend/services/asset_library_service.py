@@ -49,31 +49,69 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
     # 2.1 Visión para Identidad y Categoría Real
     tags = []
     description = f"Brand asset: {filename}"
-    category = "photos" # Default
+    
+    # PROTECCIÓN DE LOGO (v23.0)
+    # Si la categoría viene explícita como logo desde la subida manual, la protegemos.
+    is_explicit_logo = category in ["logo", "logos"]
+    final_category = "logos" if is_explicit_logo else "photos"
     
     try:
-        vision_prompt = """
-        Analyze this image with EXTREME RIGOR and return a JSON with:
-        - 'category': Choose one: 'logos', 'photos', 'icons', 'backgrounds', 'noise'.
-        - 'is_person': boolean.
-        - 'description': A very detailed professional description.
-        - 'tags': 5 semantic keywords.
+        # Carga dinámica del Prompt desde la DB (v19.1)
+        from database import SessionLocal
+        db_session = SessionLocal()
+        config_record = db_session.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_classifier_v1").first()
+        db_session.close()
         
-        STRICT NOISE RULES:
-        1. If the image is entirely or predominantly white/blank, category MUST be 'noise'.
-        2. If you describe it as 'blank white image', 'pristine white', or 'minimalist background', category MUST be 'noise'.
-        3. Only use 'backgrounds' for textured, colorful, or meaningful brand backgrounds.
-        4. If in doubt about usefulness, use 'noise'.
-        """
+        if config_record:
+            vision_prompt = config_record.value
+        else:
+            vision_prompt = "Analyze this image and return category, description and tags."
+            
+        # CONTEXT-AWARE INJECTION (v23.0)
+        # La instrucción de concisión se movió al seeder (prompt_classifier_v1)
+        brand_name = "Unknown Brand"
+        rulebook = ""
+        if brand_id:
+            brand_record = db_session.query(models.Brand).get(brand_id)
+            if brand_record: brand_name = brand_record.name
+            
+            essence_record = db_session.query(models.BrandArtisticEssence).filter(models.BrandArtisticEssence.brand_id == brand_id).first()
+            if essence_record and essence_record.art_direction_note:
+                rulebook = essence_record.art_direction_note
+                
+        if brand_name != "Unknown Brand" or rulebook:
+            vision_prompt += f"\n\nCRITICAL BRAND CONTEXT:\nYou are extracting assets for the brand '{brand_name}'. Do NOT classify competitor logos as 'logos', classify them as 'design_elements' or 'noise'.\nBrand Rulebook Context: {rulebook[:1500]}"
+
+            
         vision_res = generate_vision_json(vision_prompt, [file_path])
-        category = vision_res.get("category", "photos")
+        
+        # Respetar el logo manual, si no, usar lo que diga Visión
+        if not is_explicit_logo:
+            final_category = vision_res.get("category", "lifestyle_photos").lower()
+            
         tags = vision_res.get("tags", [])
         description = vision_res.get("description", description)
         
+        # HEURÍSTICA DE SEGURIDAD (v61.0 - Anti-IA perezosa)
+        desc_lower = description.lower()
+        bg_type = vision_res.get("background_type", "other")
+        is_isolated = any(sig in desc_lower for sig in ["isolated", "neutral background", "single object", "cut-out", "white background", "black background", "transparent"])
+        is_human = vision_res.get("is_person", False)
+        
+        if not is_explicit_logo:
+            if final_category in ["photos", "lifestyle_photos"] or bg_type in ["solid_white", "solid_black", "transparent"]:
+                # EXCEPCIÓN: Si es una persona aislada, NO es un elemento de diseño, es lifestyle
+                if is_isolated and not is_human:
+                    print(f"  [Library] HEURISTIC TRIGGERED: Re-mapping {final_category} -> design_elements for {filename}")
+                    final_category = "design_elements"
+
         # Ajuste por contenido humano (v28.0)
-        if vision_res.get("is_person"):
+        if is_human:
             tags.extend(["human", "people", "lifestyle", "professional"])
-            if category == "logos": category = "photos"
+            if final_category == "logos" and not is_explicit_logo: 
+                final_category = "lifestyle_photos"
+                
+        category = final_category
             
     except Exception as e:
         print(f"  [Library] Vision failed, falling back to similarity: {e}")
@@ -108,7 +146,7 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
         embedding=embedding
     )
     db.add(new_asset)
-    db.commit()
+    db.flush()
     db.refresh(new_asset)
     print(f"  [Library] Asset REGISTERED: ID={new_asset.id}, Category={new_asset.category}, Hash={f_hash[:8]}")
     

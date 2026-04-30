@@ -98,27 +98,18 @@ def analyze_with_vision(image_paths: List[str], cb: Optional[Callable] = None) -
     if not image_paths:
         return {}
 
-    prompt = """
-    Analyze these brand manual slides and extract the VISUAL DNA for a presentation engine.
-    Focus on:
-    1. PERSISTENT BLOCKS: Sidebars, headers, or footers that repeat. Define their 'role', 'geometry' (top/left/width/height in %), and 'color_source' (primary/secondary/background).
-    2. SLIDE ARCHETYPES: How is a 'content' slide structured vs a 'hero' slide?
-    3. DESIGN GESTURES: Are corners 'rounded' or 'sharp'? Is the spacing 'airy' or 'compact'?
-    4. COMPOSITION RULES: Visual density, text alignment, image placements.
-
-    OUTPUT ONLY JSON:
-    {
-      "visual_strategy": "string description",
-      "structural_archetypes": {
-        "persistent_blocks": [
-           { "role": "sidebar", "geometry": {"top":0, "left":0, "width":20, "height":100}, "color_source": "primary" }
-        ]
-      },
-      "slide_archetypes": { "content": {...}, "hero": {...} },
-      "design_gestures": { "corner_style": "sharp", "spacing": "airy" },
-      "composition_rules": { "visual_density": "balanced" }
-    }
-    """
+    # Carga dinámica del Prompt desde la DB (v20.0)
+    from database import SessionLocal
+    import models
+    db = SessionLocal()
+    config_record = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_analyst_v1").first()
+    db.close()
+    
+    if config_record:
+        prompt = config_record.value
+    else:
+        # Fallback si no hay DB
+        prompt = "Analyze this brand manual and extract visual DNA."
     
     try:
         if cb: cb("Esencia Artística — Consultando al Director de Arte Visual (Vision LLM)...", 60)

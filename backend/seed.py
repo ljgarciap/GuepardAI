@@ -85,6 +85,79 @@ def seed_data():
                 "value": "models/text-embedding-004",
                 "description": "Modelo de embedding de seguridad"
             },
+            {
+                "key": "prompt_art_director_v1",
+                "value": """### ROLE: SENIOR BRAND ART DIRECTOR
+{strategic_context}
+
+### BRAND RULEBOOK (STRICT ADHERENCE):
+{brand_rulebook}
+
+### RECENT VISUAL THEMES (DIVERSITY PROTECTION):
+{used_descriptions}
+
+### OPERATIONAL CONSTRAINTS:
+1. NO OVERLAP: Maintain strict margins between title, body, and assets.
+2. DATA COMPONENTS: If the slide content contains metrics or comparisons, you MUST request a 'table'.
+
+Slide Title: {slide_title}
+Content: {bullets}
+
+AVAILABLE ASSETS (Ranked by relevance):
+{found_assets}
+
+INSTRUCTION: Pick a layout and assign assets.
+
+Return ONLY JSON:
+{{ 
+  "layout_slug": "marketing-hero | split-right | full-bleed | two-column", 
+  "primary_asset_id": "ID", 
+  "accent_id": "ID (optional fruit/accent)",
+  "table": {{
+     "data": [["Header1", "Header2"], ["Row1Col1", "Row1Col2"]],
+     "reasoning": "Why a table is needed here."
+  }},
+  "reasoning": "Strategy-driven explanation."
+}}""",
+                "description": "Prompt dinámico para el Art Director"
+            },
+            {
+                "key": "prompt_analyst_v1",
+                "value": """Analyze these brand manual slides and extract the VISUAL DNA and a DESIGN RULEBOOK.
+
+1. VISUAL DNA (Structural): Sidebars, headers, footers, corner styles, and spacing.
+2. DESIGN RULEBOOK (Behavioral): Extract specific laws mentioned in the manual. 
+   - Examples: "Fruits only in titles", "Never overlap text on faces", "Use only black backgrounds for metrics".
+   - Write this rulebook in Markdown format.
+
+OUTPUT ONLY JSON:
+{
+  "visual_strategy": "string description",
+  "branding_rulebook": "Markdown string containing the extracted design laws",
+  "structural_archetypes": {
+    "persistent_blocks": [
+       { "role": "sidebar", "geometry": {"top":0, "left":0, "width":20, "height":100}, "color_source": "primary" }
+    ]
+  },
+  "design_gestures": { "corner_style": "sharp", "spacing": "airy" }
+}""",
+                "description": "Prompt dinámico para el Analista de Marca"
+            },
+            {
+                "key": "prompt_classifier_v1",
+                "value": """Analyze this image with DESIGNER RIGOR and return a JSON with:
+- 'category': Choose one: 
+    * 'lifestyle_photos': Complex scenes, people, stores, or environments.
+    * 'design_elements': Single isolated objects (fruits, products), icons, or accents on solid/transparent backgrounds.
+    * 'logos': Brand identities.
+    * 'backgrounds': Textures or full-page backgrounds.
+    * 'noise': Blank, blurry, low-quality, off-brand, or useless images. If the image does NOT align with the brand strategy, it is noise.
+- 'is_person': boolean.
+- 'background_type': 'transparent', 'solid_white', 'solid_black', 'complex', or 'other'.
+- 'description': CRITICAL INSTRUCTION: Provide a CONCISE, analytical description (Max 3 sentences). Focus strictly on the strategic value, emotional tone, and subject matter, rather than exhaustive physical details.
+- 'tags': 5 semantic keywords.""",
+                "description": "Prompt dinámico para clasificación de activos"
+            }
         ]
         for c in configs:
             existing = db.query(models.SystemConfig).filter(

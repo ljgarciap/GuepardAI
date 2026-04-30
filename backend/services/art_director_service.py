@@ -73,21 +73,25 @@ def plan_presentation_design(db: Session, job_id: int):
             exclude_ids=used_assets if used_assets else None
         )
         
-        # Mapeo a formato de planning
+        # Mapeo a formato de planning con filtro Anti-Logo
         found_assets = []
         for a in asset_records:
+            # CANDADO: Prohibir logos en slides internas para forzar fotos reales
+            if slide.slide_number > 1 and a.category == "logos":
+                continue
+                
             found_assets.append({
-                "id": a.id, # Usamos ID real para mayor precisión
-                "filename": os.path.basename(a.local_path),
+                "id": a.id,
+                "category": a.category, # Informar a la IA
                 "path": a.local_path, 
                 "description": a.description,
                 "tags": a.tags
             })
         
         if not found_assets:
-            # Fallback a búsqueda simple si no hay nada semántico
-            asset_records = db.query(models.BrandAsset).limit(3).all()
-            found_assets = [{"id": os.path.basename(a.local_path), "path": a.local_path, "description": a.description} for a in asset_records]
+            # Fallback a búsqueda simple sin logos ni basura
+            asset_records = db.query(models.BrandAsset).filter(models.BrandAsset.category.notin_(["logos", "noise"])).limit(5).all()
+            found_assets = [{"id": a.id, "category": a.category, "path": a.local_path, "description": a.description} for a in asset_records]
 
         # B. Validación de Integridad de Marca (v33.5 - No Fallbacks)
         brand_record = db.query(models.Brand).get(job.brand_id)
@@ -99,42 +103,42 @@ def plan_presentation_design(db: Session, job_id: int):
         is_decoration = any(word in str(found_assets).lower() for word in ["fruit", "lime", "lemon", "isolated", "decoration", "object"])
         forced_layout_note = "DUE TO DECORATIVE ASSETS: Prefer 'marketing-hero'." if is_decoration else "Prefer 'split-right' or 'full-bleed'."
 
-        prompt = f"""
-        ### ROLE: SENIOR BRAND ART DIRECTOR
-        Strategic Context: {client_name} and its ecosystem.
+        # Preparar diccionarios para el prompt v55.0
+        visual_dna_dict = {
+            "primary_color": dna_record.primary_color if dna_record else "#0052A3",
+            "secondary_color": dna_record.secondary_color if dna_record else "#FF142B",
+            "primary_font": dna_record.primary_font if dna_record else "Arial"
+        }
         
-        GROUNDING RULES:
-        1. CONTEXTUAL BRANDING: You may use assets of partners, allies, or case studies ONLY IF they appear in the provided context.
-        2. NO OVERLAP: Maintain strict geometry margins.
-        BRAND DNA (STRICT ADHERENCE):
-        - Primary Color: {visual_dna_dict['primary_color']}
-        - Secondary Color: {visual_dna_dict['secondary_color']}
-        - Main Font: {visual_dna_dict['primary_font']}
-    
-        ARTISTIC DIRECTION NOTE (MANDATORY):
-        {artistic_essence_dict['visual_strategy']}
-    
-        STRICT ASSET RULES:
-        1. PARTNER/COMPETITOR LOGOS (e.g. Carrefour, Loblaw): Use them ONLY for comparative slides or case studies mentioned in the text. 
-        2. BRAND REPRESENTATION: If the slide is about "Our Company" or "{brand_record.name}", use ONLY {brand_record.name} assets.
-        3. NO DECORATIVE METAPHORS: Do not use avocados, gears, or puzzles unless explicitly requested.
+        # Evitar Repetición de Temas Visuales (v66.1)
+        recent_assets = db.query(models.ArtDirectorDecision).filter(
+            models.ArtDirectorDecision.job_id == job_id,
+            models.ArtDirectorDecision.decision_type == "design_manifest"
+        ).order_by(models.ArtDirectorDecision.slide_number.desc()).limit(5).all()
+        used_descriptions = [d.reasoning for d in recent_assets]
         
-        Slide Title: {slide.title}
-        Content: {json.dumps(bullets)}
+        strategic_context = f"Strategic Context: {client_name} and its ecosystem."
         
-        AVAILABLE ASSETS:
-        {json.dumps(found_assets)}
+        # El Rulebook dinámico extraído del ADN de la marca
+        brand_rulebook = essence.art_direction_note if essence else "Standard corporate style: clean and professional."
+
+        # Carga dinámica del Prompt desde la DB (v67.0)
+        config_record = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_art_director_v1").first()
+        if not config_record:
+            raise Exception("CRITICAL: 'prompt_art_director_v1' not found in system_configs table.")
         
-        INSTRUCTION: Pick EXACTLY ONE layout_slug from: ["marketing-hero", "split-right", "full-bleed", "two-column"].
-        {forced_layout_note}
-        
-        Return ONLY JSON:
-        {{ 
-          "layout_slug": "ONE_OF_THE_SLUGS_ABOVE", 
-          "assigned_image_id": "ID_FROM_AVAILABLE_ASSETS", 
-          "reasoning": "Strategy-driven explanation."
-        }}
-        """
+        prompt_template = config_record.value
+        prompt = prompt_template.format(
+            strategic_context=strategic_context,
+            primary_color=visual_dna_dict["primary_color"],
+            secondary_color=visual_dna_dict["secondary_color"],
+            primary_font=visual_dna_dict["primary_font"],
+            brand_rulebook=brand_rulebook,
+            used_descriptions=json.dumps(used_descriptions),
+            slide_title=slide.title,
+            bullets=json.dumps(bullets),
+            found_assets=json.dumps(found_assets)
+        )
         
         print(f"    [ArtDirector] Planning Slide {slide.slide_number} for {client_name}...")
         decision = generate_json(prompt)
@@ -142,98 +146,167 @@ def plan_presentation_design(db: Session, job_id: int):
         # C. Generar Manifiesto de Renderizado (v32.0 - Collision Protection)
         from services.brand_composition_dna import get_layout_geometry
         
-        # 3. Imagen Principal (FILTRO ANTI-COMPETENCIA v50.0)
-        target_id = decision.get("assigned_image_id")
-        asset = db.query(models.BrandAsset).get(target_id) if target_id else None
-        
-        # Si el asset encontrado menciona a un competidor conocido, lo anulamos
-        competitors = ["carrefour", "loblaw", "walmart", "lidl", "aldi", "sainsbury", "asda", "flybuys"]
-        if asset and any(comp in (asset.description or "").lower() or comp in str(asset.tags).lower() for comp in competitors):
-            # Solo bloqueamos si el competidor no es la marca actual
-            if brand_record and all(comp not in brand_record.name.lower() for comp in competitors):
-                print(f"    [ArtDirector] ALERT: Competitor asset '{asset.description}' blocked for {brand_record.name}")
-                asset = None
-                target_id = None
-
+        # 1. Obtener IDs de la Decisión
+        primary_id = decision.get("primary_asset_id")
+        accent_id = decision.get("accent_id")
         layout_slug = decision.get("layout_slug", "split-right")
         
-        # Calcular Geometría Dinámica
-        geo = get_layout_geometry(layout_slug, 13.33, 7.5, title_lines=max(1, len(slide.title) // 45 + 1))
+        # ESCUDO DEFINITIVO Y FORZADO
+        # Si la IA intenta usar un elemento decorativo como fondo gigante, lo anulamos.
+        if primary_id:
+            primary_asset_record = db.query(models.BrandAsset).get(primary_id)
+            if primary_asset_record and primary_asset_record.category == "design_elements":
+                if not accent_id: accent_id = primary_id
+                primary_id = None
+                
+        # Si la IA se pone exigente y decide "no usar imagen", LA FORZAMOS (sin importar si es la portada o interna).
+        if not primary_id:
+            fallback_photo = db.query(models.BrandAsset).filter(
+                models.BrandAsset.category == "lifestyle_photos",
+                models.BrandAsset.id.not_in(used_assets)
+            ).order_by(models.BrandAsset.width.desc()).first()
+            
+            # ANTI-AMNESIA EXHAUSTION FIX (v23.0): Si se acabaron las únicas, reciclar.
+            if not fallback_photo:
+                from sqlalchemy.sql.expression import func
+                fallback_photo = db.query(models.BrandAsset).filter(
+                    models.BrandAsset.category == "lifestyle_photos"
+                ).order_by(func.random()).first()
+                
+            primary_id = fallback_photo.id if fallback_photo else None
+
+        # GUARDAR MEMORIA
+        if primary_id: used_assets.append(primary_id)
+        if accent_id: used_assets.append(accent_id)
+
+        # 2. Calcular Geometría Protegida
+        title_len = len(slide.title)
+        estimated_lines = max(1, title_len // 35 + 1)
+        geo = get_layout_geometry(layout_slug, 13.33, 7.5, title_lines=estimated_lines)
         
         render_elements = []
-        
-        # 1. Título
+
+        # 2.5 Inyectar Logo de Marca (Obligatorio, Esquina Superior Derecha para evitar choques)
+        if logo_asset:
+            render_elements.append({
+                "type": "logo", "role": "logo",
+                "path": logo_asset.local_path,
+                "geometry": {"top": 4.0, "left": 86.0, "width": 10.0, "height": 10.0} 
+            })
+
+        # 3. Construir Título
+        title_f_size = 36 if title_len > 60 else 42
         render_elements.append({
             "type": "text", "role": "title", "content": slide.title,
             "geometry": geo["title"],
             "style": {
-                "size": 42, 
-                "bold": True, 
+                "size": title_f_size, "bold": True, 
                 "color": dna_record.primary_color if dna_record else "#0052A3",
-                "font": dna_record.primary_font if dna_record else "Arial"
-            }
-        })
-        
-        # 2. Cuerpo (Bullets)
-        bullet_text = "\n".join([f"• {b}" for b in bullets])
-        render_elements.append({
-            "type": "text", "role": "body", "content": bullet_text,
-            "geometry": geo["content"],
-            "style": {
-                "size": 24, 
-                "color": dna_record.text_main_color if dna_record else "#111111",
-                "font": dna_record.primary_font if dna_record else "Arial"
+                "font": dna_record.primary_font if dna_record else "Helvetica Neue"
             }
         })
 
-        # 2.5 Acento de Marca (Barra distintiva v51.0)
+        # 4. Construir Cuerpo
+        # Verificar si hay tabla para ajustar el layout
+        table_decision = decision.get("table")
+        has_table = table_decision and table_decision.get("data")
+        
+        # Ajuste de geometría si comparten espacio
+        body_geo = geo["content"].copy()
+        table_geo = geo.get("table", {"top": 50.0, "left": 7.0, "width": 86.0, "height": 35.0}).copy()
+        
+        if has_table:
+            # Como solo dejaremos la primera viñeta, la caja de texto no necesita ser enorme
+            body_geo["height"] = 12.0 # Suficiente para 2-3 líneas
+            table_geo["top"] = body_geo["top"] + body_geo["height"] + 2.0
+            table_geo["left"] = body_geo["left"]
+            table_geo["width"] = body_geo["width"]
+            
+            # Dinamismo de tabla (4 filas = ~30 height, 6 filas = ~40 height)
+            table_rows = len(table_decision["data"])
+            table_geo["height"] = min(50.0, max(25.0, table_rows * 6.0))
+
+        # 4. Construir Texto de Cuerpo
+        if has_table and len(bullets) > 0:
+            bullet_text = f"• {bullets[0]}"
+        else:
+            bullet_text = "\n".join([f"• {b}" for b in bullets])
+            
+        # TIPOGRAFÍA DINÁMICA (v23.0)
+        text_len = len(bullet_text)
+        body_f_size = 18 if has_table else 24
+        if not has_table:
+            if text_len > 350: body_f_size = 18
+            if text_len > 600: body_f_size = 14
+            
+        render_elements.append({
+            "type": "text", "role": "body", "content": bullet_text,
+            "geometry": body_geo,
+            "style": {
+                "size": body_f_size,
+                "color": "#333333",
+                "font": dna_record.primary_font if dna_record else "Helvetica Neue"
+            }
+        })
+
+        # 5. Imagen Principal (Lifestyle/Contenido)
+        if primary_id:
+            asset = db.query(models.BrandAsset).get(primary_id)
+            if asset:
+                render_elements.append({
+                    "type": "image", "role": "main",
+                    "path": asset.local_path,
+                    # Si geo["image"] es None (como en two-column), usar 'content' u otro fallback.
+                    "geometry": geo.get("image") or geo.get("content", {"top": 0, "left": 50, "width": 50, "height": 100})
+                })
+
+        # 6. Acento de Diseño (Kiwi/DNA)
+        if accent_id:
+            accent_asset = db.query(models.BrandAsset).get(accent_id)
+            if accent_asset:
+                render_elements.append({
+                    "type": "image", "role": "accent",
+                    "path": accent_asset.local_path,
+                    "geometry": geo.get("accent", {"top": 5.0, "left": 85.0, "width": 8.0, "height": 8.0})
+                })
+
+        # 7. Tabla de Datos (Si aplica)
+        if has_table:
+            render_elements.append({
+                "type": "table", "role": "metrics",
+                "data": table_decision["data"],
+                "geometry": table_geo
+            })
+
+        # 8. Barra de Marca (Acento sutil v60.0)
         if dna_record and dna_record.secondary_color:
             render_elements.append({
                 "type": "shape", "role": "brand_bar",
-                "geometry": {"top": 15.0, "left": 7.0, "width": 5.0, "height": 0.5},
+                "geometry": {"top": 16.0, "left": 7.0, "width": 30.0, "height": 0.4},
                 "style": {"color": dna_record.secondary_color, "opacity": 1.0}
             })
-        
-        # 3. Imagen Principal
-        if geo["image"] and asset:
-            render_elements.append({
-                "type": "image", "role": "hero", "source": os.path.basename(asset.local_path),
-                "geometry": geo["image"],
-                "width": asset.width,
-                "height": asset.height
-            })
-            
-        # 4. Logo de Marca (Esquina Superior Derecha - PORCENTAJES v50.0)
-        if logo_id:
-            render_elements.append({
-                "type": "logo", "role": "brand_logo", "source": logo_id,
-                "geometry": {"top": 3.0, "left": 85.0, "width": 12.0, "height": 8.0}
-            })
 
-        # Persistencia Total
-        slide.layout_slug = layout_slug
-        slide.assigned_image = os.path.basename(asset.local_path) if asset else None
-        slide.render_elements = render_elements
-        
-        if target_id: used_assets.append(target_id)
-        
-        slide.status = "planned"
-        
-        # D. Registrar Bitácora de Decisión (v34.0 - Transparency)
-        log_entry = models.ArtDirectorDecision(
+        # 8. Guardar Decisión y Bitácora
+        new_decision = models.ArtDirectorDecision(
             job_id=job_id,
             slide_number=slide.slide_number,
-            decision_type="visual_planning",
-            summary=f"Layout: {layout_slug} | Asset: {slide.assigned_image}",
-            reasoning=decision.get("reasoning", "No explicit reasoning provided."),
+            decision_type="design_manifest",
+            summary=f"Layout: {layout_slug} | Primary: {primary_id} | Accent: {accent_id}",
+            reasoning=json.dumps(decision.get("reasoning")) if isinstance(decision.get("reasoning"), dict) else decision.get("reasoning", "Aesthetic alignment."),
             metadata_json={
                 "layout_slug": layout_slug,
-                "assigned_asset_id": target_id,
-                "keywords_used": content_keywords,
-                "assets_found_count": len(found_assets)
+                "primary_asset_id": primary_id,
+                "accent_id": accent_id,
+                "render_elements": render_elements
             }
         )
-        db.add(log_entry)
+        db.add(new_decision)
+        
+        # 9. ACTUALIZAR LA SLIDE REAL (v67.2 - CRITICAL FIX)
+        slide.layout_slug = layout_slug
+        slide.render_elements = render_elements
+        slide.status = "planned"
+        
         db.commit()
         
     return True

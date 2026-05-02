@@ -99,6 +99,7 @@ def ingest_document(file_path, client_name="Internal", update_callback=None, bra
                 try:
                     batch_embeddings = get_embeddings_batch(batch_texts)
                     if not batch_embeddings or len(batch_embeddings) == 0:
+                        print(f"  [Worker] Batch {current_batch_idx} skipped: No valid content or embeddings found.", flush=True)
                         continue
                         
                     # Transactional block for this batch

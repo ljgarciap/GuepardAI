@@ -255,7 +255,7 @@ def extract_pptx_dna(file_path: str, source_filename: str,
 
 def refine_dna_with_llm(raw_data: dict, cb: Optional[Callable] = None) -> dict:
     if cb:
-        cb("DNA Visual — Sintetizando con LLM...", 92)
+        cb("Visual DNA — Synthesizing with LLM...", 92)
 
     prompt = f"""
 You are a Senior Brand Identity Expert. 
@@ -321,7 +321,7 @@ def extract_visual_dna(file_path: str, upload_dir: str,
     print(f"[DNA] Starting extraction for {source_filename} (Type: {ext})", flush=True)
 
     if cb:
-        cb("DNA Visual — Iniciando extracción...", 2)
+        cb("Visual DNA — Starting extraction...", 2)
 
     if ext == ".pdf":
         raw = extract_pdf_dna(file_path, source_filename, upload_dir, cb)

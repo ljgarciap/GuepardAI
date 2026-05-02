@@ -156,17 +156,17 @@ def extract_artistic_essence(file_path: str, upload_dir: str, cb: Optional[Calla
         return {"error": f"Procesamiento fallido: {e}"}
 
     # REGISTRO DE REFERENCIAS (v20.0: Desactivado para evitar ruido en biblioteca)
-    # Las images de visión se usan solo para análisis, no se registran como activos estratégicos.
+    # Vision images are only used for analysis, no se registran como activos estratégicos.
     print(f"[Essence] Phase 2: Structure Analysis (Without library registration to avoid noise)", flush=True)
 
-    # ANÁLISIS DE VISIÓN
+    # VISION ANALYSIS
     start_vision = time.time()
     print("[Essence] Phase 3: Starting Multimodal Vision Analysis...", flush=True)
     vision_result = analyze_with_vision(image_paths, cb)
     duration_vision = time.time() - start_vision
     
     if vision_result.get("error"):
-        print(f"[Essence] ERROR en Vision LLM tras {duration_vision:.2f}s.", flush=True)
+        print(f"[Essence] ERROR in Vision LLM after {duration_vision:.2f}s.", flush=True)
     else:
         print(f"[Essence] Phase 3: Vision Analysis completed en {duration_vision:.2f}s.", flush=True)
 

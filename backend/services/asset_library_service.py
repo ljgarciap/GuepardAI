@@ -43,7 +43,7 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
         print(f"  [Library] Asset already exists. Reusing.")
         return existing_record
 
-    # 2. Análisis Semántico v19.0: VISION-FIRST Categorization
+    # 2. Semantic Analysis v19.0: VISION-FIRST Categorization
     print(f"  [Library] Analyzing NEW asset with VISION: {filename}...")
     
     # 2.1 Visión para Identidad y Categoría Real

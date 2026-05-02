@@ -106,7 +106,7 @@ Content: {bullets}
 AVAILABLE ASSETS (Ranked by relevance):
 {found_assets}
 
-INSTRUCTION: Pick a layout and assign assets.
+INSTRUCTION: Pick a layout and assign assets. AVOID MONOTONY: Rotate layouts (asymmetric, editorial, hero) to maintain interest. DO NOT use the same layout_slug for more than 2 consecutive slides.
 
 Return ONLY JSON:
 {{ 

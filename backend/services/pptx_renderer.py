@@ -308,6 +308,14 @@ def _render_table_v1(slide, element, sx, sy):
     if max_len > 100: base_f_size = 12
     if max_len > 150: base_f_size = 10
     if max_len > 250: base_f_size = 9
+    # 2. Smart Column Widths (Avoid overflow) (v80.0)
+    try:
+        col_content_weights = [sum(len(str(r[c_idx])) for r in rows_data) for c_idx in range(cols)]
+        total_weight = sum(col_content_weights) + 1
+        for c_idx in range(cols):
+            ratio = col_content_weights[c_idx] / total_weight
+            table.columns[c_idx].width = int(width * max(0.15, ratio))
+    except: pass
 
     # Estilo de Celda (v16.3 - Corporate Style)
     for r_idx, row in enumerate(rows_data):
@@ -319,16 +327,17 @@ def _render_table_v1(slide, element, sx, sy):
             para = cell.text_frame.paragraphs[0]
             para.font.size = Pt(base_f_size)
             para.font.bold = (r_idx == 0) # Header bold
-            para.font.name = "Helvetica Neue"
+            para.font.name = element.get("font", "Arial")
             
             # Color de fondo (Header vs Body)
             fill = cell.fill
             fill.solid()
             if r_idx == 0:
-                fill.fore_color.rgb = RGBColor(0, 82, 163) # Tesco Blue
+                fill.fore_color.rgb = RGBColor(0, 82, 163) # Primary
                 para.font.color.rgb = RGBColor(255, 255, 255)
             else:
-                fill.fore_color.rgb = RGBColor(245, 245, 245)
+                bg_c = RGBColor(255, 255, 255) if r_idx % 2 == 0 else RGBColor(245, 245, 245)
+                fill.fore_color.rgb = bg_c
                 para.font.color.rgb = RGBColor(30, 30, 30)
 
     print(f"  [Renderer]   - TABLE RENDERED ({rows}x{cols}).")
@@ -406,7 +415,7 @@ def render_pptx_manifest(design_manifest, asset_map, output_path):
                 elif el_type in ["image", "logo"]:
                     _render_image_v2(slide, el, asset_map, sx, sy)
             except Exception as e:
-                print(f"  [Renderer] Error en elemento {el.get('type')}: {e}")
+                print(f"  [Renderer] Error in element {el.get('type')}: {e}")
 
     prs.save(output_path)
     print(f"[Renderer v16.1] PPTX saved successfully.", flush=True)

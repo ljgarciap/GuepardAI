@@ -18,7 +18,7 @@ import subprocess
 logger = logging.getLogger(__name__)
 
 def convert_pptx_to_pdf(pptx_path: str, output_dir: str) -> Optional[str]:
-    """Usa LibreOffice para convertir PPTX a PDF para análisis de visión fiel."""
+    """Uses LibreOffice to convert PPTX a PDF para análisis de visión fiel."""
     try:
         logger.info(f"  [Orchestrator] Converting {pptx_path} to PDF...")
         cmd = [

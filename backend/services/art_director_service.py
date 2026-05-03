@@ -3,7 +3,7 @@ import json
 import models
 import time
 from sqlalchemy.orm import Session
-from llm_provider import generate_json
+from llm_provider import generate_json, generate_ai_image
 from services.asset_library_service import find_best_assets
 from services.analyst_service import get_slide_visual_strategy
 from services.placeholder_service import get_placeholder_image
@@ -85,23 +85,44 @@ def plan_presentation_design(db: Session, job_id: int):
                 print(f"      - Level 2 Failed. Trying Level 3 (2-Tag Intersection)...")
                 # NIVEL 3: Intersección 2 Tags
                 asset_candidates = find_assets_by_tags(db, job.brand_id, search_keywords, min_matches=2, limit=12, exclude_ids=used_assets)
-                if asset_candidates:
-                    print(f"      - Level 3 Success: 2-tag match found")
+            if asset_candidates:
+                print(f"      - Level 3 Success: 2-tag match found")
+            else:
+                print(f"      - All Library Levels Failed for Slide {slide.slide_number}")
+                
+                # FASE B.X: GENERACIÓN BAJO DEMANDA (v7.0 "The Creator")
+                if job.allow_ai_images:
+                    print(f"    [ArtDirector] ACTION: Library empty. Triggering Gemini Creator...")
+                    from llm_provider import generate_ai_image
+                    from services.asset_library_service import register_asset
+                    
+                    gen_path = generate_ai_image(visual_intent)
+                    if gen_path:
+                        new_asset = register_asset(db, job.brand_id, gen_path, category="lifestyle_photos")
+                        if new_asset:
+                            asset_candidates = [(new_asset, 0.99)]
+                            print(f"      - Level AI Success: Created and registered Asset {new_asset.id}")
                 else:
-                    print(f"      - All Levels Failed for Slide {slide.slide_number}")
+                    print(f"    [ArtDirector] ACTION: AI Disabled. Falling back to placeholder.")
 
-        # Filtrar assets por umbral y jerarquía
+        # Filtrar assets por umbral y resolución (v8.5)
         filtered_assets = []
         audit_metadata = {"considered": [], "rejected": []}
+        
+        # Obtener el layout sugerido por el analista para el filtro de resolución
+        suggested_layout = strategy.get("grammar_type", "strategic_split")
+        requires_hi_res = suggested_layout in ["hero", "full_brand_overlay", "big_image"]
         
         for asset, score in asset_candidates:
             asset_info = {"id": asset.id, "score": score, "category": asset.category, "desc": asset.description[:50]}
             
-            # REGLA DE ORO v5.7: Umbral de confianza más realista para marca propia
-            is_valid_hero = asset.category in ["lifestyle_photos", "backgrounds"] and score >= 0.50
-            is_valid_accent = asset.category in ["design_elements", "logos"] and score >= 0.45
-            
-            if is_valid_hero or is_valid_accent:
+            # REGLA DE CALIDAD v8.5: Si es HERO, necesitamos resolución (mínimo 1024px)
+            res_ok = True
+            if requires_hi_res and asset.width and asset.width < 1024:
+                print(f"    [ArtDirector] REJECTED: Low resolution for Hero ({asset.width}x{asset.height})")
+                res_ok = False
+
+            if score >= 0.40 and res_ok: 
                 filtered_assets.append(asset_info)
                 audit_metadata["considered"].append(asset_info)
             else:
@@ -144,12 +165,32 @@ def plan_presentation_design(db: Session, job_id: int):
         # FASE E: ENSAMBLAJE DEL MANIFIESTO
         grammar_type = decision.get("grammar_type", "strategic_split")
         primary_id = decision.get("primary_asset_id")
+        accent_id = decision.get("accent_asset_id")
         
-        # GUARDIA ANTI-ALUCINACIÓN (v6.1)
+        # GUARDIA DE HIERRO (v8.5) - Prioridad Library y No Repetición
         valid_ids = [a["id"] for a in filtered_assets]
-        if primary_id and primary_id not in valid_ids:
-            print(f"    [ArtDirector] Hallucination! Chosen {primary_id} not in {valid_ids}. Forcing best match.")
-            primary_id = filtered_assets[0]["id"] if filtered_assets else None
+        
+        if (not primary_id or primary_id not in valid_ids) and filtered_assets:
+            print(f"    [ArtDirector] FORCING: LLM rejected/missed candidates. Using best library match: {filtered_assets[0]['id']}")
+            primary_id = filtered_assets[0]["id"]
+        
+        # FASE E.2: THE CREATOR (v8.5) - Solo si de verdad NO hay nada en la librería
+        if not primary_id and job.allow_ai_images:
+            print(f"    [ArtDirector] ACTION: Library empty. Triggering Gemini Creator...")
+            from llm_provider import generate_ai_image
+            from services.asset_library_service import register_asset
+            
+            gen_path = generate_ai_image(visual_intent)
+            if gen_path:
+                new_asset = register_asset(db, job.brand_id, gen_path, category="lifestyle_photos")
+                if new_asset:
+                    primary_id = new_asset.id
+                    print(f"    [ArtDirector] SUCCESS: AI Image generated and assigned.")
+
+        # Persistir en Memoria Visual Absoluta
+        if primary_id: used_assets.append(primary_id)
+        if accent_id: used_assets.append(accent_id)
+
         # Determinar contraste y tipografía (v5.7 - Color Corporativo Re-Fixed)
         current_title_color = p_color if p_color else "#0052A3"
         current_body_color = dna_record.text_main_color if dna_record else "#111111"
@@ -161,7 +202,6 @@ def plan_presentation_design(db: Session, job_id: int):
 
         primary_asset_data = None
         if primary_id:
-            used_assets.append(primary_id)
             asset_rec = db.query(models.BrandAsset).get(primary_id)
             if asset_rec:
                 primary_asset_data = {"type": "image", "source": os.path.basename(asset_rec.local_path)}

@@ -419,3 +419,63 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
 def get_embedding(text: str) -> Optional[list]:
     res = get_embeddings_batch([text])
     return res[0] if res else None
+
+@retry_with_backoff(retries=2)
+def generate_ai_image(prompt: str) -> Optional[str]:
+    """
+    Genera una imagen usando Google Gemini (Imagen 3) v7.1.
+    Devuelve la ruta local de la imagen guardada en /uploads.
+    """
+    gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+@retry_with_backoff(retries=2)
+def generate_ai_image(prompt: str) -> Optional[str]:
+    """
+    Genera una imagen usando Google Imagen 3 (v7.7 - Protocolo Oficial).
+    """
+    gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    if not gem_key or genai is None:
+        print("  [ImageGen] Gemini/API Key not available.")
+        return None
+
+    try:
+        genai.configure(api_key=gem_key)
+        model_name = get_system_config("model_image_gen", "imagen-3.0-generate-001")
+        
+        print(f"  [ImageGen] Using OFFICIAL ImageGenerationModel: {model_name}")
+        
+        # v7.7: Acceso directo al motor de Imagen
+        from google.generativeai import ImageGenerationModel
+        model = ImageGenerationModel(model_name)
+        
+        response = model.generate_images(
+            prompt=prompt,
+            number_of_images=1,
+            safety_filter_level="BLOCK_ONLY_HIGH",
+            person_generation="ALLOW_ADULT"
+        )
+        
+        if response and response.images:
+            img = response.images[0]
+            return _save_generated_image(img._data) # Usar los bytes crudos del objeto PIL/Image
+
+        print("  [ImageGen] FAILED: No images in response.")
+        return None
+        
+    except Exception as e:
+        print(f"  [ImageGen] ERROR: {e}")
+        return None
+
+def _save_generated_image(data: bytes) -> Optional[str]:
+    """Guarda bytes en /uploads."""
+    try:
+        import uuid
+        os.makedirs("uploads", exist_ok=True)
+        filename = f"gen_ai_{uuid.uuid4().hex[:8]}.png"
+        save_path = os.path.join("uploads", filename)
+        with open(save_path, "wb") as f:
+            f.write(data)
+        print(f"  [ImageGen] SUCCESS! Created: {save_path}")
+        return save_path
+    except Exception as e:
+        print(f"  [ImageGen] Save Error: {e}")
+        return None

@@ -144,12 +144,21 @@
         rows="2">
       </textarea>
       <div class="input-actions">
-        <span class="input-status" [class.ready]="prompt && selectedStyle && selectedKnowledge">
-          {{ isGenerating ? 'BUSY' : 'STANDBY' }}
-        </span>
-        <button class="btn-execute" (click)="generate()" [disabled]="!prompt || !selectedStyle || !selectedKnowledge || isGenerating">
-          SYNTHESIZE NOW
-        </button>
+        <div class="ai-toggle-group" [title]="'Enable this to generate brand images with Gemini if not found in library'">
+          <label class="toggle-switch">
+            <input type="checkbox" [(ngModel)]="allowAiImages" [disabled]="isGenerating">
+            <span class="slider round"></span>
+          </label>
+          <span class="toggle-label">AI IMAGES ({{ allowAiImages ? 'ON' : 'OFF' }})</span>
+        </div>
+        <div class="execution-controls">
+          <span class="input-status" [class.ready]="prompt && selectedStyle && selectedKnowledge">
+            {{ isGenerating ? 'BUSY' : 'STANDBY' }}
+          </span>
+          <button class="btn-execute" (click)="generate()" [disabled]="!prompt || !selectedStyle || !selectedKnowledge || isGenerating">
+            SYNTHESIZE NOW
+          </button>
+        </div>
       </div>
     </div>
   </div>

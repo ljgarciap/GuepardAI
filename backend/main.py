@@ -100,6 +100,7 @@ class PresentationRequest(BaseModel):
     prompt: str
     region: str = "LATAM"
     brand_id: Optional[int] = None
+    allow_ai_images: bool = False
 
 
 # ──────────────────────────────────────────────
@@ -433,7 +434,8 @@ async def generate_presentation(
         style_id=style_dna.id if style_dna else None,
         status="pending",
         progress=0,
-        current_step="Initializing isolated synthesis engine v23.0..."
+        current_step="Initializing isolated synthesis engine v23.0...",
+        allow_ai_images=request.allow_ai_images
     )
     db.add(job)
     db.commit()
@@ -444,7 +446,8 @@ async def generate_presentation(
         "style_filename": request.style_filename,
         "knowledge_filename": request.knowledge_filename,
         "prompt": request.prompt,
-        "region": request.region
+        "region": request.region,
+        "allow_ai_images": request.allow_ai_images
     }
     
     background_tasks.add_task(

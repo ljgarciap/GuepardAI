@@ -50,8 +50,11 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
     style_slug = req_data.get("style_filename")
     knowledge_source = req_data.get("knowledge_filename")
     region = req_data.get("region", "Global")
+    allow_ai_images = req_data.get("allow_ai_images", False)
     
-    # 1. Obtener Contexto RAG
+    # 0. Actualizar el Job con el permiso (v7.0)
+    job.allow_ai_images = allow_ai_images
+    db.commit()
     print(f"  [ContentService] Searching RAG context for Job {job_id}...")
     rag_context = search_rag(topic, knowledge_source)
     

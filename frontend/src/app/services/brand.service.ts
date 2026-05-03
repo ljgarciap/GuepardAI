@@ -91,14 +91,15 @@ export class BrandService {
     return this.http.get<any[]>(url);
   }
 
-  generatePresentation(prompt: string, styleFilename: string, knowledgeFilename: string, region: string = 'LATAM', brandId?: number): Observable<any> {
-    return this.http.post(`${this.apiUrl}/presentations/generate`, { 
-      prompt, 
-      style_filename: styleFilename, 
-      knowledge_filename: knowledgeFilename, 
-      region,
-      brand_id: brandId
-    });
+  generatePresentation(req: {
+    prompt: string, 
+    style_filename: string, 
+    knowledge_filename: string, 
+    region?: string, 
+    brand_id?: number, 
+    allow_ai_images?: boolean
+  }): Observable<any> {
+    return this.http.post(`${this.apiUrl}/presentations/generate`, req);
   }
 
   resetDatabase(): Observable<any> {

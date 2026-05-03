@@ -21,6 +21,11 @@ def seed_data():
                 "description": "Cadena de modelos de embedding. MISTRAL debe ser primero para mantener consistencia de 1024 dims."
             },
             {
+                "key": "model_image_gen",
+                "value": "imagen-3.0-generate-001",
+                "description": "Modelo de Google Gemini para generación de imágenes bajo demanda (Imagen 3)."
+            },
+            {
                 "key": "prompt_analyst_v1",
                 "value": """You are a Strategic Design Analyst. 
 Analyze the following slide content and define a Visual Strategy.

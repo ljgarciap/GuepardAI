@@ -80,21 +80,19 @@ def ingest_document(file_path, client_name="Internal", update_callback=None, bra
     if update_callback:
         update_callback(f"Analyzing {total_chunks} tactical fragments...", 10)
         
-    batch_size = 30 # Reduced batch size for better stability and more frequent updates
+    batch_size = 30 # Stable batch size to avoid Rate Limits (v12.5)
     inserted_total = 0
     start_sync = time.time()
     
     try:
         with engine.connect() as conn:
             for i in range(0, total_chunks, batch_size):
-                batch_slice = slice(i, i + batch_size)
-                batch_texts = valid_chunks[batch_slice]
-                current_batch_idx = (i // batch_size) + 1
-                total_batches = (total_chunks + batch_size - 1) // batch_size
+                batch_texts = valid_chunks[i:i+batch_size]
+                current_count = i + len(batch_texts)
                 
                 if update_callback:
                     perc = 10 + int((i / total_chunks) * 85)
-                    update_callback(f"Indexing (Batch {current_batch_idx}/{total_batches})...", perc)
+                    update_callback(f"Indexing fragments ({current_count}/{total_chunks})...", perc)
                 
                 try:
                     batch_embeddings = get_embeddings_batch(batch_texts)

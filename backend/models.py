@@ -39,9 +39,10 @@ class BrandVisualDna(Base):
     
     # Paleta de colores
     primary_color    = Column(String, default="#000000")
-    secondary_color  = Column(String, default="#404040")
+    secondary_color  = Column(String, default="#EE1C2E")
     background_color = Column(String, default="#FFFFFF")
     text_main_color  = Column(String, default="#111111")
+    text_on_dark     = Column(String, default="#FFFFFF") # Nueva columna para contraste
     accent_color     = Column(String, nullable=True)
 
     # Tipografía
@@ -286,7 +287,9 @@ class ArtDirectorDecision(Base):
     summary       = Column(String(500))
     reasoning     = Column(Text)
     
-    # Metadata técnica (ej. keywords usados, IDs considerados)
+    # Bitácora de Auditoría (v4.0)
+    prompt_used  = Column(Text, nullable=True)
+    response_raw = Column(Text, nullable=True)
     metadata_json = Column(JSONB, nullable=True)
     
     created_at   = Column(DateTime, default=datetime.datetime.utcnow)

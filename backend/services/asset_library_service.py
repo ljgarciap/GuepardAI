@@ -77,7 +77,9 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
                 rulebook = essence_record.art_direction_note
                 
         if brand_name != "Unknown Brand" or rulebook:
-            vision_prompt += f"\n\nCRITICAL BRAND CONTEXT:\nYou are extracting assets for the brand '{brand_name}'. Do NOT classify competitor logos as 'logos', classify them as 'design_elements' or 'noise'.\nBrand Rulebook Context: {rulebook[:1500]}"
+            vision_prompt += f"\n\nCRITICAL BRAND CONTEXT:\nYou are extracting assets for the brand '{brand_name}'. \n"
+            vision_prompt += "STRATEGIC RULE: High-quality professional portraits (humans in suits/business casual) are VALUABLE strategic assets for 'Team' and 'Leadership' sections. Do NOT classify them as 'noise' or 'off-brand' just for being corporate or lacking brand colors. If they are professional, classify them as 'lifestyle_photos'.\n"
+            vision_prompt += f"Brand Rulebook Context (Use as creative guide, not as a filter for human assets): {rulebook[:1500]}"
 
             
         vision_res = generate_vision_json(vision_prompt, [file_path])
@@ -121,11 +123,11 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
         intel = AssetIntelligence.categorize_by_similarity(embedding_fallback)
         category = intel["primary_category"]
 
-    # 3. Generar Embedding para Búsqueda (Independiente de la categoría)
-    from llm_provider import get_embeddings_batch
-    with open(file_path, "rb") as f:
-        image_bytes = f.read()
-    embedding = get_embeddings_batch([image_bytes])[0]
+    # 3. Generar Embedding para Búsqueda (v4.0 - Coherencia Vectorial)
+    # IMPORTANTE: Generamos el embedding del TEXTO descriptivo (Mistral 1024)
+    # para asegurar que coincida con el espacio vectorial del buscador.
+    from llm_provider import get_embedding
+    embedding = get_embedding(description)
 
     # 4. Guardar en DB
     new_asset = models.BrandAsset(
@@ -151,44 +153,44 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
 
 def find_best_assets(db: Session, brand_id: int, keywords: List[str], 
                       category: Optional[str] = None, limit: int = 5,
-                      exclude_ids: Optional[List[int]] = None) -> List[models.BrandAsset]:
+                      exclude_ids: Optional[List[int]] = None) -> List[tuple]:
     """
-    Busca los mejores activos usando Búsqueda Vectorial Semántica (v12.0).
+    Busca los mejores activos usando Búsqueda Vectorial Semántica (v4.0).
+    Devuelve lista de tuplas (Asset, Score).
     """
-    from sqlalchemy import or_
+    from sqlalchemy import or_, text
     
     # 1. Generar embedding de la búsqueda (la narrativa del slide)
     query_text = " ".join(keywords)
     query_embedding = None
     try:
+        from llm_provider import get_embedding
         query_embedding = get_embedding(query_text)
     except Exception as e:
         print(f"  [AssetLibrary] Embedding failed: {e}. Falling back to simple query.")
     
     if not query_embedding:
-        # Fallback a búsqueda simple si falla el embedding o no hay API Key
-        print("  [AssetLibrary] Performing keyword-based fallback search.")
+        # Fallback a búsqueda simple (Score 0.5 por defecto)
         query = db.query(models.BrandAsset).filter(
             or_(models.BrandAsset.brand_id == brand_id, models.BrandAsset.is_public == 1)
-        ).filter(models.BrandAsset.category != "noise") # EXCLUDE NOISE
+        ).filter(models.BrandAsset.category != "noise")
         if category: query = query.filter(models.BrandAsset.category == category)
         if exclude_ids: query = query.filter(models.BrandAsset.id.not_in(exclude_ids))
-        return query.limit(limit).all()
+        return [(a, 0.5) for a in query.limit(limit).all()]
 
-    # 2. Búsqueda Vectorial por Similitud Coseno (pgvector)
-    # Primero intentamos con los de la MARCA
-    sql_query = db.query(models.BrandAsset).filter(models.BrandAsset.brand_id == brand_id).filter(models.BrandAsset.category != "noise")
+    # 2. Búsqueda Vectorial por Similitud (pgvector)
+    # Calculamos 1 - distancia para obtener similitud (0.0 a 1.0)
+    sql_query = db.query(
+        models.BrandAsset,
+        (1.0 - models.BrandAsset.embedding.cosine_distance(query_embedding)).label("score")
+    ).filter(
+        or_(models.BrandAsset.brand_id == brand_id, models.BrandAsset.is_public == 1)
+    ).filter(models.BrandAsset.category != "noise")
+    
     if category: sql_query = sql_query.filter(models.BrandAsset.category == category)
     if exclude_ids: sql_query = sql_query.filter(models.BrandAsset.id.not_in(exclude_ids))
     
-    results = sql_query.order_by(models.BrandAsset.embedding.cosine_distance(query_embedding)).limit(limit).all()
+    results = sql_query.order_by(text("score DESC")).limit(limit).all()
     
-    if not results:
-        # FALLBACK: Buscar en los activos PÚBLICOS/GLOBALES
-        print(f"  [Library] No brand assets found for {brand_id}. Falling back to Global Library...")
-        sql_global = db.query(models.BrandAsset).filter(models.BrandAsset.is_public == 1).filter(models.BrandAsset.category != "noise")
-        if category: sql_global = sql_global.filter(models.BrandAsset.category == category)
-        if exclude_ids: sql_global = sql_global.filter(models.BrandAsset.id.not_in(exclude_ids))
-        results = sql_global.order_by(models.BrandAsset.embedding.cosine_distance(query_embedding)).limit(limit).all()
-    
-    return results
+    # Retornar como lista de tuplas (asset, score)
+    return [(r[0], float(r[1])) for r in results]

@@ -88,20 +88,25 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
     response = generate_json(prompt)
     slides_data = response.get("slides", [])
     
-    # 4. Persistir Slides en DB
-    print(f"  [ContentService] Saving {len(slides_data)} slides to DB...")
+    print(f"  [ContentService] Saving {len(slides_data)} slides with Slide-Specific RAG...")
     # Limpiar si ya existen (por reintentos)
     db.query(models.PresentationSlide).filter(models.PresentationSlide.job_id == job_id).delete()
     
     for i, s_data in enumerate(slides_data):
+        # RAG QUIRÚRGICO: Por cada slide, buscamos su contexto específico
+        slide_title = s_data.get("title", "Untitled Slide")
+        print(f"    [ContentService] Harvesting specific RAG for: {slide_title}...")
+        specific_rag = search_rag(slide_title, knowledge_source, k=5)
+
         new_slide = models.PresentationSlide(
             job_id=job_id,
             slide_number=i + 1,
-            title=s_data.get("title", "Untitled Slide"),
+            title=slide_title,
             content_json={
                 "bullets": s_data.get("bullets", []),
                 "objective": s_data.get("objective", ""),
-                "visual_intent": s_data.get("visual_intent", "")
+                "visual_intent": s_data.get("visual_intent", ""),
+                "rag_source": specific_rag # El alimento para el Analista
             },
             status="content_ready"
         )

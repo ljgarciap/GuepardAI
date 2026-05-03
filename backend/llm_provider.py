@@ -286,7 +286,7 @@ def base_64_encode(data):
     import base64
     return base64.b64encode(data).decode('utf-8')
 
-@retry_with_backoff(retries=2)
+@retry_with_backoff(retries=5)
 def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] = None) -> List[Optional[list]]:
     """
     UNIVERSAL EMBEDDING ENGINE (v18.6) - Multimodal & Normalized.
@@ -297,7 +297,7 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
     
     # 1. Determinar modelos a usar
     # v41.0: Use a more robust chain and fix Gemini names
-    model_chain = get_system_config("embedding_model_chain", "models/text-embedding-004,mistral-embed")
+    model_chain = get_system_config("embedding_model_chain", "mistral-embed,models/text-embedding-004")
     
     models_to_try = [m.strip() for m in model_chain.split(",")]
     last_error = None
@@ -306,12 +306,13 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
     TARGET_DIM = 1024
 
     def normalize_vector(vec: list, target: int) -> list:
-        """Adjusts vector dimension by truncation or padding."""
+        """Garantiza la dimensión del vector sin corromper la integridad (v4.0)."""
         current = len(vec)
         if current == target: return vec
-        if current > target: return vec[:target]
-        # Padding con ceros si es menor
-        return vec + [0.0] * (target - current)
+        if current > target: return vec[:target] # Truncado es aceptable en algunos modelos
+        
+        # ERROR: No rellenar con ceros, esto causa 'ceguera vectorial' (Mismatch)
+        raise ValueError(f"Vector dimension mismatch: Model returned {current}, but DB requires {target}. Zero-padding is disabled to prevent search blindness.")
 
     for current_model in models_to_try:
         try:
@@ -327,33 +328,42 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
                 results = []
                 for item in inputs:
                     try:
-                        # ADAPTADOR INTELIGENTE DE EMBEDDINGS
+                        # ADAPTADOR INTELIGENTE (v4.0): Forzamos la dimensión a 1024 nativamente
                         m_name = current_model if current_model.startswith("models/") else f"models/{current_model}"
                         
                         try:
                             if isinstance(item, str):
-                                res = genai.embed_content(model=m_name, content=item, task_type="retrieval_document")
+                                res = genai.embed_content(
+                                    model=m_name, content=item, 
+                                    task_type="retrieval_document",
+                                    output_dimensionality=TARGET_DIM # <-- EL TRADUCTOR NATIVO
+                                )
                             else:
                                 res = genai.embed_content(
                                     model=m_name,
                                     content={'mime_type': 'image/jpeg', 'data': item},
-                                    task_type="retrieval_document"
+                                    task_type="retrieval_document",
+                                    output_dimensionality=TARGET_DIM # <-- EL TRADUCTOR NATIVO
                                 )
-                            results.append(normalize_vector(res["embedding"], TARGET_DIM))
+                            results.append(res["embedding"]) # Ya viene en 1024
                         except Exception as gem_err:
                             if ("not found" in str(gem_err).lower() or "404" in str(gem_err)) and "models/" in m_name:
-                                # Reintento sin prefijo
                                 alt_name = m_name.replace("models/", "")
                                 print(f"  [Embeddings] 404 with prefix. Retrying with: {alt_name}", flush=True)
                                 if isinstance(item, str):
-                                    res = genai.embed_content(model=alt_name, content=item, task_type="retrieval_document")
+                                    res = genai.embed_content(
+                                        model=alt_name, content=item, 
+                                        task_type="retrieval_document",
+                                        output_dimensionality=TARGET_DIM
+                                    )
                                 else:
                                     res = genai.embed_content(
                                         model=alt_name,
                                         content={'mime_type': 'image/jpeg', 'data': item},
-                                        task_type="retrieval_document"
+                                        task_type="retrieval_document",
+                                        output_dimensionality=TARGET_DIM
                                     )
-                                results.append(normalize_vector(res["embedding"], TARGET_DIM))
+                                results.append(res["embedding"])
                             else:
                                 print(f"  [Embeddings] Gemini FATAL error (prefix={m_name}): {gem_err}", flush=True)
                                 raise gem_err

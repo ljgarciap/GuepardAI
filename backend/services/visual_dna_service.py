@@ -1,8 +1,8 @@
 """
 visual_dna_service.py — PowerAI
 Visual DNA Extraction: colors, fonts, physical assets.
-Tool: Programmatic (fitz / python-pptx) + LLM texto ligero.
-v30.0 — Syntax Corrected & Omnivorous Mode.
+Tool: Programmatic (fitz / python-pptx) + Light LLM Synthesis.
+v31.0 — 100% English Logs & Syntax Stability.
 """
 import os
 import json
@@ -62,7 +62,7 @@ def extract_pdf_dna(file_path: str, source_filename: str,
 
     for i, page in enumerate(doc):
         if cb:
-            cb(f"DNA Visual — PDF page {i+1}/{total}", int((i + 1) / total * 90))
+            cb(f"Visual DNA — PDF page {i+1}/{total}", int((i + 1) / total * 40))
 
         # Texto → fuentes y colores
         for block in page.get_text("dict").get("blocks", []):
@@ -216,7 +216,7 @@ def extract_pptx_dna(file_path: str, source_filename: str,
     # --- 2. SLIDES ---
     print(f"  [DNA] Scanning Slides... ", flush=True)
     for i, slide in enumerate(prs.slides):
-        if cb: cb(f"DNA Visual — Slide {i+1}/{total_slides}", int((i+1)/total_slides * 90))
+        if cb: cb(f"Visual DNA — Slide {i+1}/{total_slides}", int((i+1)/total_slides * 40))
         try:
             if slide.background.fill.type == 6:
                 img = slide.background.fill.picture.image

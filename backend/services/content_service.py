@@ -50,8 +50,11 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
     style_slug = req_data.get("style_filename")
     knowledge_source = req_data.get("knowledge_filename")
     region = req_data.get("region", "Global")
+    allow_ai_images = req_data.get("allow_ai_images", False)
     
-    # 1. Obtener Contexto RAG
+    # 0. Actualizar el Job con el permiso (v7.0)
+    job.allow_ai_images = allow_ai_images
+    db.commit()
     print(f"  [ContentService] Searching RAG context for Job {job_id}...")
     rag_context = search_rag(topic, knowledge_source)
     
@@ -79,29 +82,36 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
     - bullets: 3-5 high-value points
     - objective: What is this slide trying to achieve?
     - visual_intent: A short (10 words) descriptive prompt of the ideal image for this slide.
+    - visual_tags: A list of 5-7 simple, descriptive tags for image searching (e.g., ["store", "digital", "customer"]).
     
     Return ONLY JSON:
-    {{ "slides": [ {{ "title": "...", "bullets": ["..."], "objective": "...", "visual_intent": "..." }} ] }}
+    {{ "slides": [ {{ "title": "...", "bullets": ["..."], "objective": "...", "visual_intent": "...", "visual_tags": ["tag1", "tag2", "tag3"] }} ] }}
     """
     
     print(f"  [ContentService] Calling LLM for flexible content synthesis...")
     response = generate_json(prompt)
     slides_data = response.get("slides", [])
     
-    # 4. Persistir Slides en DB
-    print(f"  [ContentService] Saving {len(slides_data)} slides to DB...")
+    print(f"  [ContentService] Saving {len(slides_data)} slides with Slide-Specific RAG...")
     # Limpiar si ya existen (por reintentos)
     db.query(models.PresentationSlide).filter(models.PresentationSlide.job_id == job_id).delete()
     
     for i, s_data in enumerate(slides_data):
+        # RAG QUIRÚRGICO: Por cada slide, buscamos su contexto específico
+        slide_title = s_data.get("title", "Untitled Slide")
+        print(f"    [ContentService] Harvesting specific RAG for: {slide_title}...")
+        specific_rag = search_rag(slide_title, knowledge_source, k=5)
+
         new_slide = models.PresentationSlide(
             job_id=job_id,
             slide_number=i + 1,
-            title=s_data.get("title", "Untitled Slide"),
+            title=slide_title,
             content_json={
                 "bullets": s_data.get("bullets", []),
                 "objective": s_data.get("objective", ""),
-                "visual_intent": s_data.get("visual_intent", "")
+                "visual_intent": s_data.get("visual_intent", ""),
+                "visual_tags": s_data.get("visual_tags", []),
+                "rag_source": specific_rag # El alimento para el Analista
             },
             status="content_ready"
         )

@@ -282,6 +282,75 @@ def render_image(slide, element, asset_map, sx, sy):
 # MAIN RENDERER
 # ──────────────────────────────────────────────
 
+def _render_oval(slide, element, sx, sy):
+    """Renderiza un círculo/óvalo con texto centrado (Badge Style)."""
+    geo = element.get("geometry", {})
+    style = element.get("style", {})
+    
+    shape = slide.shapes.add_shape(
+        MSO_SHAPE.OVAL,
+        sx(geo["left"]), sy(geo["top"]),
+        sx(geo["width"]), sy(geo["height"])
+    )
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = hex_to_rgb(style.get("color", "#EE1C2E"))
+    shape.line.fill.background()
+    set_shape_transparency(shape, style.get("opacity", 1.0))
+    
+    if element.get("content"):
+        tf = shape.text_frame
+        tf.text = str(element["content"])
+        tf.paragraphs[0].alignment = PP_ALIGN.CENTER
+        run = tf.paragraphs[0].runs[0]
+        run.font.size = Pt(style.get("font_size", 14))
+        run.font.color.rgb = RGBColor(255, 255, 255)
+        run.font.bold = True
+
+def _render_person_bleed(slide, element, asset_map, sx, sy):
+    """Renderiza una persona 'a sangre' pegada al borde inferior/lateral."""
+    img_basename = element.get("source")
+    raw_path = asset_map.get(img_basename)
+    geo = element.get("geometry", {"left": 50, "top": 0, "width": 50, "height": 100})
+    
+    if raw_path and os.path.exists(raw_path):
+        # Anchor specific to bottom right for person bleed
+        pic = slide.shapes.add_picture(
+            raw_path, 
+            sx(geo["left"]), sy(geo["top"]), 
+            sx(geo["width"]), sy(geo["height"])
+        )
+        # Cover strategy with bottom alignment
+        pic.crop_bottom = 0
+        print(f"  [Renderer] Person Bleed rendered: {img_basename}")
+
+def _render_character_replace(slide, element, asset_map, sx, sy):
+    """
+    Técnica de Elite: Reemplaza un caracter específico (ej: '0') por una imagen.
+    Calcula el espaciado tipográfico para insertar el asset.
+    """
+    text = element.get("text", "")
+    target = element.get("target", "0")
+    img_basename = element.get("source")
+    raw_path = asset_map.get(img_basename)
+    geo = element.get("geometry", {"left": 10, "top": 10, "width": 80, "height": 20})
+    
+    if not text or not raw_path: return
+    
+    # Split text around target
+    parts = text.split(target, 1)
+    if len(parts) < 2: return # Target not found
+    
+    # Render part 1, Image, part 2
+    # Nota: Simplificado para v1.0, asumiendo anchos proporcionales
+    print(f"  [Renderer] Character Replace: Replacing '{target}' in '{text}' with {img_basename}")
+    # TODO: Implement accurate font-width calculation for precise positioning
+    # For now, we render the original text and overlay the image at estimated position
+    text_shape = slide.shapes.add_textbox(sx(geo["left"]), sy(geo["top"]), sx(geo["width"]), sy(geo["height"]))
+    text_shape.text_frame.text = text.replace(target, "  ") # Leave space
+    
+    img_w = geo["width"] * 0.15 # Estimated width of a character
+    pic = slide.shapes.add_picture(raw_path, sx(geo["left"] + 20), sy(geo["top"]), sx(img_w), sy(geo["height"]))
+
 def _render_table_v1(slide, element, sx, sy):
     """
     Dibuja una tabla profesional en PPTX a partir de una matriz de datos.
@@ -308,6 +377,14 @@ def _render_table_v1(slide, element, sx, sy):
     if max_len > 100: base_f_size = 12
     if max_len > 150: base_f_size = 10
     if max_len > 250: base_f_size = 9
+    # 2. Smart Column Widths (Avoid overflow) (v80.0)
+    try:
+        col_content_weights = [sum(len(str(r[c_idx])) for r in rows_data) for c_idx in range(cols)]
+        total_weight = sum(col_content_weights) + 1
+        for c_idx in range(cols):
+            ratio = col_content_weights[c_idx] / total_weight
+            table.columns[c_idx].width = int(width * max(0.15, ratio))
+    except: pass
 
     # Estilo de Celda (v16.3 - Corporate Style)
     for r_idx, row in enumerate(rows_data):
@@ -319,16 +396,17 @@ def _render_table_v1(slide, element, sx, sy):
             para = cell.text_frame.paragraphs[0]
             para.font.size = Pt(base_f_size)
             para.font.bold = (r_idx == 0) # Header bold
-            para.font.name = "Helvetica Neue"
+            para.font.name = element.get("font", "Arial")
             
             # Color de fondo (Header vs Body)
             fill = cell.fill
             fill.solid()
             if r_idx == 0:
-                fill.fore_color.rgb = RGBColor(0, 82, 163) # Tesco Blue
+                fill.fore_color.rgb = RGBColor(0, 82, 163) # Primary
                 para.font.color.rgb = RGBColor(255, 255, 255)
             else:
-                fill.fore_color.rgb = RGBColor(245, 245, 245)
+                bg_c = RGBColor(255, 255, 255) if r_idx % 2 == 0 else RGBColor(245, 245, 245)
+                fill.fore_color.rgb = bg_c
                 para.font.color.rgb = RGBColor(30, 30, 30)
 
     print(f"  [Renderer]   - TABLE RENDERED ({rows}x{cols}).")
@@ -397,8 +475,14 @@ def render_pptx_manifest(design_manifest, asset_map, output_path):
                 
                 if el_type == "image" and role == "background":
                     render_background_image_dynamic(slide, el, asset_map, slide_w_in, slide_h_in)
-                elif el_type == "shape" or role in ("horizontal_bar", "vertical_bar", "footer_line", "header_zone", "brand_bar", "overlay", "sidebar_zone", "content_panel", "corner_accent", "pill_accent", "brand_dot"):
-                    _render_decorator_v2(slide, el, sx, sy)
+                elif role == "person_bleed":
+                    _render_person_bleed(slide, el, asset_map, sx, sy)
+                elif role == "attribution_circle" or el_type == "oval":
+                    _render_oval(slide, el, sx, sy)
+                elif el_type == "character_replace":
+                    _render_character_replace(slide, el, asset_map, sx, sy)
+                elif el_type == "shape" or role in ("horizontal_bar", "vertical_bar", "footer_line", "header_zone", "brand_bar", "overlay", "sidebar_zone", "content_panel", "corner_accent", "pill_accent", "brand_dot", "quote_mark_bg", "attribution_badge"):
+                    render_shape(slide, el, sx, sy)
                 elif el_type == "text":
                     _render_text_v2(slide, el, sx, sy)
                 elif el_type == "table":
@@ -406,7 +490,7 @@ def render_pptx_manifest(design_manifest, asset_map, output_path):
                 elif el_type in ["image", "logo"]:
                     _render_image_v2(slide, el, asset_map, sx, sy)
             except Exception as e:
-                print(f"  [Renderer] Error en elemento {el.get('type')}: {e}")
+                print(f"  [Renderer] Error in element {el.get('type')}: {e}")
 
     prs.save(output_path)
     print(f"[Renderer v16.1] PPTX saved successfully.", flush=True)
@@ -551,10 +635,13 @@ def render_pptx_from_db(job_id: int, asset_map: dict, output_path: str):
     }
     
     for s in slides_db:
+        # Extraer la estructura anidada del v3.0 Grammar Engine
+        raw_render = s.render_elements or {}
         manifest["slides"].append({
             "slide_number": s.slide_number,
             "title": s.title,
-            "elements": s.render_elements,
+            "elements": raw_render.get("elements", []),
+            "grammar_type": raw_render.get("grammar_type", s.layout_slug),
             "layout": s.layout_slug
         })
         

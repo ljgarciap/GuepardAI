@@ -1,7 +1,7 @@
 """
 ingestion_orchestrator.py — PowerAI
-Orquestador de procesos de ingesta con Responsabilidad Única (v21.0).
-Separa el DNA Visual, la Esencia Artística y el Conocimiento Corporativo.
+Ingestion orchestration with Single Responsibility (v22.0).
+Separates Visual DNA, Artistic Essence, and Corporate Knowledge.
 """
 import os
 import time
@@ -18,7 +18,7 @@ import subprocess
 logger = logging.getLogger(__name__)
 
 def convert_pptx_to_pdf(pptx_path: str, output_dir: str) -> Optional[str]:
-    """Usa LibreOffice para convertir PPTX a PDF para análisis de visión fiel."""
+    """Uses LibreOffice to convert PPTX a PDF para análisis de visión fiel."""
     try:
         logger.info(f"  [Orchestrator] Converting {pptx_path} to PDF...")
         cmd = [
@@ -88,6 +88,10 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
             record.primary_font     = dna.get("primary_font", "Arial")
             record.raw_extraction   = dna
 
+            # Persistencia de Dimensiones Físicas (v12.5 - Anti-Stretch)
+            record.slide_width_inches  = dna.get("slide_width_inches", 13.33)
+            record.slide_height_inches = dna.get("slide_height_inches", 7.5)
+
             # REGISTRO ATÓMICO DE ACTIVOS (v20.5 - PARALLEL BATCHING v24.0)
             final_library_assets = {}
             raw_assets = dna.get("extracted_assets", {})
@@ -142,8 +146,8 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
                     for future in concurrent.futures.as_completed(future_to_item):
                         processed_count += 1
                         
-                        # DYNAMIC PROGRESS BAR: 50% to 95%
-                        prog_percent = 50 + int((processed_count / total_items) * 45)
+                        # DYNAMIC PROGRESS BAR: 40% to 95%
+                        prog_percent = 40 + int((processed_count / total_items) * 55)
                         cb(f"Analyzing images with Vision LLM ({processed_count}/{total_items})...", prog_percent)
                         
                         res = future.result()

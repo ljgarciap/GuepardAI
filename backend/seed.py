@@ -1,186 +1,92 @@
-"""
-seed.py — PowerAI
-Initial data script. Idempotent: can be run multiple times without duplicating.
-Uso: ./venv/bin/python3 seed.py
-"""
-from database import SessionLocal
+import datetime
+import os
+import json
+from sqlalchemy.orm import Session
+from database import SessionLocal, engine
 import models
-
 
 def seed_data():
     db = SessionLocal()
     try:
-        print("[Seeder] Iniciando sembrado de datos...")
-
-        # 1. Master Brand / Pública (ID -1)
-        public_brand = db.query(models.Brand).filter(models.Brand.id == -1).first()
-        if not public_brand:
-            print("  [+] Creating Public Brand (ID -1)...")
-            db.add(models.Brand(
-                id=-1,
-                name="Public Library",
-                about="Global container for public assets and knowledge.",
-                core_value="Universal Knowledge"
-            ))
-            db.commit()
-        else:
-            print("  [=] Public Brand already exists, skipping.")
-
-        # 2. Idiomas (Prioridad correcta)
-        langs = [
-            {"code": "UK",  "name": "English (UK)",    "priority": 1},
-            {"code": "USA", "name": "English (USA)",   "priority": 2},
-            {"code": "FR",  "name": "Français",        "priority": 3},
-            {"code": "ES",  "name": "Español (LATAM)", "priority": 4},
-        ]
-        for l in langs:
-            existing = db.query(models.Language).filter(models.Language.code == l["code"]).first()
-            if existing:
-                existing.priority = l["priority"]  # Actualizar prioridad si existe
-                print(f"  [=] Idioma {l['name']} actualizado (prioridad {l['priority']}).")
-            else:
-                db.add(models.Language(**l))
-                print(f"  [+] Idioma {l['name']} creado.")
-
-        # 3. System Configurations (Real Production Models)
-        # Eliminar placeholders errados de ejecuciones previas
-        stale_keys = ["default_llm_model", "vision_llm_model", "max_slides_default"]
-        db.query(models.SystemConfig).filter(
-            models.SystemConfig.key.in_(stale_keys)
-        ).delete(synchronize_session=False)
-
+        # 1. Configuración de Modelos y API
         configs = [
             {
-                "key": "extraction_synthesis_model",
-                "value": "mistral/mistral-large-latest,models/gemini-2.5-flash",
-                "description": "Model chain for text synthesis y RAG"
-            },
-            {
-                "key": "art_director_model",
-                "value": "models/gemini-2.5-flash,mistral/mistral-large-latest",
-                "description": "Cadena de modelos para decisiones del Art Director"
-            },
-            {
-                "key": "extraction_vision_model",
-                "value": "models/gemini-2.5-flash",
-                "description": "Vision Model for Visual DNA extraction (PPTX/PDF)"
+                "key": "asset_score_threshold",
+                "value": "0.70",
+                "description": "Umbral mínimo de similitud (0.0 a 1.0) para aceptar un asset de marca."
             },
             {
                 "key": "embedding_model_chain",
-                "value": "mistral-embed,models/gemini-embedding-2",
-                "description": "Embedding chain for semantic search RAG"
+                "value": "mistral-embed,models/text-embedding-004",
+                "description": "Cadena de modelos de embedding. MISTRAL debe ser primero para mantener consistencia de 1024 dims."
             },
             {
-                "key": "vector_dim",
-                "value": "1024",
-                "description": "Embedding vector dimension"
-            },
-            {
-                "key": "global_fallback_model",
-                "value": "models/gemini-2.5-flash",
-                "description": "Modelo de seguridad absoluta si fallan las cadenas principales"
-            },
-            {
-                "key": "fallback_embedding_model",
-                "value": "models/text-embedding-004",
-                "description": "Modelo de embedding de seguridad"
-            },
-            {
-                "key": "prompt_art_director_v1",
-                "value": """### ROLE: SENIOR BRAND ART DIRECTOR
-{strategic_context}
-
-### BRAND RULEBOOK (STRICT ADHERENCE):
-{brand_rulebook}
-
-### RECENT VISUAL THEMES (DIVERSITY PROTECTION):
-{used_descriptions}
-
-### OPERATIONAL CONSTRAINTS:
-1. NO OVERLAP: Maintain strict margins between title, body, and assets.
-2. DATA COMPONENTS: If the slide content contains metrics or comparisons, you MUST request a 'table'.
-
-Slide Title: {slide_title}
-Content: {bullets}
-
-AVAILABLE ASSETS (Ranked by relevance):
-{found_assets}
-
-INSTRUCTION: Pick a layout and assign assets.
-
-Return ONLY JSON:
-{{ 
-  "layout_slug": "marketing-hero | split-right | full-bleed | two-column | asymmetric-overlay | editorial-magazine | dark-hero", 
-  "primary_asset_id": INTEGER_ID_OR_NULL, 
-  "accent_id": INTEGER_ID_OR_NULL,
-  "table": {{
-     "data": [["Header1", "Header2"], ["Row1Col1", "Row1Col2"]],
-     "reasoning": "Why a table is needed here."
-  }},
-  "reasoning": "Strategy-driven explanation."
-}}""",
-                "description": "Dynamic prompt for Art Director"
+                "key": "model_image_gen",
+                "value": "imagen-3.0-generate-001",
+                "description": "Modelo de Google Gemini para generación de imágenes bajo demanda (Imagen 3)."
             },
             {
                 "key": "prompt_analyst_v1",
-                "value": """Analyze these brand manual slides and extract the VISUAL DNA and a DESIGN RULEBOOK.
+                "value": """You are a Strategic Design Analyst. 
+Analyze the following slide content and define a Visual Strategy.
 
-1. VISUAL DNA (Structural): Sidebars, headers, footers, corner styles, and spacing.
-2. DESIGN RULEBOOK (Behavioral): Extract specific laws mentioned in the manual. 
-   - Examples: "Fruits only in titles", "Never overlap text on faces", "Use only black backgrounds for metrics".
-   - Write this rulebook in Markdown format.
+CONTENT:
+Title: {slide_title}
+Bullets: {bullets}
+RAG Context: {rag_context}
+
+YOUR GOAL:
+1. Define the 'visual_intent' (Use CONCRETE OBJECTS, e.g., "A modern store with customers", NOT abstract concepts like "Innovation").
+2. Identify 3-5 keywords for image search. Be specific (e.g., "shopping cart", "digital screen", "smiling person").
+3. Determine if this slide requires a HERO image.
 
 OUTPUT ONLY JSON:
-{
-  "visual_strategy": "string description",
-  "branding_rulebook": "Markdown string containing the extracted design laws",
-  "structural_archetypes": {
-    "persistent_blocks": [
-       { "role": "sidebar", "geometry": {"top":0, "left":0, "width":20, "height":100}, "color_source": "primary" }
-    ]
-  },
-  "design_gestures": { "corner_style": "sharp", "spacing": "airy" }
-}""",
-                "description": "Dynamic prompt for Brand Analyst"
+{{
+  "visual_intent": "...",
+  "suggested_keywords": ["concrete_term1", "concrete_term2"],
+  "requires_hero": true/false,
+  "narrative_tone": "executive"
+}}""",
+                "description": "Strategic Analyst prompt v1.1 - Concrete Keywords"
             },
             {
-                "key": "prompt_classifier_v1",
-                "value": """Analyze this image with DESIGNER RIGOR and return a JSON with:
-- 'category': Choose one: 
-    * 'lifestyle_photos': Complex scenes, people, stores, or environments.
-    * 'design_elements': Single isolated objects (fruits, products), icons, or accents on solid/transparent backgrounds.
-    * 'logos': Brand identities.
-    * 'backgrounds': Textures or full-page backgrounds.
-    * 'noise': Blank, blurry, low-quality, off-brand, or useless images. If the image does NOT align with the brand strategy, it is noise.
-- 'is_person': boolean.
-- 'background_type': 'transparent', 'solid_white', 'solid_black', 'complex', or 'other'.
-- 'description': CRITICAL INSTRUCTION: Provide a CONCISE, analytical description (Max 3 sentences). Focus strictly on the strategic value, emotional tone, and subject matter, rather than exhaustive physical details.
-- 'tags': 5 semantic keywords.""",
-                "description": "Dynamic prompt for asset classification"
+                "key": "prompt_art_director_v1",
+                "value": """You are a Senior Art Director. 
+Follow the VISUAL STRATEGY: {visual_strategy}
+
+ASSET HIERARCHY:
+- 'lifestyle_photos': HERO only.
+- 'design_elements': ACCENTS only.
+
+RULES:
+1. If 'primary_asset_id' is NULL (no suitable hero), you MUST use "impact_number" or "two_column" to fill the space. 
+2. NEVER use "strategic_split" if there is no image.
+
+OUTPUT ONLY JSON:
+{{
+  "grammar_type": "...", 
+  "primary_asset_id": <int or null>, 
+  "accent_asset_id": <int or null>,
+  "reasoning": "..."
+}}""",
+                "description": "Art Director planning prompt v4.1 - Layout Adaptability"
             }
         ]
-        for c in configs:
-            existing = db.query(models.SystemConfig).filter(
-                models.SystemConfig.key == c["key"]
-            ).first()
+
+        for cfg in configs:
+            existing = db.query(models.SystemConfig).filter(models.SystemConfig.key == cfg["key"]).first()
             if existing:
-                existing.value = c["value"]
-                existing.description = c["description"]
-                print(f"  [=] Config '{c['key']}' actualizada.")
+                existing.value = cfg["value"]
             else:
-                db.add(models.SystemConfig(**c))
-                print(f"  [+] Config '{c['key']}' creada.")
-
+                db.add(models.SystemConfig(key=cfg["key"], value=cfg["value"]))
+        
         db.commit()
-        print("[Seeder] ✅ Sembrado completado exitosamente.")
-
+        print("  [Seed] System Configs (v3.1) seeded successfully.")
     except Exception as e:
-        print(f"[Seeder] ❌ ERROR: {e}")
         db.rollback()
-        raise
+        print(f"  [Seed] Error seeding configs: {e}")
     finally:
         db.close()
-
 
 if __name__ == "__main__":
     seed_data()

@@ -23,6 +23,7 @@ export class GeneratorComponent implements OnInit {
   selectedKnowledge: string = '';
   prompt: string = '';
   selectedRegion: string = '';
+  allowAiImages: boolean = true;
   
   // --- OPTIONS ---
   brands: any[] = [];
@@ -114,14 +115,16 @@ export class GeneratorComponent implements OnInit {
     this.synthesisLogs = [];
     this.progress = 0;
     this.addLog('Strategic Orchestrator', 'Initiating neural synthesis sequence...');
+    console.log("[SynthesisStudio] allowAiImages state at call:", this.allowAiImages);
     
-    this.brandService.generatePresentation(
-      this.prompt, 
-      this.selectedStyle, 
-      this.selectedKnowledge, 
-      this.selectedRegion, 
-      this.selectedBrandId || undefined
-    ).subscribe({
+    this.brandService.generatePresentation({
+      prompt: this.prompt,
+      style_filename: this.selectedStyle,
+      knowledge_filename: this.selectedKnowledge,
+      region: this.selectedRegion,
+      brand_id: this.selectedBrandId || undefined,
+      allow_ai_images: this.allowAiImages
+    }).subscribe({
         next: (res: any) => {
           this.addLog('Analyst', 'Strategic command received and validated.');
           this.startPolling(res.job_id);

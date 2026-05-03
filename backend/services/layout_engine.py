@@ -89,7 +89,7 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
     model_name = pref_model.value if pref_model else "models/gemini-2.5-flash"
     db.close()
 
-    # 3. Director de Arte Senior - Análisis Slide a Slide (v18.7)
+    # 3. Director de Arte Senior - Slide by Slide Analysis (v18.7)
     # Buscamos slides de referencia del manual original para máxima fidelidad
     from services.asset_library_service import find_best_assets
     

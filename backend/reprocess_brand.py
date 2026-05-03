@@ -9,17 +9,17 @@ import models
 load_dotenv()
 
 def reprocess(filename, source_path):
-    print(f"--- Reprocesando: {filename} ---")
+    print(f"--- Reprocessing: {filename} ---")
     
-    # 1. Extraer Visual DNA
-    print("1/2 Extrayendo DNA Visual (Colores, Fuentes)...")
+    # 1. Extract Visual DNA
+    print("1/2 Extracting Visual DNA (Colors, Fonts)...")
     dna = extract_visual_dna(source_path, "uploads")
     
-    # 2. Extraer Artistic Essence (Vision LLM)
-    print("2/2 Analizando Esencia Artística (Vision LLM con Claude 3.7/Gemini 2.5)...")
+    # 2. Extract Artistic Essence (Vision LLM)
+    print("2/2 Analyzing Artistic Essence (Vision LLM with Gemini/Claude)...")
     essence = extract_artistic_essence(source_path, "uploads")
     
-    # 3. Persistir en DB
+    # 3. Persist in DB
     db = SessionLocal()
     try:
         # DNA
@@ -33,7 +33,8 @@ def reprocess(filename, source_path):
         record_dna.background_color = dna.get("background_color", "#FFFFFF")
         record_dna.text_main_color = dna.get("text_main_color", "#111111")
         record_dna.primary_font = dna.get("primary_font", "Arial")
-        # --- REGISTRO EN BIBLIOTECA DE ACTIVOS (v80.0) ---
+
+        # Atomic Asset Registration
         from services.asset_library_service import register_asset
         final_library_assets = {"photos": [], "logos": [], "icons": []}
         
@@ -42,7 +43,6 @@ def reprocess(filename, source_path):
             for item in items:
                 raw_path = os.path.join("uploads", item["path"])
                 if os.path.exists(raw_path):
-                    # Registramos en biblioteca (Deduplicación + Tagging)
                     asset_record = register_asset(db, record_dna.id, raw_path, category=cat)
                     final_library_assets[cat].append({
                         "id": asset_record.id,
@@ -52,24 +52,11 @@ def reprocess(filename, source_path):
                     })
         
         record_dna.extracted_assets = final_library_assets
-
-        # Sincronizar Legacy para que el generador actual lo vea
-        legacy = db.query(models.BrandStyle).filter(models.BrandStyle.client_name == filename).first()
-        if not legacy:
-            legacy = models.BrandStyle(client_name=filename)
-            db.add(legacy)
-        legacy.primary_color = record_dna.primary_color
-        legacy.secondary_color = record_dna.secondary_color
-        legacy.font_family = record_dna.primary_font
-        legacy.extracted_assets = record_dna.extracted_assets # Importante para el orquestador
-        
         db.commit()
-        print("\n✓ PROCESO COMPLETADO EXITOSAMENTE.")
-        print(f"  - DNA: {len(record_dna.extracted_assets)} assets encontrados.")
-        print(f"  - Essence: {len(record_ess.slide_archetypes)} arquetipos de slide detectados.")
+        print("\n✓ PROCESS COMPLETED SUCCESSFULLY.")
         
     except Exception as e:
-        print(f"Error guardando en DB: {e}")
+        print(f"Error saving to DB: {e}")
         db.rollback()
     finally:
         db.close()

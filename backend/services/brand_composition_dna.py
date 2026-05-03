@@ -177,11 +177,11 @@ GRAMMAR_GEOMETRIES = {
     },
 
     "impact_number": {
-        "title":   {"left": 8.0,  "top": 62.0, "width": 84.0, "height": 12.0},
-        "content": {"left": 8.0,  "top": 76.0, "width": 84.0, "height": 16.0},
-        "metric":  {"left": 8.0,  "top": 18.0, "width": 84.0, "height": 38.0},
-        "image":   {"left": 72.0, "top": 8.0,  "width": 22.0, "height": 22.0, "role": "accent_small"},
-        "accent":  {"left": 8.0,  "top": 10.0, "width": 6.0,  "height": 6.0},
+        "title":   {"left": 10.0, "top": 25.0, "width": 80.0, "height": 20.0},
+        "content": {"left": 10.0, "top": 48.0, "width": 80.0, "height": 40.0},
+        "metric":  {"left": 10.0, "top": 10.0, "width": 80.0, "height": 10.0},
+        "image":   None,
+        "accent":  {"left": 88, "top": 5, "width": 8, "height": 8},
         "table":   None,
         "background_shape": {"left": 0.0, "top": 0.0, "width": 100.0, "height": 100.0,
                              "role": "brand_color_bg", "opacity": 1.0},

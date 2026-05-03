@@ -194,3 +194,54 @@ def find_best_assets(db: Session, brand_id: int, keywords: List[str],
     
     # Retornar como lista de tuplas (asset, score)
     return [(r[0], float(r[1])) for r in results]
+
+def find_assets_by_tags(db: Session, brand_id: int, tags: List[str], min_matches: int = 2, limit: int = 5, exclude_ids: Optional[List[int]] = None) -> List[tuple]:
+    """
+    Busca activos que coincidan con etiquetas (v5.9 - Brand-Aware Tokenized).
+    """
+    brand_name = "Unknown"
+    brand_rec = db.query(models.Brand).get(brand_id)
+    if brand_rec: brand_name = brand_rec.name.lower()
+
+    query = db.query(models.BrandAsset).filter(
+        models.BrandAsset.brand_id == brand_id,
+        models.BrandAsset.category != "noise"
+    )
+    if exclude_ids:
+        query = query.filter(models.BrandAsset.id.not_in(exclude_ids))
+
+    all_assets = query.all()
+    results = []
+    
+    # Tokenizar las etiquetas de búsqueda
+    search_tokens = set()
+    for t in tags:
+        for word in t.lower().replace(",", " ").replace("-", " ").split():
+            if len(word) > 2: search_tokens.add(word)
+    
+    print(f"  [LibraryAudit] Target Tokens: {list(search_tokens)}")
+    
+    for asset in all_assets:
+        # Tokenizar etiquetas del activo
+        a_tags = (asset.tags or []) + (asset.manual_tags or [])
+        asset_tokens = set()
+        for t in a_tags:
+            for word in str(t).lower().replace(",", " ").replace("-", " ").split():
+                if len(word) > 2: asset_tokens.add(word)
+        
+        asset_tokens.add(brand_name)
+        
+        intersection = search_tokens.intersection(asset_tokens)
+        if len(intersection) > 0:
+            print(f"    - Asset {asset.id}: Found {len(intersection)} matches {list(intersection)}")
+            
+        if len(intersection) >= min_matches:
+            score = 0.5 + (len(intersection) * 0.1)
+            results.append((asset, min(0.98, score)))
+
+    if not results:
+        print(f"  [LibraryAudit] No assets met the minimum of {min_matches} matches.")
+    
+    # Ordenar y limitar
+    results.sort(key=lambda x: x[1], reverse=True)
+    return results[:limit]

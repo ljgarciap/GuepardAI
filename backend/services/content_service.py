@@ -79,9 +79,10 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
     - bullets: 3-5 high-value points
     - objective: What is this slide trying to achieve?
     - visual_intent: A short (10 words) descriptive prompt of the ideal image for this slide.
+    - visual_tags: A list of 5-7 simple, descriptive tags for image searching (e.g., ["store", "digital", "customer"]).
     
     Return ONLY JSON:
-    {{ "slides": [ {{ "title": "...", "bullets": ["..."], "objective": "...", "visual_intent": "..." }} ] }}
+    {{ "slides": [ {{ "title": "...", "bullets": ["..."], "objective": "...", "visual_intent": "...", "visual_tags": ["tag1", "tag2", "tag3"] }} ] }}
     """
     
     print(f"  [ContentService] Calling LLM for flexible content synthesis...")
@@ -106,6 +107,7 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
                 "bullets": s_data.get("bullets", []),
                 "objective": s_data.get("objective", ""),
                 "visual_intent": s_data.get("visual_intent", ""),
+                "visual_tags": s_data.get("visual_tags", []),
                 "rag_source": specific_rag # El alimento para el Analista
             },
             status="content_ready"

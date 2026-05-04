@@ -10,6 +10,11 @@ import openai
 import anthropic
 from mistralai import Mistral
 from dotenv import load_dotenv
+try:
+    from google import genai as google_genai
+    from google.genai import types as genai_types
+except ImportError:
+    google_genai = None
 
 from database import SessionLocal
 import models
@@ -123,7 +128,12 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
                 # Ensure it has 'models/' for the SDK if missing
                 m_name = current_model if current_model.startswith("models/") else f"models/{current_model}"
                 m = genai.GenerativeModel(m_name)
-                response = m.generate_content(prompt, generation_config=genai.GenerationConfig(temperature=0.3, response_mime_type="application/json"))
+                # v8.54: Added mandatory timeout to prevent hangs
+                response = m.generate_content(
+                    prompt, 
+                    generation_config=genai.GenerationConfig(temperature=0.3, response_mime_type="application/json"),
+                    request_options={"timeout": 60} 
+                )
                 # LOG AUDIT (v25.0)
                 log_audit(f"GEN_JSON_{current_model}", f"PROMPT:\n{prompt}\n\nRESPONSE:\n{response.text}")
                 return json.loads(response.text)
@@ -231,7 +241,8 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
                         generation_config=genai.GenerationConfig(
                             temperature=0.1, 
                             response_mime_type="application/json"
-                        )
+                        ),
+                        request_options={"timeout": 60} # v8.54: Vision Timeout
                     )
                     # LOG AUDIT (v25.0)
                     log_audit(f"VISION_JSON_{current_model}", f"PROMPT:\n{prompt}\n\nRESPONSE:\n{response.text}")
@@ -426,55 +437,57 @@ def get_embedding(text: str) -> Optional[list]:
 @retry_with_backoff(retries=2)
 def generate_ai_image(prompt: str) -> Optional[str]:
     """
-    Genera una imagen usando Google Imagen 3 (v7.7 - Protocolo Oficial).
+    Genera una imagen usando Google IMAGEN 4.0 (v8.52 - Protocolo Moderno).
     """
     gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-    if not gem_key or genai is None:
-        print("  [ImageGen] Gemini/API Key not available.")
+    if not gem_key or google_genai is None:
+        print("  [ImageGen] ERROR: Modern SDK or API Key missing.")
         return None
 
-    try:
-        genai.configure(api_key=gem_key)
-        # v8.36: Updated model identifier for current environment
-        model_name = "imagen-3.0-generate-001"
-        print(f"  [ImageGen] Triggering Imagen 3.0 Production Engine...")
-        
-        try:
-            # Intento vía ImageGenerationModel (SDK Moderno)
-            from google.generativeai import ImageGenerationModel
-            model = ImageGenerationModel(model_name)
-            response = model.generate_images(prompt=prompt, number_of_images=1)
-            if response and response.images:
-                response.images[0].save(output_path)
-                return output_path
-        except Exception as e:
-            print(f"  [ImageGen] SDK Fallback: {e}")
-            # Fallback vía GenerativeModel (Interface Universal)
-            model = genai.GenerativeModel("gemini-1.5-flash") # Usamos flash para coordinar la llamada
-            # Si llegamos aquí, es que necesitamos un workaround o el modelo de imagen directo
-            # Por ahora, aseguramos que no rompa y devuelva None para que el Art Director sepa
-            return None        
-        
-        if hasattr(model, 'generate_images'):
-            response = model.generate_images(
-                prompt=prompt,
-                number_of_images=1,
-                safety_filter_level="BLOCK_ONLY_HIGH",
-                person_generation="ALLOW_ADULT"
-            )
-        else:
-            # Last attempt: generate_content (some early versions used this)
-            response = model.generate_content(prompt)
-        
-        if response and response.images:
-            img = response.images[0]
-            return _save_generated_image(img._data) # Usar los bytes crudos del objeto PIL/Image
+    output_path = f"uploads/ai_v4_{int(time.time())}.png"
+    os.makedirs("uploads", exist_ok=True)
 
+    try:
+        # v8.65: Audited Imagen 4.0 Call
+        print(f"  [ImageGen] INVOKING IMAGEN 4.0: models/imagen-4.0-generate-001 (High Timeout Mode)")
+        client = google_genai.Client(api_key=gem_key, http_options={'timeout': 600})
+        
+        # v8.66: Anti-Diagram & Spelling Protection
+        forbidden = ["diagram", "infographic", "text", "chart", "table", "graph"]
+        if any(x in prompt.lower() for x in forbidden):
+            print(f"  [ImageGen] WARNING: Suppressing diagram/text request to avoid spelling errors.")
+            prompt = prompt.replace("diagram", "photography").replace("infographic", "professional scene").replace("chart", "dashboard on a screen")
+        
+        clean_prompt = f"{prompt}. Photorealistic lifestyle photography, NO TEXT, NO LOGOS, NO DIAGRAMS, high quality, professional lighting."
+        
+        # LOG AUDIT PRE-CALL
+        log_audit("IMAGE_GEN_REQUEST", f"MODEL: imagen-4.0-generate-001\nPROMPT: {clean_prompt}")
+
+        response = client.models.generate_images(
+            model='imagen-4.0-generate-001',
+            prompt=clean_prompt,
+            config=genai_types.GenerateImagesConfig(
+                number_of_images=1,
+                aspect_ratio="16:9"
+            )
+        )
+        
+        if response and response.generated_images:
+            img_bytes = response.generated_images[0].image.image_bytes
+            with open(output_path, "wb") as f:
+                f.write(img_bytes)
+            
+            # LOG AUDIT SUCCESS
+            log_audit("IMAGE_GEN_SUCCESS", f"ASSET CREATED: {output_path}")
+            print(f"  [ImageGen] SUCCESS: Created Imagen 4.0 asset: {output_path}")
+            return output_path
+            
+        log_audit("IMAGE_GEN_FAILED", "Response received but no images found.")
         print("  [ImageGen] FAILED: No images in response.")
         return None
         
     except Exception as e:
-        print(f"  [ImageGen] ERROR: {e}")
+        print(f"  [ImageGen] API ERROR: {e}")
         return None
 
 def _save_generated_image(data: bytes) -> Optional[str]:

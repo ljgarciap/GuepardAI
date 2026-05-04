@@ -36,7 +36,7 @@ class GammaPainter:
         
         # RIGID ANCHORS (%)
         self.LOGO_X = 90.0
-        self.LOGO_Y = 3.5
+        self.LOGO_Y = 1.0
         self.LOGO_W = 9.0
         
         self.TITLE_X = 53.0
@@ -164,9 +164,24 @@ class GammaPainter:
         return slide
 
     def paint_big_metric(self, slide_data):
+        metric = str(slide_data.get("metric", "")).strip()
+        # v8.42: ABORT GHOST SLIDES (if metric is empty or just a symbol)
+        if len(metric) < 2 and not any(c.isdigit() for c in metric):
+            print(f"  [Painter] ABORT: Metric too short ('{metric}'). Falling back to split.")
+            return self.paint_split(slide_data)
+            
         slide = self.secure_slide()
         self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.bg)
-        self.add_text(slide, slide_data.get("metric", ""), 0, self.h(40), self.prs.slide_width, self.h(30), size=140, bold=True, color=self.primary, align=PP_ALIGN.CENTER)
+        # Try to include title if available to give context
+        title = slide_data.get("title", "")
+        if title:
+            self.add_text(slide, title, self.w(10), self.h(15), self.w(80), self.h(15), size=36, bold=True, color=self.title_color, align=PP_ALIGN.CENTER)
+            
+        self.add_text(slide, metric, 0, self.h(40), self.prs.slide_width, self.h(30), size=140, bold=True, color=self.primary, align=PP_ALIGN.CENTER)
+        
+        label = slide_data.get("label", "")
+        if label:
+            self.add_text(slide, label, 0, self.h(78), self.prs.slide_width, self.h(10), size=28, align=PP_ALIGN.CENTER, color=get_contrast_text_color(self.bg))
         return slide
 
     def paint_quote(self, slide_data):

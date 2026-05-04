@@ -190,9 +190,13 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
             content_json=slide,
             layout_slug=layout,
             assigned_image=slide.get("assigned_image"),
-            reference_id=plan.get("reference_id"), # Inyectamos la referencia (v18.7)
+            reference_id=plan.get("reference_id"),
             font_scale=plan.get("font_scale", 1.0),
-            render_elements=elements
+            render_elements=elements,
+            planning_json={
+                "layout_reasoning": f"Chose {layout} based on {stype} strategy",
+                "grammar_logic": elements.get("grammar_type", "standard")
+            }
         )
         db.add(new_slide)
 

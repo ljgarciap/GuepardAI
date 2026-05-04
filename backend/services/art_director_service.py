@@ -137,11 +137,12 @@ def plan_presentation_design(db: Session, job_id: int):
                         w, h = img.size
                 except: pass
 
-            # v8.19: Logo and Icon Exclusion for Lifestyle Photos
-            is_logo = any(kw in asset.description.lower() for kw in ["logo", "icon", "symbol", "emblem"])
-            if is_logo:
-                print(f"    [ArtDirector] REJECTED: Asset {asset.id} appears to be a Logo/Icon.")
-                res_ok = False
+            # v8.70: Semantic Category Filtering (Strictly respect library classification)
+            # We only reject assets if they are EXPLICITLY categorized as 'logos' or 'icons'
+            # Branded lifestyle photos are now WELCOME in the first pass.
+            if asset.category in ["logos", "icons"]:
+                print(f"    [ArtDirector] SKIPPED: Asset {asset.id} is an isolated Logo/Icon, not a photo.")
+                continue
 
             if w and w < min_required:
                 print(f"    [ArtDirector] REJECTED: Resolution too low ({w}x{h} < {min_required})")
@@ -216,17 +217,27 @@ def plan_presentation_design(db: Session, job_id: int):
                     primary_id = new_asset.id
                     print(f"    [ArtDirector] SUCCESS: AI Image generated and assigned.")
         
-        # v8.11: ULTIMATE RECOVERY - Si aún no hay nada (IA falló o deshabilitada), usar el mejor match semántico solo si es relevante
+        # v8.66: Optimized Recovery Floor (0.45) for better library usage
         if not primary_id and asset_candidates:
             best_score = asset_candidates[0][1]
-            if best_score > 0.35:
-                print(f"    [ArtDirector] RECOVERY: Using best semantic match ({best_score}): {asset_candidates[0][0].id}")
+            if best_score > 0.45:
+                print(f"    [ArtDirector] RECOVERY: Using confident semantic match ({best_score}): {asset_candidates[0][0].id}")
                 primary_id = asset_candidates[0][0].id
             else:
-                print(f"    [ArtDirector] RECOVERY REJECTED: Top match ({best_score}) is irrelevant. Leaving empty for strategic fallback.")
+                print(f"    [ArtDirector] RECOVERY ABORTED: Best match ({best_score}) below 0.45. Triggering AI.")
 
         # Persistir en Memoria Visual Absoluta y DB (v8.1)
-        slide.assigned_image = primary_id
+        slide.assigned_image = str(primary_id) if primary_id else None
+        
+        # v8.80: Merge Art Director reasoning into planning_json
+        current_planning = slide.planning_json or {}
+        current_planning["art_director"] = {
+            "selected_asset": primary_id,
+            "logic": "Library Recovery" if not job.allow_ai_images else "Primary Selection/AI",
+            "threshold": 0.45
+        }
+        slide.planning_json = current_planning
+        
         if primary_id: used_assets.append(primary_id)
         if accent_id: used_assets.append(accent_id)
 

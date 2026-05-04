@@ -111,7 +111,11 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
                 "objective": s_data.get("objective", ""),
                 "visual_intent": s_data.get("visual_intent", ""),
                 "visual_tags": s_data.get("visual_tags", []),
-                "rag_source": specific_rag # El alimento para el Analista
+                "rag_source": specific_rag
+            },
+            planning_json={
+                "strategy": "Initial Synthesis",
+                "objective": s_data.get("objective", "Create strategic summary")
             },
             status="content_ready"
         )

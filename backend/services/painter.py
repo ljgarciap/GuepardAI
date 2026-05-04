@@ -1,291 +1,191 @@
 import os
 import random
+import json
+import time
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from PIL import Image
 
-# --- INTELLIGENT DESIGN PAINTER (v9.0) ---
-# Native PPTX Overhaul: No CSS Faking, High Contrast, Extractive Image Banks.
-# With Architectural Image Validation & Aspect Ratio Math
+# --- DYNAMIC BREATHING ENGINE (v8.35 - ADAPTIVE SPACING) ---
 
 def hex_to_rgb(hex_str: str) -> RGBColor:
-    if not hex_str or not isinstance(hex_str, str): return RGBColor(128, 128, 128)
+    if not hex_str or not isinstance(hex_str, str): return RGBColor(0, 82, 163)
     h = hex_str.lstrip('#')
-    if len(h) < 6: h = "808080"
-    return RGBColor(*tuple(int(h[i:i+2], 16) for i in (0, 2, 4)))
+    if len(h) < 6: h = "0052A3"
+    try:
+        return RGBColor(*tuple(int(h[i:i+2], 16) for i in (0, 2, 4)))
+    except:
+        return RGBColor(0, 82, 163)
 
-def blend_colors(c1_rgb, c2_rgb, ratio):
-    """Blends c1 into c2 by ratio, avoiding transparency render bugs in PPTX."""
-    return RGBColor(
-        int(c1_rgb[0] * ratio + c2_rgb[0] * (1 - ratio)),
-        int(c1_rgb[1] * ratio + c2_rgb[1] * (1 - ratio)),
-        int(c1_rgb[2] * ratio + c2_rgb[2] * (1 - ratio))
-    )
+def get_luminance(rgb):
+    return (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255
+
+def get_contrast_text_color(bg_rgb):
+    return RGBColor(255, 255, 255) if get_luminance(bg_rgb) < 0.5 else RGBColor(20, 20, 20)
 
 class GammaPainter:
     def __init__(self, brand_style):
+        print(f"  [Painter] --- DYNAMIC BREATHING v8.35 ---")
         self.brand = brand_style
-        self.strategy = brand_style.visual_strategy or {}
-        self.metrics = self.strategy.get("technical_metrics", {"kerning": -0.05, "padding_percent": 0.1})
-        
-        # Native High-Contrast Core
         self.primary = hex_to_rgb(brand_style.primary_color)
         self.secondary = hex_to_rgb(brand_style.secondary_color)
+        self.bg = hex_to_rgb(brand_style.background_color or "#FFFFFF")
+        self.main_font = getattr(brand_style, "font_family", "Arial") or "Arial"
         
-        raw_bg = brand_style.background_color or "#FFFFFF"
-        self.bg = hex_to_rgb(raw_bg)
+        # RIGID ANCHORS (%)
+        self.LOGO_X = 90.0
+        self.LOGO_Y = 3.5
+        self.LOGO_W = 9.0
         
-        # Absolute Contrast Enforcement
-        r, g, b = self.bg
-        self.bg_is_dark = ((0.299 * r + 0.587 * g + 0.114 * b) / 255) < 0.5
+        self.TITLE_X = 53.0
+        self.TITLE_Y = 6.0
+        self.TITLE_W = 34.0
         
-        self.text_on_bg = RGBColor(255, 255, 255) if self.bg_is_dark else RGBColor(20, 20, 20)
-        self.text_on_primary = RGBColor(255, 255, 255) if ((0.299 * self.primary[0] + 0.587 * self.primary[1] + 0.114 * self.primary[2]) / 255) < 0.5 else RGBColor(20, 20, 20)
-        self.text_on_secondary = RGBColor(255, 255, 255) if ((0.299 * self.secondary[0] + 0.587 * self.secondary[1] + 0.114 * self.secondary[2]) / 255) < 0.5 else RGBColor(20, 20, 20)
+        self.SAFE_BOTTOM = 92.0
+        
+        bg_lum = get_luminance(self.bg)
+        p_lum = get_luminance(self.primary)
+        self.title_color = self.primary if abs(bg_lum - p_lum) > 0.35 else get_contrast_text_color(self.bg)
 
-        self.main_font = brand_style.font_family or "Arial"
-        
         self.prs = Presentation()
         self.prs.slide_width = Inches(13.33)
         self.prs.slide_height = Inches(7.5)
         self.blank_layout = self.prs.slide_layouts[6]
-        self.title_layout = self.prs.slide_layouts[0]
-        self.body_layout = self.prs.slide_layouts[1]
-        
-        self.asset_index = 0
 
-        # Image Bank Engine
-        self.asset_bank = []
-        if self.brand.extracted_assets:
-            if isinstance(self.brand.extracted_assets, str):
-                try:
-                    self.asset_bank = json.loads(self.brand.extracted_assets)
-                except Exception:
-                    pass
-            elif isinstance(self.brand.extracted_assets, list):
-                self.asset_bank = self.brand.extracted_assets
-                
-        # Shuffle deterministically based on seed
-        random.seed(42)
-        if self.asset_bank:
-            random.shuffle(self.asset_bank)
+    def w(self, pct): return self.prs.slide_width * (pct / 100.0)
+    def h(self, pct): return self.prs.slide_height * (pct / 100.0)
 
-    def secure_slide(self, layout):
-        slide = self.prs.slides.add_slide(layout)
-        # Nuke native ghostly placeholders to prevent "Click to add title" visual bugs
-        for shape in list(slide.placeholders):
-            sp = shape.element
-            sp.getparent().remove(sp)
-        return slide
-
-        # Image Bank Engine
-        self.asset_bank = []
-        if self.brand.extracted_assets:
-            # We combine logos and structural images if any exist. Some 'logos' might be photos if PDF extraction was greedy.
-            for key in ['logos', 'structural_images', 'images']:
-                if key in self.brand.extracted_assets:
-                    self.asset_bank.extend(self.brand.extracted_assets[key])
-        
-        self.asset_index = 0
-
-    def get_next_image(self, min_size=400):
-        if not self.asset_bank: return None
-        
-        # Iteratively try up to len assets
-        checked = 0
-        while checked < len(self.asset_bank):
-            asset_file = self.asset_bank[self.asset_index % len(self.asset_bank)]
-            self.asset_index += 1
-            checked += 1
-            
-            p1 = os.path.abspath(f"../../CreatorToolRag/backend/uploads/{asset_file}")
-            p2 = os.path.abspath(f"../CreatorToolRag/backend/uploads/{asset_file}")
-            
-            path = p1 if os.path.exists(p1) else (p2 if os.path.exists(p2) else None)
-            
-            if path:
-                try:
-                    # Verify resolution to explicitly block blurred pixelated shapes
-                    with Image.open(path) as img:
-                        w, h = img.size
-                        if w >= min_size and h >= min_size:
-                            return path
-                except Exception:
-                    pass
+    def resolve_image(self, asset_file, min_res=300):
+        if not asset_file: return None
+        candidates = []
+        if os.path.isabs(asset_file): candidates.append(asset_file)
+        filename = os.path.basename(asset_file)
+        candidates.extend([os.path.abspath(os.path.join("uploads", filename)), os.path.abspath(os.path.join("backend", "uploads", filename))])
+        for target in candidates:
+            if os.path.exists(target): return target
         return None
 
-    def col(self, n): return int((self.prs.slide_width / 12) * n)
-    def row(self, n): return int((self.prs.slide_height / 12) * n)
-    def w(self, n): return int((self.prs.slide_width / 12) * n)
-    def h(self, n): return int((self.prs.slide_height / 12) * n)
-
     def add_rect(self, slide, x, y, w, h, color, alpha=0, rounded=False):
-        shape_type = 5 if rounded else 1
-        shape = slide.shapes.add_shape(shape_type, x, y, w, h)
+        shape = slide.shapes.add_shape(5 if rounded else 1, x, y, w, h)
         shape.fill.solid()
         shape.fill.fore_color.rgb = color
-        # Revert transparency back to default PPTX expectations (0 to 1 value).
-        # We handle solid colors by blending RGB instead whenever absolute solidity is needed.
         if alpha > 0: shape.fill.transparency = alpha 
         shape.line.fill.background()
         return shape
 
-    def add_text(self, slide, text, x, y, w, h, size=24, color=None, bold=False, align=PP_ALIGN.LEFT, vertical_align=MSO_ANCHOR.TOP):
+    def add_text(self, slide, text, x, y, w, h, size=24, color=None, bold=False, align=PP_ALIGN.LEFT):
         tx = slide.shapes.add_textbox(x, y, w, h)
         tf = tx.text_frame
         tf.word_wrap = True
-        tf.vertical_anchor = vertical_align
         p = tf.paragraphs[0]
         p.text = str(text)
         p.alignment = align
         p.font.name = self.main_font
         p.font.size = Pt(size)
         p.font.bold = bold
-        p.font.color.rgb = color or self.text_on_bg
+        p.font.color.rgb = color or get_contrast_text_color(self.bg)
         return tx
 
-    def add_pill_label(self, slide, text, x, y):
-        w_p = Pt(len(text) * 10 + 20)
-        h_p = Pt(28)
-        self.add_rect(slide, x, y, w_p, h_p, self.primary, rounded=True)
-        self.add_text(slide, text.upper(), x, y + Pt(2), w_p, h_p, size=10, bold=True, color=self.text_on_primary, align=PP_ALIGN.CENTER, vertical_align=MSO_ANCHOR.MIDDLE)
+    def add_fitted_image(self, slide, img_path, x, y, max_w, max_h):
+        try:
+            with Image.open(img_path) as img:
+                orig_w, orig_h = img.size
+                ratio = min(max_w / orig_w, max_h / orig_h)
+                new_w = orig_w * ratio
+                new_h = orig_h * ratio
+                off_x = max_w - new_w
+                off_y = (max_h - new_h) / 2
+                slide.shapes.add_picture(img_path, x + off_x, y + off_y, width=new_w, height=new_h)
+        except: pass
 
     def render_slides(self, content_json):
         slides = content_json.get("slides", [])
-        for i, slide_data in enumerate(slides):
+        logo_path = content_json.get("logo_path")
+        for slide_data in slides:
             layout = slide_data.get("layout_type", "composition_hero")
-            if i == 0 or layout == "composition_hero":
-                self.paint_hero(slide_data)
-            elif layout == "composition_split":
-                self.paint_split(slide_data)
-            elif layout == "big_metric":
-                self.paint_big_metric(slide_data)
-            elif layout == "composition_quote":
-                self.paint_quote(slide_data)
-            else:
-                self.paint_grid(slide_data)
-
-    def paint_hero(self, slide_data):
-        slide = self.secure_slide(self.blank_layout)
-        
-        # Restore full-bleed backgrounds but preserve aspect-ratio mathematical masks
-        img_path = self.get_next_image()
-        if img_path:
-            with Image.open(img_path) as img:
-                w, h = img.size
-                if (w / h) > (13.33 / 7.5):
-                    # Wider than slide, bound on height
-                    slide.shapes.add_picture(img_path, 0, 0, height=self.prs.slide_height)
-                else:
-                    # Taller than slide, bound on width
-                    slide.shapes.add_picture(img_path, 0, 0, width=self.prs.slide_width)
+            if layout == "composition_split": slide = self.paint_split(slide_data)
+            elif layout == "big_metric": slide = self.paint_big_metric(slide_data)
+            elif layout == "composition_grid": slide = self.paint_grid(slide_data)
+            elif layout == "composition_quote": slide = self.paint_quote(slide_data)
+            else: slide = self.paint_hero(slide_data)
             
-            # Semi-transparent overlay mask to ensure text readability
-            self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.primary, alpha=0.85) # 85% transparent overlay
-        else:
-            self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.primary)
-        title = str(slide_data.get("title", "")).upper()
-        
-        # DNA Substitution Engine using Badges instead of breaking horizontal flow rendering
-        vision_insights = self.strategy.get("vision_insights", {})
-        archetypes = vision_insights.get("archetypes", [])
-        badge_added = False
-        
-        for a in archetypes:
-            if a.get("type") == "FUNCTIONAL_SUBSTITUTION":
-                asset_file = a.get("asset")
-                if asset_file:
-                    asset_path = os.path.abspath(f"../../CreatorToolRag/backend/uploads/{asset_file}")
-                    if os.path.exists(asset_path):
-                        # Safely drop it as an accent floating brand mark instead of slicing title string
-                        slide.shapes.add_picture(asset_path, self.prs.slide_width - Inches(2), Inches(0.5), Inches(1.2), Inches(1.2))
-                        badge_added = True
-                        break
-
-        # Plot typography unmodified so it wraps naturally in PPTX bounding mechanisms
-        self.add_text(slide, title, self.col(1), self.row(3), self.w(10), self.h(3), size=60, bold=True, color=self.text_on_primary)
-            
-        tag = slide_data.get("tag", "STRATEGY")
-        self.add_pill_label(slide, tag, self.col(1), self.row(1.5))
+            if logo_path:
+                res = self.resolve_image(logo_path, 10)
+                if res:
+                    self.add_fitted_image(slide, res, self.w(self.LOGO_X), self.h(self.LOGO_Y), self.w(self.LOGO_W), self.h(8))
 
     def paint_split(self, slide_data):
-        slide = self.secure_slide(self.blank_layout)
-        
-        # Restore architectural geometries
-        img_path = self.get_next_image()
-        if img_path:
-            with Image.open(img_path) as img:
-                w, h = img.size
-                if (w / h) > ( (13.33/2) / 7.5 ):
-                    slide.shapes.add_picture(img_path, 0, 0, height=self.prs.slide_height)
-                else:
-                    slide.shapes.add_picture(img_path, 0, 0, width=self.col(6))
+        slide = self.secure_slide()
+        img = self.resolve_image(slide_data.get("primary_asset_path"), 300)
+        if img:
+            self.add_fitted_image(slide, img, 0, 0, self.w(50), self.prs.slide_height)
         else:
-            self.add_rect(slide, 0, 0, self.col(6), self.prs.slide_height, self.secondary)
+            fb = blend_colors(self.secondary, self.bg, 0.1)
+            self.add_rect(slide, 0, 0, self.w(50), self.prs.slide_height, fb)
             
-        # Draw solid opaque mask on right side
-        self.add_rect(slide, self.col(6), 0, self.prs.slide_width - self.col(6) + Inches(1), self.prs.slide_height, self.bg)
-            
-        self.add_pill_label(slide, slide_data.get("tag", "CONTENT"), self.col(6.5), self.row(1))
-        self.add_text(slide, slide_data.get("title", ""), self.col(6.5), self.row(2), self.w(5), self.h(1.5), size=40, bold=True, color=self.text_on_bg)
+        self.add_rect(slide, self.w(50), 0, self.w(50), self.prs.slide_height, self.bg)
+        
+        title = slide_data.get("title", "")
+        # v8.35: DYNAMIC CALCULATIONS
+        approx_lines = (len(title) // 32) + 1
+        t_size = 28 if approx_lines == 1 else 24
+        content_top = 26.0 + (approx_lines * 4.5)
+        
+        self.add_text(slide, title, self.w(self.TITLE_X), self.h(self.TITLE_Y), self.w(self.TITLE_W), self.h(20), size=t_size, bold=True, color=self.title_color)
         
         bullets = slide_data.get("bullets", [])
-        for idx, bullet in enumerate(bullets):
-            self.add_rect(slide, self.col(6.5), self.row(4 + (idx * 1.5)), self.w(0.5), self.h(0.5), self.primary, rounded=True)
-            self.add_text(slide, f"0{idx+1}", self.col(6.5), self.row(4 + (idx * 1.5)), self.w(0.5), self.h(0.5), size=12, bold=True, color=self.text_on_primary, align=PP_ALIGN.CENTER, vertical_align=MSO_ANCHOR.MIDDLE)
-            self.add_text(slide, bullet, self.col(7.2), self.row(4 + (idx * 1.5)), self.w(4), self.h(1), size=18, color=self.text_on_bg)
-
-    def paint_big_metric(self, slide_data):
-        slide = self.secure_slide(self.blank_layout)
-        self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.bg)
+        num_b = len(bullets[:5])
+        available_h = self.SAFE_BOTTOM - content_top
+        row_h = min(10.0, available_h / max(1, num_b))
         
-        self.add_pill_label(slide, slide_data.get("tag", "INSIGHT"), self.col(1), self.row(1))
-        self.add_text(slide, slide_data.get("title", ""), self.col(1), self.row(2), self.w(10), self.h(1.5), size=36, bold=True, color=self.text_on_bg)
-        
-        metric = slide_data.get("metric", "")
-        self.add_text(slide, metric, self.col(1), self.row(4), self.w(10), self.h(4), size=160, bold=True, color=self.primary, align=PP_ALIGN.CENTER, vertical_align=MSO_ANCHOR.MIDDLE)
-        self.add_text(slide, slide_data.get("label", ""), self.col(1), self.row(8.5), self.w(10), self.h(1.5), size=28, color=self.text_on_bg, align=PP_ALIGN.CENTER)
+        for idx, b in enumerate(bullets[:5]):
+            y_pct = content_top + (idx * row_h)
+            self.add_rect(slide, self.w(53), self.h(y_pct), Pt(18), Pt(18), self.primary, rounded=True)
+            self.add_text(slide, b, self.w(56), self.h(y_pct), self.w(40), self.h(row_h - 1), size=13, color=get_contrast_text_color(self.bg))
+        return slide
 
-    def paint_quote(self, slide_data):
-        slide = self.secure_slide(self.blank_layout)
+    def paint_hero(self, slide_data):
+        slide = self.secure_slide()
         self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.primary)
-        
-        self.add_pill_label(slide, slide_data.get("tag", "STATEMENT"), self.col(1), self.row(1))
-        
-        bullets = slide_data.get("bullets", [])
-        quote = bullets[0] if bullets else slide_data.get("title", "")
-        self.add_text(slide, f"\"{quote}\"", self.col(2), self.row(3), self.w(8), self.h(6), size=48, bold=True, color=self.text_on_primary, align=PP_ALIGN.CENTER, vertical_align=MSO_ANCHOR.MIDDLE)
+        self.add_text(slide, slide_data.get("title", ""), self.w(10), self.h(30), self.w(80), self.h(40), size=48, bold=True, color=get_contrast_text_color(self.primary), align=PP_ALIGN.CENTER)
+        return slide
 
     def paint_grid(self, slide_data):
-        slide = self.secure_slide(self.blank_layout)
+        slide = self.secure_slide()
         self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.bg)
-        
-        self.add_pill_label(slide, slide_data.get("tag", "PILLARS"), self.col(1), self.row(1))
-        self.add_text(slide, slide_data.get("title", ""), self.col(1), self.row(2), self.w(10), self.h(1.5), size=40, bold=True, color=self.text_on_bg)
-        
+        self.add_text(slide, slide_data.get("title", ""), self.w(7), self.h(6), self.w(86), self.h(15), size=34, bold=True, color=self.title_color)
         bullets = slide_data.get("bullets", [])
-        # Distribute into 2x2 or 1x3 evenly
-        is_grid = len(bullets) > 3
-        
-        for idx, bullet in enumerate(bullets):
-            if is_grid:
-                c = 1 + (idx % 2) * 5.5
-                r = 4.5 + (int(idx / 2) * 3)
-                w = 5
-            else:
-                c = 1 + (idx * 3.6)
-                r = 5
-                w = 3.2
-                
-            # Create a native elegant card using Solid Blends so we circumvent pptx opacity limitations
-            card_pastel = blend_colors(self.secondary, self.bg, 0.05)
-            self.add_rect(slide, self.col(c), self.row(r), self.w(w), self.h(2.2), card_pastel, rounded=True)
-            
-            self.add_text(slide, f"{(idx+1):02d}", self.col(c) + Pt(10), self.row(r) + Pt(10), self.w(w), self.h(0.5), size=14, bold=True, color=self.primary)
-            self.add_text(slide, bullet, self.col(c) + Pt(10), self.row(r) + Pt(40), self.w(w) - Pt(20), self.h(1.5), size=16, color=self.text_on_bg)
+        for idx, b in enumerate(bullets[:4]):
+            x_pct = 7 + (idx * 23)
+            self.add_rect(slide, self.w(x_pct), self.h(30), self.w(21), self.h(58), self.secondary, alpha=0.05, rounded=True)
+            self.add_text(slide, b, self.w(x_pct + 1), self.h(32), self.w(19), self.h(54), size=14)
+        return slide
+
+    def paint_big_metric(self, slide_data):
+        slide = self.secure_slide()
+        self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.bg)
+        self.add_text(slide, slide_data.get("metric", ""), 0, self.h(40), self.prs.slide_width, self.h(30), size=140, bold=True, color=self.primary, align=PP_ALIGN.CENTER)
+        return slide
+
+    def paint_quote(self, slide_data):
+        slide = self.secure_slide()
+        self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.primary)
+        q = slide_data.get("bullets", [""])[0] or slide_data.get("title", "")
+        self.add_text(slide, f"\"{q}\"", self.w(15), self.h(30), self.w(70), self.h(50), size=44, bold=True, color=get_contrast_text_color(self.primary), align=PP_ALIGN.CENTER)
+        return slide
+
+    def secure_slide(self):
+        slide = self.prs.slides.add_slide(self.blank_layout)
+        for shape in list(slide.placeholders):
+            sp = shape.element
+            sp.getparent().remove(sp)
+        return slide
 
     def save(self, path):
         self.prs.save(path)
         return path
+
+def blend_colors(c1_rgb, c2_rgb, ratio):
+    return RGBColor(int(c1_rgb[0] * ratio + c2_rgb[0] * (1 - ratio)), int(c1_rgb[1] * ratio + c2_rgb[1] * (1 - ratio)), int(c1_rgb[2] * ratio + c2_rgb[2] * (1 - ratio)))

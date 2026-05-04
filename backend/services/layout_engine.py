@@ -209,71 +209,76 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
 
 def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
     """
-    ORQUESTADOR MAESTRO v23.0 (Servicios Aislados).
-    Coordina el flujo persistente: Contenido -> Arte -> Geometría -> Pintado.
+    ORQUESTADOR MAESTRO v8.0 (GammaPainter Connected).
+    Coordina: Contenido -> Arte -> Pintado con GammaPainter.
     """
     from services.content_service import synthesize_presentation_outline
     from services.art_director_service import plan_presentation_design
-    from services.geometry_service import calculate_presentation_geometry
     from services.pptx_renderer import render_pptx_from_db
-    
+
     job = db.query(models.GenerationJob).get(job_id)
     if not job: return
-    
-    # Asegurar que el job tenga el style_id si es posible (MVP fallback)
-    # style_slug = req_data.get("style_filename")
-    
+
+    # Verificar modo de renderer
+    renderer_cfg = db.query(models.SystemConfig).filter(
+        models.SystemConfig.key == "renderer_mode"
+    ).first()
+    use_painter = (renderer_cfg and renderer_cfg.value == "painter")
+
     try:
-        # FASE 1: SÍNTESIS DE CONTENIDO (Persistente)
+        # FASE 1: SÍNTESIS DE CONTENIDO
         job.status = "processing"
-        job.current_step = "Phase 1/4: Synthesizing strategic content..."
+        job.current_step = "Phase 1/3: Synthesizing strategic content..."
         job.progress = 10
         db.commit()
         if not synthesize_presentation_outline(db, job_id, req_data):
             raise Exception("Failed during Content Synthesis.")
 
-        # FASE 2: DIRECCIÓN DE ARTE (Persistente)
-        job.current_step = "Phase 2/4: Planning art direction and tiered asset selection..."
+        # FASE 2: DIRECCIÓN DE ARTE
+        job.current_step = "Phase 2/3: Planning art direction and asset selection..."
         job.progress = 40
         db.commit()
         if not plan_presentation_design(db, job_id):
             raise Exception("Failed during Art Direction.")
 
-        # FASE 3: CÁLCULO GEOMÉTRICO (Obsoleto - Ya lo hizo el Art Director en Fase 2)
-        job.current_step = "Phase 3/4: Finalizing canvas mapping..."
-        job.progress = 70
+        # FASE 3: RENDERIZADO FINAL
+        job.current_step = "Phase 3/3: Painting final PPTX..."
+        job.progress = 80
         db.commit()
-        # No llamar a calculate_presentation_geometry para evitar sobreescribir con []
 
-        # FASE 4: RENDERIZADO FINAL (Reactivo)
-        job.current_step = "Phase 4/4: Painting final PPTX portfolio..."
-        job.progress = 90
-        db.commit()
-        
         output_filename = f"Portfolio_{job_id}_{int(time.time())}.pptx"
         output_path = os.path.join("uploads", output_filename)
-        
-        # Mapa de activos (logos, fotos) - Jerarquía global para el renderer
+
+        # Construir asset_map global
         asset_map = {}
         assets = db.query(models.BrandAsset).filter(
-            (models.BrandAsset.brand_id == job.brand_id) | (models.BrandAsset.is_public == 1)
+            (models.BrandAsset.brand_id == job.brand_id) |
+            (models.BrandAsset.is_public == 1)
         ).all()
         for a in assets:
-            asset_map[os.path.basename(a.local_path)] = a.local_path
-            
-        render_pptx_from_db(job_id, asset_map, output_path)
-        
+            if a.local_path:
+                asset_map[os.path.basename(a.local_path)] = a.local_path
+
+        # Renderizar con GammaPainter o renderer legacy
+        if use_painter:
+            from painter_bridge import render_with_painter
+            render_with_painter(db, job_id, asset_map, output_path)
+            print(f"  [Flow v8.0] ✓ GammaPainter render complete.")
+        else:
+            render_pptx_from_db(job_id, asset_map, output_path)
+            print(f"  [Flow v8.0] ✓ Legacy renderer complete.")
+
         # FINALIZACIÓN
         job.status = "completed"
-        job.current_step = "Synthesis complete. High-Fidelity Portfolio ready."
+        job.current_step = "Portfolio ready."
         job.progress = 100
         job.pptx_path = output_path
         job.download_url = f"/uploads/{output_filename}"
         db.commit()
-        
+
     except Exception as e:
         import traceback
-        print(f"  [Orchestrator v23.0] Critical Failure: {traceback.format_exc()}")
+        print(f"  [Flow v8.0] CRITICAL: {traceback.format_exc()}")
         job.status = "error"
-        job.current_step = f"Synthesis interrupted: {str(e)}"
+        job.current_step = f"Error: {str(e)}"
         db.commit()

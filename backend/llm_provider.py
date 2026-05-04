@@ -345,6 +345,9 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
                                     task_type="retrieval_document",
                                     output_dimensionality=TARGET_DIM # <-- EL TRADUCTOR NATIVO
                                 )
+                            # v8.36: Relaxed semantic floor for better variety (0.45)
+                            if score >= 0.45 and res_ok: 
+                                filtered.append((asset, score))
                             results.append(res["embedding"]) # Ya viene en 1024
                         except Exception as gem_err:
                             if ("not found" in str(gem_err).lower() or "404" in str(gem_err)) and "models/" in m_name:
@@ -423,13 +426,6 @@ def get_embedding(text: str) -> Optional[list]:
 @retry_with_backoff(retries=2)
 def generate_ai_image(prompt: str) -> Optional[str]:
     """
-    Genera una imagen usando Google Gemini (Imagen 3) v7.1.
-    Devuelve la ruta local de la imagen guardada en /uploads.
-    """
-    gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-@retry_with_backoff(retries=2)
-def generate_ai_image(prompt: str) -> Optional[str]:
-    """
     Genera una imagen usando Google Imagen 3 (v7.7 - Protocolo Oficial).
     """
     gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
@@ -439,20 +435,36 @@ def generate_ai_image(prompt: str) -> Optional[str]:
 
     try:
         genai.configure(api_key=gem_key)
-        model_name = get_system_config("model_image_gen", "imagen-3.0-generate-001")
+        # v8.36: Updated model identifier for current environment
+        model_name = "imagen-3.0-generate-001"
+        print(f"  [ImageGen] Triggering Imagen 3.0 Production Engine...")
         
-        print(f"  [ImageGen] Using OFFICIAL ImageGenerationModel: {model_name}")
+        try:
+            # Intento vía ImageGenerationModel (SDK Moderno)
+            from google.generativeai import ImageGenerationModel
+            model = ImageGenerationModel(model_name)
+            response = model.generate_images(prompt=prompt, number_of_images=1)
+            if response and response.images:
+                response.images[0].save(output_path)
+                return output_path
+        except Exception as e:
+            print(f"  [ImageGen] SDK Fallback: {e}")
+            # Fallback vía GenerativeModel (Interface Universal)
+            model = genai.GenerativeModel("gemini-1.5-flash") # Usamos flash para coordinar la llamada
+            # Si llegamos aquí, es que necesitamos un workaround o el modelo de imagen directo
+            # Por ahora, aseguramos que no rompa y devuelva None para que el Art Director sepa
+            return None        
         
-        # v7.7: Acceso directo al motor de Imagen
-        from google.generativeai import ImageGenerationModel
-        model = ImageGenerationModel(model_name)
-        
-        response = model.generate_images(
-            prompt=prompt,
-            number_of_images=1,
-            safety_filter_level="BLOCK_ONLY_HIGH",
-            person_generation="ALLOW_ADULT"
-        )
+        if hasattr(model, 'generate_images'):
+            response = model.generate_images(
+                prompt=prompt,
+                number_of_images=1,
+                safety_filter_level="BLOCK_ONLY_HIGH",
+                person_generation="ALLOW_ADULT"
+            )
+        else:
+            # Last attempt: generate_content (some early versions used this)
+            response = model.generate_content(prompt)
         
         if response and response.images:
             img = response.images[0]

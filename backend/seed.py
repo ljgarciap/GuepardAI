@@ -25,8 +25,8 @@ def seed_data():
             # ─────────────────────────────────────────────────────
             {
                 "key": "asset_score_threshold",
-                "value": "0.55",
-                "description": "Umbral mínimo de similitud semántica para aceptar asset. 0.55 es más permisivo que 0.70 para no dejar slides sin imagen."
+                "value": "0.45",
+                "description": "Umbral mínimo de similitud semántica para aceptar asset. 0.45 es el punto dulce para evitar logos pero permitir fotos reales."
             },
             {
                 "key": "embedding_model_chain",
@@ -35,8 +35,8 @@ def seed_data():
             },
             {
                 "key": "model_image_gen",
-                "value": "imagen-3.0-generate-001",
-                "description": "Modelo Google Imagen 3 para generación de imágenes bajo demanda."
+                "value": "imagen-4.0-generate-001",
+                "description": "Modelo Google Imagen 4 para generación de imágenes de alta fidelidad."
             },
             {
                 "key": "renderer_mode",
@@ -79,6 +79,8 @@ MANDATORY RULES:
 4. Be SPECIFIC with suggested_keywords — use concrete visual objects, not abstract concepts.
    WRONG: "innovation", "strategy", "growth"
    RIGHT: "supermarket aisle", "smiling customer", "data dashboard screen", "CEO portrait"
+
+5. STRATEGIC CONTEXT: If the slide is about "Appendix", "References", "Global Strategy" or "Next Steps", EXPLICITLY FORBID suggesting individual fruits, vegetables, or single product shots. Instead, suggest high-level corporate visuals like "Global maps", "Business skyscrapers", "Modern boardroom", or "Data visualization screens".
 
 OUTPUT ONLY THIS JSON (no other text):
 {{

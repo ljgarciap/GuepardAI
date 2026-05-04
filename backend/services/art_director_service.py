@@ -137,20 +137,6 @@ def plan_presentation_design(db: Session, job_id: int):
                         w, h = img.size
                 except: pass
 
-            # v8.70: Semantic Category Filtering (Strictly respect library classification)
-            # We only reject assets if they are EXPLICITLY categorized as 'logos' or 'icons'
-            # Branded lifestyle photos are now WELCOME in the first pass.
-            if asset.category in ["logos", "icons"]:
-                print(f"    [ArtDirector] SKIPPED: Asset {asset.id} is an isolated Logo/Icon, not a photo.")
-                continue
-
-            if w and w < min_required:
-                print(f"    [ArtDirector] REJECTED: Resolution too low ({w}x{h} < {min_required})")
-                res_ok = False
-            elif not w and res_ok:
-                # Si aún no sabemos, rechazar por seguridad para evitar el efecto chicle
-                res_ok = False
-
             if score >= 0.40 and res_ok: 
                 filtered_assets.append(asset_info)
                 audit_metadata["considered"].append(asset_info)

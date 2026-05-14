@@ -65,28 +65,36 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
         tone_guideline = dna.raw_extraction.get("tone_description", tone_guideline)
     
     # 3. Obtener Configs de Marca y Agencia (v24.0)
-    cfg_prompt = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_content_synthesizer_v1").first()
+    cfg_architect = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_architect_v1").first()
+    cfg_synthesizer = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_content_synthesizer_v2").first()
     agency_name = db.query(models.SystemConfig).filter(models.SystemConfig.key == "agency_name").first()
     
     brand_name = "Global Strategy"
     if dna and dna.brand:
         brand_name = dna.brand.name
 
-    if cfg_prompt:
-        prompt = cfg_prompt.value.format(
-            agency_name=agency_name.value if agency_name else "L - Founders",
-            brand_name=brand_name,
-            target_lang=region,
-            rag_context=rag_context,
-            tone_guideline=tone_guideline,
-            topic=topic
-        )
-    else:
-        # Fallback legacy prompt
-        prompt = f"Generate a strategic presentation about {topic} for {brand_name} using this context: {rag_context}"
+    # --- PASO 1: ARQUITECTO DE PROMPTS ---
+    # Este paso pule el prompt del usuario y le da prioridad absoluta
+    print(f"  [ContentService] Step 1/2: Invoking Prompt Architect...")
+    architect_prompt = cfg_architect.value.format(
+        topic=topic,
+        brand_name=brand_name,
+        tone_guideline=tone_guideline
+    )
+    # Usamos un modelo más potente si está disponible para el arquitecto
+    architect_response = generate_json(architect_prompt, specialization="general")
+    polished_prompt = architect_response.get("polished_instruction", str(architect_response))
+
+    # --- PASO 2: SINTETIZADOR DE CONTENIDO ---
+    # Usa la instrucción pulida y el RAG para generar los slides
+    print(f"  [ContentService] Step 2/2: Calling Strategic Synthesizer v2.0...")
+    final_prompt = cfg_synthesizer.value.format(
+        polished_prompt=polished_prompt,
+        rag_context=rag_context,
+        target_lang=region
+    )
     
-    print(f"  [ContentService] Calling LLM with Strategic Synthesizer v24.0...")
-    response = generate_json(prompt)
+    response = generate_json(final_prompt)
     slides_data = response.get("slides", [])
     
     print(f"  [ContentService] Saving {len(slides_data)} slides with Slide-Specific RAG...")
@@ -111,6 +119,7 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
                 "objective": s_data.get("objective", ""),
                 "visual_intent": s_data.get("visual_intent", ""),
                 "visual_tags": s_data.get("visual_tags", []),
+                "metadata": s_data.get("metadata") if isinstance(s_data.get("metadata"), dict) else {},
                 "rag_source": specific_rag
             },
             planning_json={

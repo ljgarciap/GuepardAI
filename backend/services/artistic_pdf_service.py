@@ -23,6 +23,21 @@ class ArtisticPDFService:
         """
         print(f"  [ArtisticPDF] Starting High-Fidelity Render for Job {job_id}...")
         
+        # DEFINICIÓN INICIAL (Blindaje total contra UnboundLocalError)
+        agency_logo_b64 = ""
+        
+        try:
+            agency_logo_path = "/app/backend/assets/agency/L-founders_logo.png"
+            if not os.path.exists(agency_logo_path):
+                agency_logo_path = "backend/assets/agency/L-founders_logo.png"
+            
+            if os.path.exists(agency_logo_path):
+                import base64
+                with open(agency_logo_path, "rb") as f:
+                    agency_logo_b64 = f"data:image/png;base64,{base64.b64encode(f.read()).decode()}"
+        except Exception as e:
+            print(f"  [ArtisticPDF] Warning: Could not encode agency logo: {e}")
+
         async with async_playwright() as p:
             browser = await p.chromium.launch()
             page = await browser.new_page(viewport={"width": 1280, "height": 720})
@@ -30,11 +45,10 @@ class ArtisticPDFService:
             pdf_filename = f"Portfolio_{job_id}_{int(datetime.datetime.now().timestamp())}.pdf"
             pdf_path = os.path.join(self.output_dir, pdf_filename)
             
-            # Inyectar Brand DNA si existe
             common_data = {
                 "primary_color": brand_dna.primary_color if brand_dna else "#002D62",
                 "secondary_color": brand_dna.secondary_color if brand_dna else "#E31837",
-                "agency_logo": "/app/backend/assets/agency/L-founders_logo.png"
+                "agency_logo": agency_logo_b64
             }
 
             # Renderizar HTML usando el template base que itera sobre slides

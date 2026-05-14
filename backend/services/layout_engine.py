@@ -75,7 +75,7 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
         for cat in ["photos", "logos", "icons"]:
             for asset in brand_dna.extracted_assets.get(cat, []):
                 available_assets.append({
-                    "id": asset.get("path"),
+                    "id": asset.get("id"),
                     "tags": asset.get("tags", []),
                     "description": asset.get("description", "")
                 })
@@ -123,8 +123,8 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
     
     ART DIRECTION RULES:
     1. BRAND COLORS: Use {visual_dna_dict['primary_color']} for headers and important shapes.
-    2. IMAGE SELECTION: Choose images that match the semantic content. If it's a "Tesco" slide, use Tesco logos or official photos from the library.
-    3. LAYOUT VARIETY: Use at least 8-10 different images. Avoid text-only slides if an image is available.
+    2. IMAGE SELECTION (CRITICAL): Prioritize 'Tesco' branded photos or logos from the AVAILABLE IMAGES. 
+    3. NO GENERIC: Avoid using non-branded lifestyle photos if a Tesco-specific asset exists.
     4. FIDELITY: If a 'REFERENCE SLIDE' from the manual matches the content type, use its structure.
     
     OUTPUT ONLY JSON:
@@ -169,7 +169,10 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
         
         # Override de imagen semántica
         if plan.get("image_id"):
-            slide["assigned_image"] = plan["image_id"]
+            from models import BrandAsset
+            asset_rec = db.query(BrandAsset).get(plan["image_id"])
+            if asset_rec:
+                slide["assigned_image"] = os.path.basename(asset_rec.local_path)
         
         elements, layout = build_slide_elements(
             slide=slide,
@@ -276,20 +279,51 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
                 content = s.content_json
                 # Enriquecer con imagen real resuelta
                 img_name = s.assigned_image
-                resolved_img = asset_map.get(img_name, "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab")
+                raw_img_path = asset_map.get(img_name)
                 
-                # Dynamic Layout Selection (v1.0 Artistic)
-                layout = "split"
-                if s.slide_number == 1:
-                    layout = "hero"
-                elif len(content.get("metrics", [])) >= 2:
-                    layout = "data"
-                elif len(s.title) < 60 and not content.get("bullets"):
-                    layout = "quote"
+                resolved_img = "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab"
+                print(f"  [DEBUG] Slide {s.slide_number}: assigned_image='{img_name}', path_in_map='{raw_img_path}'")
+                if raw_img_path:
+                    # Resolve path: try absolute, then relative to /app
+                    actual_path = raw_img_path if raw_img_path.startswith("/") else os.path.join("/app", raw_img_path)
+                    print(f"  [DEBUG] Attempting to open: {actual_path}")
+                    
+                    if os.path.exists(actual_path):
+                        import base64
+                        try:
+                            with open(actual_path, "rb") as img_f:
+                                b64_data = base64.b64encode(img_f.read()).decode()
+                                ext = os.path.splitext(actual_path)[1].lower().replace(".", "")
+                                if ext == "jpg": ext = "jpeg"
+                                mime_type = f"image/{ext}"
+                                resolved_img = f"data:{mime_type};base64,{b64_data}"
+                                print(f"  [SUCCESS] Slide {s.slide_number}: Embedded {actual_path} ({len(b64_data)} bytes)")
+                        except Exception as e:
+                            print(f"  [ERROR] Slide {s.slide_number}: Encoding failed for {actual_path}: {e}")
+                    else:
+                        print(f"  [ERROR] Slide {s.slide_number}: File NOT FOUND at {actual_path}")
+                else:
+                    print(f"  [WARNING] Slide {s.slide_number}: No image assigned by Art Director.")
+                
+                # Dynamic Layout Selection (v2.0 Artistic) - Respecting Strategic Choice
+                chosen_layout = content.get("layout_type", "composition_split")
+                
+                # Mapping LLM Grammars to HTML Templates
+                layout_map = {
+                    "composition_hero": "hero",
+                    "composition_split": "split",
+                    "composition_quote": "quote",
+                    "data_grid_cards": "data",
+                    "composition_pillars": "pillars",
+                    "big_metric": "quote" # Fallback
+                }
+                layout = layout_map.get(chosen_layout, "split")
 
                 slides_for_html.append({
                     "title": s.title,
-                    "section_label": "Executive Insights",
+                    "subtitle": content.get("subtitle", ""),
+                    "metadata": content.get("metadata", {}),
+                    "section_label": content.get("section_label", "Executive Insights"),
                     "primary_image": resolved_img,
                     "bullets": content.get("bullets", []),
                     "metrics": content.get("metrics", []),

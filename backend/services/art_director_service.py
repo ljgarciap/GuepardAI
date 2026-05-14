@@ -180,6 +180,10 @@ def plan_presentation_design(db: Session, job_id: int):
         # FASE E: ENSAMBLAJE DEL MANIFIESTO
         # v8.0: grammar_type viene del Analista, no del Art Director LLM
         grammar_type = analyst_grammar_type
+        if isinstance(grammar_type, list) and len(grammar_type) > 0:
+            grammar_type = grammar_type[0]
+        grammar_type = str(grammar_type)
+        
         primary_id = decision.get("primary_asset_id")
         accent_id = decision.get("accent_asset_id")
         
@@ -213,7 +217,12 @@ def plan_presentation_design(db: Session, job_id: int):
                 print(f"    [ArtDirector] RECOVERY ABORTED: Best match ({best_score}) below 0.45. Triggering AI.")
 
         # Persistir en Memoria Visual Absoluta y DB (v8.1)
-        slide.assigned_image = str(primary_id) if primary_id else None
+        # Sincronización DB-PDF: assigned_image DEBE ser el basename para el renderer
+        slide.assigned_image = None
+        if primary_id:
+            asset_rec = db.query(models.BrandAsset).get(primary_id)
+            if asset_rec:
+                slide.assigned_image = os.path.basename(asset_rec.local_path)
         
         # v8.80: Merge Art Director reasoning into planning_json
         current_planning = slide.planning_json or {}

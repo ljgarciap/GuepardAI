@@ -1,26 +1,62 @@
-<!-- HERO LAYOUT -->
+<!-- HERO LAYOUT (v2.0 Board-Ready) -->
 <div class="relative w-full h-full flex flex-col items-center justify-center text-center p-20">
+    <!-- Confidential Tag -->
+    {% if slide.metadata and slide.metadata.confidential %}
+    <div class="absolute top-12 left-16 text-[10px] text-brand-secondary font-black tracking-[0.4em] uppercase opacity-60">
+        Confidential
+    </div>
+    {% endif %}
+
     <!-- Background Full Bleed Image with Overlay -->
     <div class="absolute inset-0 z-0">
         <img src="{{ slide.primary_image }}" class="w-full h-full object-cover">
-        <div class="absolute inset-0 bg-gradient-to-b from-[#0f172a]/40 via-[#0f172a]/80 to-[#0f172a]"></div>
+        <div class="absolute inset-0 bg-gradient-to-b from-[#0f172a]/20 via-[#0f172a]/60 to-[#0f172a]"></div>
     </div>
 
-    <div class="relative z-10">
-        <div class="h-accent mx-auto mb-8"></div>
-        <span class="text-brand-secondary font-bold tracking-[0.4em] text-sm uppercase mb-6 block">{{ slide.section_label }}</span>
+    <div class="relative z-10 w-full">
+        <div class="h-accent mx-auto mb-10"></div>
         
-        <h1 class="text-7xl font-extrabold text-white leading-tight tracking-tighter mb-8 max-w-4xl mx-auto">
+        <h1 class="text-7xl font-extrabold text-white leading-[1.05] tracking-tighter mb-6 max-w-5xl mx-auto">
             {{ slide.title }}
         </h1>
+
+        {% if slide.subtitle %}
+        <p class="text-2xl font-light text-slate-300 tracking-wide mb-12 max-w-3xl mx-auto">
+            {{ slide.subtitle }}
+        </p>
+        {% endif %}
         
-        <div class="flex justify-center gap-4">
-            <div class="px-6 py-2 glass rounded-full text-white/80 text-xs font-bold tracking-widest uppercase">
-                Strategic Brief
+        <div class="flex justify-center gap-6 mb-20">
+            <div class="px-8 py-2 glass rounded-full text-white/80 text-[10px] font-bold tracking-[0.2em] uppercase">
+                {{ slide.section_label|default('Strategic Brief') }}
             </div>
-            <div class="px-6 py-2 bg-brand-secondary/20 border border-brand-secondary/30 rounded-full text-brand-secondary text-xs font-bold tracking-widest uppercase">
-                v1.0 Executive
+            <div class="px-8 py-2 bg-brand-secondary/20 border border-brand-secondary/30 rounded-full text-brand-secondary text-[10px] font-bold tracking-[0.2em] uppercase">
+                Board Ready
             </div>
+        </div>
+
+        <!-- Audience Metadata & Date (Board Style) -->
+        <div class="absolute bottom-16 left-16 right-16 flex justify-between items-end text-left">
+            {% if slide.metadata and slide.metadata.prepared_for %}
+            <div>
+                <div class="text-slate-400 text-[11px] font-bold uppercase tracking-widest mb-1">Prepared for</div>
+                <div class="text-white text-2xl font-bold">{{ slide.metadata.prepared_for }}</div>
+            </div>
+            {% elif ' addressed to ' in slide.title.lower() or ' prepared for ' in slide.title.lower() %}
+            <div>
+                <div class="text-slate-400 text-[11px] font-bold uppercase tracking-widest mb-1">Executive Summary</div>
+                <div class="text-white text-2xl font-bold">Strategic Recipient</div>
+            </div>
+            {% endif %}
+
+            {% if slide.metadata and slide.metadata.date %}
+            <div class="text-right">
+                <div class="text-slate-500 text-[11px] font-bold tracking-[0.2em] uppercase mb-1">Date</div>
+                <div class="text-white text-lg font-medium">
+                    {{ slide.metadata.date }}
+                </div>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>

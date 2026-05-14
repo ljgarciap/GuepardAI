@@ -55,8 +55,8 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
     # 0. Actualizar el Job con el permiso (v7.0)
     job.allow_ai_images = allow_ai_images
     db.commit()
-    print(f"  [ContentService] Searching RAG context for Job {job_id}...")
-    rag_context = search_rag(topic, knowledge_source)
+    print(f"  [ContentService] Searching RAG context for Job {job_id} (DENSE MODE: k=60)...")
+    rag_context = search_rag(topic, knowledge_source, k=60)
     
     # 2. Obtener Guía de Tono
     tone_guideline = "Professional executive tone."
@@ -64,31 +64,28 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
     if dna and dna.raw_extraction:
         tone_guideline = dna.raw_extraction.get("tone_description", tone_guideline)
     
-    # 3. Prompt de Síntesis Estratégica (Dinámico v23.3)
-    prompt = f"""
-    ### SYSTEM ROLE: STRATEGIC MULTILINGUAL SYNTHESIZER
-    ### OUTPUT LANGUAGE: {region} (Target Context)
+    # 3. Obtener Configs de Marca y Agencia (v24.0)
+    cfg_prompt = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_content_synthesizer_v1").first()
+    agency_name = db.query(models.SystemConfig).filter(models.SystemConfig.key == "agency_name").first()
     
-    Context: {rag_context}
-    Tone Guideline: {tone_guideline}
-    Topic: {topic}
+    brand_name = "Global Strategy"
+    if dna and dna.brand:
+        brand_name = dna.brand.name
+
+    if cfg_prompt:
+        prompt = cfg_prompt.value.format(
+            agency_name=agency_name.value if agency_name else "L - Founders",
+            brand_name=brand_name,
+            target_lang=region,
+            rag_context=rag_context,
+            tone_guideline=tone_guideline,
+            topic=topic
+        )
+    else:
+        # Fallback legacy prompt
+        prompt = f"Generate a strategic presentation about {topic} for {brand_name} using this context: {rag_context}"
     
-    Generate a JSON outline for this presentation. 
-    IMPORTANT: Respect the number of slides requested by the user in the 'Topic' if specified. 
-    If not specified, generate a complete and logical presentation (usually 10-20 slides).
-    
-    For each slide, provide:
-    - title: Strategic title
-    - bullets: 3-5 high-value points
-    - objective: What is this slide trying to achieve?
-    - visual_intent: A short (10 words) descriptive prompt of the ideal image for this slide.
-    - visual_tags: A list of 5-7 simple, descriptive tags for image searching (e.g., ["store", "digital", "customer"]).
-    
-    Return ONLY JSON:
-    {{ "slides": [ {{ "title": "...", "bullets": ["..."], "objective": "...", "visual_intent": "...", "visual_tags": ["tag1", "tag2", "tag3"] }} ] }}
-    """
-    
-    print(f"  [ContentService] Calling LLM for flexible content synthesis...")
+    print(f"  [ContentService] Calling LLM with Strategic Synthesizer v24.0...")
     response = generate_json(prompt)
     slides_data = response.get("slides", [])
     
@@ -108,10 +105,17 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
             title=slide_title,
             content_json={
                 "bullets": s_data.get("bullets", []),
+                "metrics": s_data.get("metrics", []),
+                "section_label": s_data.get("section_label", "STRATEGY"),
+                "layout_type": s_data.get("layout_type"),
                 "objective": s_data.get("objective", ""),
                 "visual_intent": s_data.get("visual_intent", ""),
                 "visual_tags": s_data.get("visual_tags", []),
-                "rag_source": specific_rag # El alimento para el Analista
+                "rag_source": specific_rag
+            },
+            planning_json={
+                "strategy": "Initial Synthesis",
+                "objective": s_data.get("objective", "Create strategic summary")
             },
             status="content_ready"
         )

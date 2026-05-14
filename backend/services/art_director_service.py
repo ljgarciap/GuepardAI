@@ -58,6 +58,16 @@ def plan_presentation_design(db: Session, job_id: int):
         # FASE A: ANALISTA ESTRATÉGICO
         strategy = get_slide_visual_strategy(db, slide, job)
         visual_intent = strategy.get("visual_intent", "Executive")
+
+        # v8.0: El Analista decide el grammar_type — el Art Director lo respeta
+        analyst_grammar_type = strategy.get("grammar_type", "composition_split")
+
+        # Enriquecer content_json del slide con lo que detectó el Analista (v8.0)
+        if strategy.get("metric_value") and not slide.content_json.get("metric"):
+            content = dict(slide.content_json or {})
+            content["metric"] = strategy["metric_value"]
+            slide.content_json = content
+            db.commit()
         
         # FASE B: BÚSQUEDA EN CASCADA (Protocolo v6.0)
         from services.asset_library_service import find_assets_by_tags
@@ -116,11 +126,16 @@ def plan_presentation_design(db: Session, job_id: int):
         for asset, score in asset_candidates:
             asset_info = {"id": asset.id, "score": score, "category": asset.category, "desc": asset.description[:50]}
             
-            # REGLA DE CALIDAD v8.5: Si es HERO, necesitamos resolución (mínimo 1024px)
+            # REGLA DE CALIDAD v8.9: Verificación Física si no hay Metadata
             res_ok = True
-            if requires_hi_res and asset.width and asset.width < 1024:
-                print(f"    [ArtDirector] REJECTED: Low resolution for Hero ({asset.width}x{asset.height})")
-                res_ok = False
+            min_required = 1024 if requires_hi_res else 400
+            
+            w, h = asset.width, asset.height
+            if not w and asset.local_path and os.path.exists(asset.local_path):
+                try:
+                    with Image.open(asset.local_path) as img:
+                        w, h = img.size
+                except: pass
 
             if score >= 0.40 and res_ok: 
                 filtered_assets.append(asset_info)
@@ -163,7 +178,8 @@ def plan_presentation_design(db: Session, job_id: int):
         db.add(audit)
 
         # FASE E: ENSAMBLAJE DEL MANIFIESTO
-        grammar_type = decision.get("grammar_type", "strategic_split")
+        # v8.0: grammar_type viene del Analista, no del Art Director LLM
+        grammar_type = analyst_grammar_type
         primary_id = decision.get("primary_asset_id")
         accent_id = decision.get("accent_asset_id")
         
@@ -174,9 +190,9 @@ def plan_presentation_design(db: Session, job_id: int):
             print(f"    [ArtDirector] FORCING: LLM rejected/missed candidates. Using best library match: {filtered_assets[0]['id']}")
             primary_id = filtered_assets[0]["id"]
         
-        # FASE E.2: THE CREATOR (v8.5) - Solo si de verdad NO hay nada en la librería
+        # FASE E.2: THE CREATOR (v8.5) - Solo si de verdad NO hay nada en la librería de calidad
         if not primary_id and job.allow_ai_images:
-            print(f"    [ArtDirector] ACTION: Library empty. Triggering Gemini Creator...")
+            print(f"    [ArtDirector] ACTION: Quality library empty. Triggering Gemini Creator...")
             from llm_provider import generate_ai_image
             from services.asset_library_service import register_asset
             
@@ -186,8 +202,28 @@ def plan_presentation_design(db: Session, job_id: int):
                 if new_asset:
                     primary_id = new_asset.id
                     print(f"    [ArtDirector] SUCCESS: AI Image generated and assigned.")
+        
+        # v8.66: Optimized Recovery Floor (0.45) for better library usage
+        if not primary_id and asset_candidates:
+            best_score = asset_candidates[0][1]
+            if best_score > 0.45:
+                print(f"    [ArtDirector] RECOVERY: Using confident semantic match ({best_score}): {asset_candidates[0][0].id}")
+                primary_id = asset_candidates[0][0].id
+            else:
+                print(f"    [ArtDirector] RECOVERY ABORTED: Best match ({best_score}) below 0.45. Triggering AI.")
 
-        # Persistir en Memoria Visual Absoluta
+        # Persistir en Memoria Visual Absoluta y DB (v8.1)
+        slide.assigned_image = str(primary_id) if primary_id else None
+        
+        # v8.80: Merge Art Director reasoning into planning_json
+        current_planning = slide.planning_json or {}
+        current_planning["art_director"] = {
+            "selected_asset": primary_id,
+            "logic": "Library Recovery" if not job.allow_ai_images else "Primary Selection/AI",
+            "threshold": 0.45
+        }
+        slide.planning_json = current_planning
+        
         if primary_id: used_assets.append(primary_id)
         if accent_id: used_assets.append(accent_id)
 

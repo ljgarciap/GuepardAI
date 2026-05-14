@@ -1,0 +1,40 @@
+# ─────────────────────────────────────────────────────
+# GuepardAI - VPS Deployment Orchestration (v1.0)
+# ─────────────────────────────────────────────────────
+version: '3.8'
+
+services:
+  db:
+    image: ankane/pgvector:latest
+    container_name: guepard_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-guepard}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  backend:
+    build: .
+    container_name: guepard_backend
+    restart: always
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-guepard}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY}
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID}
+      GCP_LOCATION: ${GCP_LOCATION:-us-central1}
+    volumes:
+      - ./uploads:/app/uploads
+      - ./data:/app/data
+      - ./config:/app/config
+
+volumes:
+  pgdata:

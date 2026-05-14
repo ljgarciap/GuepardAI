@@ -147,6 +147,8 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
                 # Mistral slugs don't usually have the prefix, but we remove it for the API call
                 m_slug = current_model.replace("mistral/", "")
                 response = client.chat.complete(model=m_slug, messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"})
+                if not response or not getattr(response, "choices", None) or len(response.choices) == 0:
+                    raise ValueError(f"Mistral model {current_model} returned no choices.")
                 return json.loads(response.choices[0].message.content)
             
             else:
@@ -159,6 +161,8 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
                     messages=[{"role": "user", "content": prompt}],
                     response_format={"type": "json_object"}
                 )
+                if not response or not getattr(response, "choices", None) or len(response.choices) == 0:
+                    raise ValueError(f"OpenRouter model {current_model} returned no choices.")
                 return json.loads(response.choices[0].message.content)
 
         except Exception as e:
@@ -216,7 +220,7 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
             
             if "gemini" in current_model.lower():
                 # ADAPTADOR NATIVO GEMINI
-                gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+                gem_key = get_system_config("gemini_api_key", None) or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
                 if not gem_key or genai is None:
                     raise ValueError("Gemini key missing or library not installed")
                 genai.configure(api_key=gem_key)
@@ -258,7 +262,7 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
                 
             else:
                 # OPENROUTER VISION (Claude 3.7 / GPT-4o)
-                or_key = os.getenv("OPENROUTER_API_KEY")
+                or_key = get_system_config("openrouter_api_key", None) or os.getenv("OPENROUTER_API_KEY")
                 if not or_key: raise ValueError("No OpenRouter Key")
                 client = openai.OpenAI(base_url="https://openrouter.ai/api/v1", api_key=or_key)
                 
@@ -275,6 +279,8 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
                     max_tokens=1000,
                     response_format={"type": "json_object"}
                 )
+                if not response or not getattr(response, "choices", None) or len(response.choices) == 0:
+                    raise ValueError(f"Vision model {current_model} returned no choices.")
                 return json.loads(response.choices[0].message.content)
 
         except Exception as e:
@@ -308,7 +314,7 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
     
     # 1. Determinar modelos a usar
     # v41.0: Use a more robust chain and fix Gemini names
-    model_chain = get_system_config("embedding_model_chain", "mistral-embed,models/text-embedding-004")
+    model_chain = get_system_config("embedding_model_chain", "mistral-embed,models/gemini-embedding-2")
     
     models_to_try = [m.strip() for m in model_chain.split(",")]
     last_error = None
@@ -329,37 +335,42 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
         try:
             print(f"  [Embeddings] Attempting with {current_model}...", flush=True)
             
-            if "gemini" in current_model.lower() or "text-embedding" in current_model.lower():
+            if "gemini" in current_model.lower() or "text-embedding" in current_model.lower() or "embedding" in current_model.lower():
                 # NATIVE GOOGLE EMBEDDINGS (Text or Multimodal)
-                gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+                gem_key = get_system_config("gemini_api_key", None) or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
                 if not gem_key or genai is None:
                     raise ValueError("Gemini key missing or library not installed")
                 genai.configure(api_key=gem_key)
                 
                 results = []
                 for item in inputs:
+                    if not item or (isinstance(item, str) and not item.strip()):
+                        print("  [Gemini DEBUG] Skipping empty item", flush=True)
+                        results.append(None)
+                        continue
+                        
                     try:
                         # ADAPTADOR INTELIGENTE (v4.0): Forzamos la dimensión a 1024 nativamente
                         m_name = current_model if current_model.startswith("models/") else f"models/{current_model}"
                         
                         try:
                             if isinstance(item, str):
+                                print(f"  [Gemini DEBUG] Embedding string of len {len(item)}", flush=True)
                                 res = genai.embed_content(
                                     model=m_name, content=item, 
                                     task_type="retrieval_document",
-                                    output_dimensionality=TARGET_DIM # <-- EL TRADUCTOR NATIVO
+                                    output_dimensionality=TARGET_DIM
                                 )
                             else:
+                                print(f"  [Gemini DEBUG] Embedding bytes of len {len(item)}", flush=True)
                                 res = genai.embed_content(
                                     model=m_name,
                                     content={'mime_type': 'image/jpeg', 'data': item},
                                     task_type="retrieval_document",
-                                    output_dimensionality=TARGET_DIM # <-- EL TRADUCTOR NATIVO
+                                    output_dimensionality=TARGET_DIM
                                 )
-                            # v8.36: Relaxed semantic floor for better variety (0.45)
-                            if score >= 0.45 and res_ok: 
-                                filtered.append((asset, score))
-                            results.append(res["embedding"]) # Ya viene en 1024
+                            
+                            results.append(res["embedding"])
                         except Exception as gem_err:
                             if ("not found" in str(gem_err).lower() or "404" in str(gem_err)) and "models/" in m_name:
                                 alt_name = m_name.replace("models/", "")
@@ -392,14 +403,17 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
 
             elif "mistral" in current_model.lower():
                 # MISTRAL EMBEDDINGS (v18.6)
-                mis_key = os.getenv("MISTRAL_API_KEY")
+                mis_key = get_system_config("mistral_api_key", None) or os.getenv("MISTRAL_API_KEY")
                 if not mis_key: raise ValueError("No Mistral Key")
                 from mistralai import Mistral
                 client = Mistral(api_key=mis_key)
                 
                 # Solo texto para Mistral
-                text_inputs = [i for i in inputs if isinstance(i, str)]
-                if not text_inputs: continue
+                text_inputs = [i for i in inputs if isinstance(i, str) and i.strip()]
+                print(f"  [Mistral DEBUG] text_inputs length: {len(text_inputs)}", flush=True)
+                if not text_inputs: 
+                    print("  [Mistral DEBUG] SKIPPING because text_inputs is empty!", flush=True)
+                    continue
                 
                 # Use a higher timeout to prevent hanging
                 try:
@@ -415,12 +429,14 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
                 final_results = []
                 mistral_idx = 0
                 for item in inputs:
-                    if isinstance(item, str):
+                    if isinstance(item, str) and item.strip():
+                        # Item was sent to Mistral
                         vec = response.data[mistral_idx].embedding
                         final_results.append(normalize_vector(vec, TARGET_DIM))
                         mistral_idx += 1
                     else:
-                        final_results.append(None) # Mistral does not support images
+                        # Item was NOT sent (empty string or image)
+                        final_results.append(None)
                 return final_results
 
         except Exception as e:
@@ -452,13 +468,19 @@ def generate_ai_image(prompt: str) -> Optional[str]:
         print(f"  [ImageGen] INVOKING IMAGEN 4.0: models/imagen-4.0-generate-001 (High Timeout Mode)")
         client = google_genai.Client(api_key=gem_key, http_options={'timeout': 600})
         
-        # v8.66: Anti-Diagram & Spelling Protection
-        forbidden = ["diagram", "infographic", "text", "chart", "table", "graph"]
-        if any(x in prompt.lower() for x in forbidden):
-            print(f"  [ImageGen] WARNING: Suppressing diagram/text request to avoid spelling errors.")
-            prompt = prompt.replace("diagram", "photography").replace("infographic", "professional scene").replace("chart", "dashboard on a screen")
+        # v8.66: Anti-Diagram & Spelling Protection (Hardened)
+        forbidden = ["diagram", "infographic", "text", "chart", "table", "graph", "label", "writing", "logo", "brand"]
+        clean_intent = prompt.lower()
+        for x in forbidden:
+            clean_intent = clean_intent.replace(x, "executive scene")
         
-        clean_prompt = f"{prompt}. Photorealistic lifestyle photography, NO TEXT, NO LOGOS, NO DIAGRAMS, high quality, professional lighting."
+        # v8.67: The "Board-Ready" Aesthetic Protocol
+        clean_prompt = (
+            f"Professional corporate photography: {clean_intent}. "
+            "High-end commercial aesthetic, minimal composition, shallow depth of field. "
+            "STRICTLY NO TEXT, NO DIAGRAMS, NO CHARTS, NO LOGOS, NO WRITING ON WALLS. "
+            "Clean and architectural."
+        )
         
         # LOG AUDIT PRE-CALL
         log_audit("IMAGE_GEN_REQUEST", f"MODEL: imagen-4.0-generate-001\nPROMPT: {clean_prompt}")

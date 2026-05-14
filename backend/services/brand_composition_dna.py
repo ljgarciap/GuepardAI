@@ -226,41 +226,12 @@ GRAMMAR_GEOMETRIES = {
         "table":   None,
     },
 
-    "data_grid": {
+    "data_grid_cards": {
         "title":   {"left": 7.0,  "top": 7.0,  "width": 86.0, "height": 16.0},
-        "content": {"left": 7.0,  "top": 25.0, "width": 86.0, "height": 65.0},
-        "metric":  {"left": 7.0,  "top": 25.0, "width": 86.0, "height": 65.0},
-        "image":   {"left": 80.0, "top": 5.0,  "width": 14.0, "height": 14.0, "role": "accent_small"},
-        "accent":  {"left": 7.0,  "top": 24.0, "width": 86.0, "height": 0.5},
-        "table":   {"left": 7.0,  "top": 25.0, "width": 86.0, "height": 65.0},
-    },
-
-    "closing_cta": {
-        "title":   {"left": 15.0, "top": 25.0, "width": 70.0, "height": 25.0},
-        "content": {"left": 20.0, "top": 55.0, "width": 60.0, "height": 25.0},
-        "image":   {"left": 78.0, "top": 60.0, "width": 18.0, "height": 18.0, "role": "accent_small"},
-        "accent":  {"left": 40.0, "top": 20.0, "width": 20.0, "height": 1.5},
+        "metrics": {"left": 7.0,  "top": 25.0, "width": 86.0, "height": 65.0}, # Contenedor de cards
+        "image":   None,
+        "accent":  {"left": 7.0,  "top": 24.0, "width": 10.0, "height": 0.5},
         "table":   None,
-        "background_shape": {"left": 0.0, "top": 0.0, "width": 100.0, "height": 100.0,
-                            "role": "brand_color_bg", "opacity": 1.0},
-    },
-
-    "marketing_hero": {
-        "title":   {"left": 7.0,  "top": 7.0,  "width": 55.0, "height": 35.0},
-        "content": {"left": 7.0,  "top": 45.0, "width": 50.0, "height": 45.0},
-        "image":   {"left": 55.0, "top": 8.0,  "width": 38.0, "height": 84.0, "role": "supporting"},
-        "accent":  {"left": 42.0, "top": 8.0,  "width": 10.0, "height": 10.0, "role": "decorative"},
-        "table":   {"left": 7.0,  "top": 55.0, "width": 44.0, "height": 35.0},
-    },
-
-    "asymmetric_overlay": {
-        "title":   {"left": 8.0,  "top": 15.0, "width": 42.0, "height": 20.0},
-        "content": {"left": 8.0,  "top": 38.0, "width": 38.0, "height": 45.0},
-        "image":   {"left": 0.0,  "top": 0.0,  "width": 100.0, "height": 100.0, "role": "background"},
-        "accent":  {"left": 8.0,  "top": 12.0, "width": 12.0, "height": 1.5},
-        "table":   None,
-        "background_shape": {"left": 3.0, "top": 8.0, "width": 50.0, "height": 84.0,
-                            "role": "frosted_panel", "opacity": 0.85},
     },
 }
 
@@ -270,6 +241,7 @@ SLUG_ALIASES = {
     "two-column":           "two_column",
     "quote-hero":           "executive_quote",
     "data-grid":            "data_grid",
+    "data-cards":           "data_grid_cards",
     "marketing-hero":       "marketing_hero",
     "asymmetric-overlay":   "asymmetric_overlay",
     "editorial-magazine":   "asymmetric_overlay",
@@ -453,7 +425,10 @@ def infer_grammar_type(
     if any(w in title_lower for w in ["case study", "case_study", "retailer", "coles", "loblaw", "conad"]):
         return "case_study"
 
-    if metric or any(w in title_lower for w in ["kpi", "metric", "roi", "revenue", "growth", "%"]):
+    if metric or any(w in title_lower for w in ["kpi", "metric", "roi", "revenue", "growth", "%", "at a glance"]):
+        # v24.0: Prefer structured cards for multiple metrics
+        if bullets and len(bullets) >= 2 and any(any(c.isdigit() for c in b) for b in bullets):
+            return "data_grid_cards"
         if recent_types.count("impact_number") < 2:
             return "impact_number"
 

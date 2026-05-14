@@ -16,6 +16,7 @@ ESO ES TODO. El resto de este archivo hace el trabajo.
 import os
 import json
 from sqlalchemy.orm import Session
+import models
 
 # ══════════════════════════════════════════════════════════════
 # MAPA: grammar_type del Art Director → método del GammaPainter
@@ -28,16 +29,13 @@ GRAMMAR_TO_PAINTER = {
     "impact_number":        "big_metric",
     "section_break":        "composition_hero",    # Fondo de color = hero sin imagen
     "case_study":           "composition_split",   # Split con métricas en bullets
-    "two_column":           "composition_pillars", # Grid 2 columnas
+    "two_column":           "composition_grid",
     "cover_hero":           "composition_hero",
-    "data_grid":            "composition_grid",    # Grid de datos
-    "closing_cta":          "composition_quote",   # Quote de cierre
+    "data_grid":            "paint_data_grid_cards", # v10.0: Unified data cards
+    "closing_cta":          "composition_quote",
     "marketing_hero":       "composition_hero",
     "asymmetric_overlay":   "composition_hero",
-
-    # Aliases legacy de generate_content.py (los layout_type del LLM de contenido)
-    "composition_hero":     "composition_hero",
-    "composition_split":    "composition_split",
+    "data_grid_cards":      "paint_data_grid_cards",
     "composition_pillars":  "composition_pillars",
     "composition_quote":    "composition_quote",
     "composition_grid":     "composition_grid",
@@ -106,6 +104,9 @@ def _build_slide_data(slide, asset_map: dict, db: Session) -> dict:
     )
 
     # Mapear al método del Painter
+    if content.get("metrics") and grammar_type not in ("composition_hero", "composition_quote", "big_metric", "strategic_split"):
+        grammar_type = "data_grid_cards"
+        
     layout_type = GRAMMAR_TO_PAINTER.get(grammar_type, "composition_split")
 
     # Resolver path del asset principal
@@ -170,6 +171,7 @@ def _build_slide_data(slide, asset_map: dict, db: Session) -> dict:
         # Metadata extra para tipos especiales
         "grammar_type":         grammar_type,
         "slide_number":         slide.slide_number,
+        "metrics":              content.get("metrics", []), # Soporte para grid de datos
     }
 
 
@@ -243,15 +245,23 @@ def render_with_painter(db: Session, job_id: int, asset_map: dict, output_path: 
         grammar_type_history.append(data["layout_type"])
         slide_data_list.append(data)
 
-    # 5. Obtener Logo de Marca
+    # 5. Obtener Logo de Marca y Branding de Agencia (v24.0)
     brand = db.query(models.Brand).get(job.brand_id)
     logo_path = None
     if brand and brand.logo_path:
         logo_path = _resolve_asset_path(brand.logo_path, asset_map)
     
+    # Agency Branding (L-Founders)
+    agency_name = db.query(models.SystemConfig).filter(models.SystemConfig.key == "agency_name").first()
+    agency_logo = db.query(models.SystemConfig).filter(models.SystemConfig.key == "agency_logo_path").first()
+    
     content_json = {
         "slides": slide_data_list,
-        "logo_path": logo_path
+        "logo_path": logo_path,
+        "agency_branding": {
+            "name": agency_name.value if agency_name else "L - Founders of Loyalty",
+            "logo_path": _resolve_asset_path(agency_logo.value, asset_map) if agency_logo else None
+        }
     }
 
     # 5. Estadísticas de variedad

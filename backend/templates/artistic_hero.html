@@ -1,0 +1,26 @@
+<!-- HERO LAYOUT -->
+<div class="relative w-full h-full flex flex-col items-center justify-center text-center p-20">
+    <!-- Background Full Bleed Image with Overlay -->
+    <div class="absolute inset-0 z-0">
+        <img src="{{ slide.primary_image }}" class="w-full h-full object-cover">
+        <div class="absolute inset-0 bg-gradient-to-b from-[#0f172a]/40 via-[#0f172a]/80 to-[#0f172a]"></div>
+    </div>
+
+    <div class="relative z-10">
+        <div class="h-accent mx-auto mb-8"></div>
+        <span class="text-brand-secondary font-bold tracking-[0.4em] text-sm uppercase mb-6 block">{{ slide.section_label }}</span>
+        
+        <h1 class="text-7xl font-extrabold text-white leading-tight tracking-tighter mb-8 max-w-4xl mx-auto">
+            {{ slide.title }}
+        </h1>
+        
+        <div class="flex justify-center gap-4">
+            <div class="px-6 py-2 glass rounded-full text-white/80 text-xs font-bold tracking-widest uppercase">
+                Strategic Brief
+            </div>
+            <div class="px-6 py-2 bg-brand-secondary/20 border border-brand-secondary/30 rounded-full text-brand-secondary text-xs font-bold tracking-widest uppercase">
+                v1.0 Executive
+            </div>
+        </div>
+    </div>
+</div>

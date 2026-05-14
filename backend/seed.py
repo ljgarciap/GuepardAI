@@ -30,7 +30,7 @@ def seed_data():
             },
             {
                 "key": "agency_logo_path",
-                "value": "uploads/L-founders_logo.png",
+                "value": "assets/agency/L-founders_logo.png",
                 "description": "Ruta al logo de la agencia para el footer/firma."
             },
             {

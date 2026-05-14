@@ -1,0 +1,30 @@
+<!-- DATA LAYOUT -->
+<div class="flex flex-col h-full p-20 justify-center">
+    <div class="flex items-center gap-4 mb-8">
+        <div class="h-accent"></div>
+        <span class="text-brand-secondary font-bold tracking-[0.2em] text-xs uppercase">{{ slide.section_label }}</span>
+    </div>
+
+    <h1 class="text-5xl font-extrabold text-white mb-16 leading-tight max-w-3xl">
+        {{ slide.title }}
+    </h1>
+
+    <div class="grid grid-cols-3 gap-8">
+        {% for metric in slide.metrics %}
+        <div class="glass p-10 rounded-3xl relative overflow-hidden group">
+            <!-- Subtle accent -->
+            <div class="absolute top-0 right-0 w-24 h-24 bg-brand-secondary opacity-5 group-hover:opacity-10 transition-opacity rounded-bl-full"></div>
+            
+            <div class="flex items-end gap-3 mb-4">
+                <span class="text-6xl font-bold text-white tracking-tighter">{{ metric.value }}</span>
+                {% if metric.growth %}
+                <span class="text-lg font-bold text-emerald-400 pb-2">{{ metric.growth }}</span>
+                {% endif %}
+            </div>
+            <div class="text-xs text-slate-400 font-extrabold uppercase tracking-[0.2em] leading-relaxed">
+                {{ metric.label }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>

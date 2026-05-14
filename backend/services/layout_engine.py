@@ -245,14 +245,8 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
         if not plan_presentation_design(db, job_id):
             raise Exception("Failed during Art Direction.")
 
-        # FASE 3: RENDERIZADO FINAL
-        job.current_step = "Phase 3/3: Painting final PPTX..."
-        job.progress = 80
-        db.commit()
-
-        output_filename = f"Portfolio_{job_id}_{int(time.time())}.pptx"
-        output_path = os.path.join("uploads", output_filename)
-
+        output_format = req_data.get("output_format", "pptx")
+        
         # Construir asset_map global
         asset_map = {}
         assets = db.query(models.BrandAsset).filter(
@@ -263,21 +257,79 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
             if a.local_path:
                 asset_map[os.path.basename(a.local_path)] = a.local_path
 
-        # Renderizar con GammaPainter o renderer legacy
-        if use_painter:
-            from painter_bridge import render_with_painter
-            render_with_painter(db, job_id, asset_map, output_path)
-            print(f"  [Flow v8.0] ✓ GammaPainter render complete.")
+        if output_format == "pdf_artistic":
+            # ── MODO PDF ARTÍSTICO ──
+            from services.artistic_pdf_service import artistic_pdf_service
+            from models import BrandVisualDna, PresentationSlide
+            
+            job.current_step = "Phase 3/3: Rendering Artistic PDF (High-Fidelity)..."
+            db.commit()
+            
+            # Obtener Brand DNA
+            brand_dna = db.query(BrandVisualDna).filter(BrandVisualDna.brand_id == job.brand_id).first()
+            # Obtener slides procesadas de la DB
+            db_slides = db.query(PresentationSlide).filter(PresentationSlide.job_id == job_id).order_by(PresentationSlide.slide_number).all()
+            
+            # Formatear datos para el template HTML
+            slides_for_html = []
+            for s in db_slides:
+                content = s.content_json
+                # Enriquecer con imagen real resuelta
+                img_name = s.assigned_image
+                resolved_img = asset_map.get(img_name, "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab")
+                
+                # Dynamic Layout Selection (v1.0 Artistic)
+                layout = "split"
+                if s.slide_number == 1:
+                    layout = "hero"
+                elif len(content.get("metrics", [])) >= 2:
+                    layout = "data"
+                elif len(s.title) < 60 and not content.get("bullets"):
+                    layout = "quote"
+
+                slides_for_html.append({
+                    "title": s.title,
+                    "section_label": "Executive Insights",
+                    "primary_image": resolved_img,
+                    "bullets": content.get("bullets", []),
+                    "metrics": content.get("metrics", []),
+                    "layout": layout
+                })
+
+            import asyncio
+            # Como estamos en un hilo síncrono (add_task), corremos el bucle async para Playwright
+            pdf_path = asyncio.run(artistic_pdf_service.generate_pdf(job_id, slides_for_html, brand_dna))
+            
+            output_filename = os.path.basename(pdf_path)
+            download_url = f"/outputs/artistic_pdf/{output_filename}"
+            print(f"  [Flow v8.5] ✓ Artistic PDF render complete: {output_filename}")
+            
+            # Store FULL PATH in DB
+            job.pptx_path = pdf_path 
         else:
-            render_pptx_from_db(job_id, asset_map, output_path)
-            print(f"  [Flow v8.0] ✓ Legacy renderer complete.")
+            # ── MODO PPTX (Legacy/Painter) ──
+            output_filename = f"Portfolio_{job_id}_{int(time.time())}.pptx"
+            output_path = os.path.join("uploads", output_filename)
+
+            # Renderizar con GammaPainter o renderer legacy
+            if use_painter:
+                from painter_bridge import render_with_painter
+                render_with_painter(db, job_id, asset_map, output_path)
+                print(f"  [Flow v8.0] ✓ GammaPainter render complete.")
+            else:
+                from services.pptx_renderer import render_pptx_from_db
+                render_pptx_from_db(job_id, asset_map, output_path)
+                print(f"  [Flow v8.0] ✓ Legacy renderer complete.")
+            
+            download_url = f"/uploads/{output_filename}"
+            # Store FULL PATH in DB
+            job.pptx_path = output_path
 
         # FINALIZACIÓN
         job.status = "completed"
         job.current_step = "Portfolio ready."
         job.progress = 100
-        job.pptx_path = output_path
-        job.download_url = f"/uploads/{output_filename}"
+        job.download_url = download_url
         db.commit()
 
     except Exception as e:

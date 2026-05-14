@@ -97,7 +97,8 @@ export class BrandService {
     knowledge_filename: string, 
     region?: string, 
     brand_id?: number, 
-    allow_ai_images?: boolean
+    allow_ai_images?: boolean,
+    output_format?: string
   }): Observable<any> {
     return this.http.post(`${this.apiUrl}/presentations/generate`, req);
   }

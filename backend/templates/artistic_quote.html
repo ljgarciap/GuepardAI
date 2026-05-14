@@ -1,0 +1,18 @@
+<!-- QUOTE LAYOUT -->
+<div class="relative w-full h-full flex flex-col items-center justify-center text-center p-24">
+    <!-- Oversized Quote Mark -->
+    <div class="absolute top-20 left-40 text-[200px] font-black text-brand-secondary opacity-10 leading-none">“</div>
+    
+    <div class="relative z-10 max-w-5xl">
+        <h2 class="text-4xl md:text-5xl font-light italic text-slate-100 leading-[1.4] mb-12">
+            "{{ slide.title }}"
+        </h2>
+        
+        <div class="h-accent mx-auto mb-6"></div>
+        <div class="text-brand-secondary font-extrabold tracking-[0.3em] text-xs uppercase">
+            {{ slide.section_label }}
+        </div>
+    </div>
+    
+    <div class="absolute bottom-20 right-40 text-[200px] font-black text-brand-secondary opacity-10 leading-none">”</div>
+</div>

@@ -80,8 +80,11 @@ class CORSStaticFiles(StaticFiles):
         return response
 
 UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
+OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "outputs"))
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 app.mount("/uploads", CORSStaticFiles(directory=UPLOAD_DIR), name="uploads")
+app.mount("/outputs", CORSStaticFiles(directory=OUTPUT_DIR), name="outputs")
 
 
 # ──────────────────────────────────────────────
@@ -101,6 +104,7 @@ class PresentationRequest(BaseModel):
     region: str = "LATAM"
     brand_id: Optional[int] = None
     allow_ai_images: bool = False
+    output_format: str = "pptx" # 'pptx' or 'pdf_artistic'
 
 
 # ──────────────────────────────────────────────
@@ -447,7 +451,8 @@ async def generate_presentation(
         "knowledge_filename": request.knowledge_filename,
         "prompt": request.prompt,
         "region": request.region,
-        "allow_ai_images": request.allow_ai_images
+        "allow_ai_images": request.allow_ai_images,
+        "output_format": request.output_format
     }
     
     background_tasks.add_task(

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GuepardAI Executive Portfolio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: {{ primary_color|default('#002D62') }};
+            --secondary-color: {{ secondary_color|default('#E31837') }};
+        }
+        body { 
+            font-family: 'Outfit', sans-serif; 
+            margin: 0; 
+            padding: 0; 
+            background-color: #0f172a;
+        }
+        .slide-page {
+            width: 1280px;
+            height: 720px;
+            overflow: hidden;
+            position: relative;
+            page-break-after: always;
+            background: radial-gradient(circle at 0% 0%, #1e293b 0%, #0f172a 100%);
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .text-brand-primary { color: var(--primary-color); }
+        .text-brand-secondary { color: var(--secondary-color); }
+        .bg-brand-primary { background-color: var(--primary-color); }
+        .bg-brand-secondary { background-color: var(--secondary-color); }
+        
+        /* Typography Polish */
+        .h-accent {
+            height: 2px;
+            width: 48px;
+            background: var(--secondary-color);
+        }
+    </style>
+</head>
+<body>
+    {% for slide in slides %}
+        <div class="slide-page">
+            {% if slide.layout == 'hero' %}
+                {% include 'artistic_hero.html' %}
+            {% elif slide.layout == 'data' %}
+                {% include 'artistic_data.html' %}
+            {% elif slide.layout == 'quote' %}
+                {% include 'artistic_quote.html' %}
+            {% else %}
+                {% include 'artistic_split.html' %}
+            {% endif %}
+
+            <!-- Global Footer -->
+            <div class="absolute bottom-10 left-16 right-16 flex justify-between items-center border-t border-white/5 pt-6 opacity-40">
+                <div class="text-[10px] text-slate-500 uppercase tracking-widest font-bold">L-Founders | Executive Intelligence</div>
+                <img src="{{ agency_logo }}" class="h-5 brightness-0 invert">
+            </div>
+        </div>
+    {% endfor %}
+</body>
+</html>

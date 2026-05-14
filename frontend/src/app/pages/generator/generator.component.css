@@ -11,7 +11,7 @@
   display: flex;
   flex-direction: column; /* Vertical layout: Title TOP, Controls BOTTOM */
   align-items: flex-start;
-  gap: 32px; /* Clear space between title and controls */
+  gap: 20px; /* Reduced gap between title and controls */
   margin-bottom: 0;
 }
 
@@ -38,7 +38,7 @@
   display: flex;
   width: 100%; /* Full width for selectors */
   justify-content: flex-start;
-  gap: 32px; 
+  gap: 16px; 
   padding-top: 0;
 }
 
@@ -46,7 +46,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px; 
-  padding-left: 20px; /* Air between groups */
+  padding-left: 12px; /* Air between groups */
   border-left: 1px solid rgba(0,0,0,0.03); /* Subtle separation */
 }
 
@@ -64,7 +64,7 @@
 }
 
 .enterprise-select {
-  width: 200px;
+  width: 170px;
   border: 1px solid var(--border-light);
   padding: 8px 12px;
   font-weight: 500;
@@ -74,6 +74,13 @@
 .admin-opt {
   color: #6366f1;
   font-weight: 700;
+}
+
+.format-highlight {
+  border: 1px solid #6366f1;
+  background: rgba(99, 102, 241, 0.05);
+  font-weight: 700;
+  color: #4f46e5;
 }
 
 /* Compact Hero Section */

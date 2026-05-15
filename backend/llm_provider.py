@@ -125,18 +125,23 @@ def resolve_provider(specialization: str = "general"):
 def generate_json(prompt: str, model: Optional[str] = None, specialization: str = "general") -> dict:
     """
     UNIVERSAL AI ENGINE (v18.2) - Parametric Failover.
-    Soporta cadenas de modelos: 'models/gemini-1.5-flash,mistral/mistral-large-latest'
+    Soporta cadenas de modelos: 'gemini-1.5-flash,mistral/mistral-large-latest'
     """
     if not model:
         # v23.5: No hardcoded fallbacks here. Fetch from DB.
-        model = get_system_config("extraction_synthesis_model", "models/gemini-1.5-flash")
+        model = get_system_config("extraction_synthesis_model", "gemini-1.5-flash")
         
     models_to_try = [m.strip() for m in model.split(",")]
     last_error = None
     
     for current_model in models_to_try:
         try:
-            print(f"  [LLM] Attempting generation with {current_model}...", flush=True)
+            # v23.6: Auto-strip 'models/' prefix if present (SDK handles this internally)
+            api_model_name = current_model
+            if "gemini" in api_model_name.lower() and api_model_name.startswith("models/"):
+                api_model_name = api_model_name.replace("models/", "")
+
+            print(f"  [LLM] Attempting generation with {api_model_name}...", flush=True)
             
             # 1. Routes according to model name content
             if "gemini" in current_model.lower():
@@ -145,9 +150,8 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
                 if not gem_key or genai is None: 
                     raise ValueError("Gemini key missing or library not installed")
                 genai.configure(api_key=gem_key)
-                # Ensure it has 'models/' for the SDK if missing
-                m_name = current_model if current_model.startswith("models/") else f"models/{current_model}"
-                m = genai.GenerativeModel(m_name)
+                # v23.7: Use cleaned model name (stripping 'models/') to avoid 404s
+                m = genai.GenerativeModel(api_model_name)
                 # v8.54: Added mandatory timeout to prevent hangs
                 response = m.generate_content(
                     prompt, 
@@ -209,7 +213,7 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
                 continue
                 
     # FINAL ATTEMPT: Global Fallback from DB
-    fallback = get_system_config("global_fallback_model", "models/gemini-1.5-flash")
+    fallback = get_system_config("global_fallback_model", "gemini-1.5-flash")
     if model != fallback:
         print(f"  [LLM] Chain failed. Attempting global emergency fallback ({fallback})...", flush=True)
         try:
@@ -226,7 +230,7 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
     Obtiene la cadena de modelos desde system_configs.
     """
     if not model:
-        model = get_system_config("extraction_vision_model", "models/gemini-1.5-flash")
+        model = get_system_config("extraction_vision_model", "gemini-1.5-flash")
         
     models_to_try = [m.strip() for m in model.split(",")]
     
@@ -268,7 +272,7 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
                 genai.configure(api_key=gem_key)
                 
                 # The adapter handles the correct structure according to the SDK
-                m_name = current_model if current_model.startswith("models/") else f"models/{current_model}"
+                m_name = current_model.replace("models/", "") if "gemini" in current_model.lower() else current_model
                 # But if it fails with models/, the adapter must know how to retry without it or use the base name
                 
                 try:
@@ -331,7 +335,7 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
             continue
 
     # FINAL ATTEMPT: Global Fallback
-    fallback = get_system_config("global_fallback_model", "models/gemini-1.5-flash")
+    fallback = get_system_config("global_fallback_model", "gemini-1.5-flash")
     if model != fallback:
         print(f"  [Vision] Chain failed. Attempting global emergency fallback ({fallback})...", flush=True)
         try:
@@ -393,7 +397,7 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
                         
                     try:
                         # ADAPTADOR INTELIGENTE (v4.0): Forzamos la dimensión a 1024 nativamente
-                        m_name = current_model if current_model.startswith("models/") else f"models/{current_model}"
+                        m_name = current_model.replace("models/", "")
                         
                         try:
                             if isinstance(item, str):

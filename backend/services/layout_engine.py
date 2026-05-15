@@ -103,7 +103,7 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
 
     # 3. LLM ART DIRECTOR: Planificación Maestra
     # Le pedimos al LLM que analice TODO el contenido y asigne los mejores recursos.
-    model_name = get_system_config("art_director_model", "models/gemini-1.5-flash")
+    model_name = get_system_config("art_director_model", "gemini-1.5-flash")
 
     # 3. Director de Arte Senior - Slide by Slide Analysis (v18.7)
     # Buscamos slides de referencia del manual original para máxima fidelidad

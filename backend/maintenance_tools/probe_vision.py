@@ -10,7 +10,7 @@ print(f"Target Image: {image_path}")
 
 try:
     # Este es el punto donde se colgaba
-    result = generate_vision_json(prompt, [image_path], model="models/gemini-2.5-flash")
+    result = generate_vision_json(prompt, [image_path], model="models/gemini-1.5-flash")
     print("\n[SUCCESS] Vision Response:")
     print(json.dumps(result, indent=2))
 except Exception as e:

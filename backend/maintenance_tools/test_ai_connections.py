@@ -71,7 +71,7 @@ if __name__ == "__main__":
     print("=== POWERAI API AUDIT START ===\n")
     
     # Test the verified models from the list
-    test_gemini_vision("models/gemini-2.5-flash")
+    test_gemini_vision("models/gemini-1.5-flash")
     test_gemini_embedding("models/gemini-embedding-2")
     
     # Test Mistral

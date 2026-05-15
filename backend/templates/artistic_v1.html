@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GuepardAI - Artistic Render PoC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: {{ primary_color|default('#002D62') }};
+            --secondary-color: {{ secondary_color|default('#E31837') }};
+        }
+        body { font-family: 'Outfit', sans-serif; background-color: #0f172a; margin: 0; padding: 0; }
+        .slide-container { 
+            width: 1280px; 
+            height: 720px; 
+            overflow: hidden; 
+            position: relative;
+            background: radial-gradient(circle at 0% 0%, #1e293b 0%, #0f172a 100%);
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .text-brand-primary { color: var(--primary-color); }
+        .text-brand-secondary { color: var(--secondary-color); }
+        .bg-brand-primary { background-color: var(--primary-color); }
+        .bg-brand-secondary { background-color: var(--secondary-color); }
+        .border-brand-secondary { border-color: var(--secondary-color); }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen bg-black">
+    <div class="slide-container shadow-2xl relative">
+        
+        <!-- Background Accent -->
+        <div class="absolute -top-40 -right-40 w-[600px] h-[600px] bg-brand-secondary opacity-10 rounded-full blur-[120px]"></div>
+        
+        <div class="flex h-full p-16 gap-12 relative z-10">
+            <!-- Image Panel -->
+            <div class="w-2/5 h-full relative">
+                <div class="absolute inset-0 rounded-3xl overflow-hidden shadow-2xl">
+                    <img src="{{ primary_image }}" class="w-full h-full object-cover">
+                    <div class="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-transparent opacity-60"></div>
+                </div>
+                <!-- Pill Label -->
+                <div class="absolute top-6 left-6 px-4 py-2 bg-brand-secondary text-white text-[10px] font-extrabold uppercase tracking-[0.3em] rounded-full shadow-lg">
+                    Case Study
+                </div>
+            </div>
+
+            <!-- Content Panel -->
+            <div class="w-3/5 flex flex-col justify-center">
+                <div class="flex items-center gap-4 mb-8">
+                    <div class="h-[2px] w-12 bg-brand-secondary"></div>
+                    <span class="text-brand-secondary font-bold tracking-[0.2em] text-xs uppercase">{{ section_label }}</span>
+                </div>
+
+                <h1 class="text-5xl font-extrabold text-white mb-10 leading-[1.1] tracking-tight">
+                    {{ title }}
+                </h1>
+
+                <div class="grid grid-cols-2 gap-6 mb-12">
+                    {% for metric in metrics %}
+                    <div class="glass p-8 rounded-2xl">
+                        <div class="flex items-end gap-2 mb-2">
+                            <span class="text-4xl font-bold text-white">{{ metric.value }}</span>
+                            {% if metric.growth %}
+                            <span class="text-sm font-bold text-emerald-400 pb-1">{{ metric.growth }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">{{ metric.label }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <ul class="space-y-4">
+                    {% for bullet in bullets %}
+                    <li class="flex items-start gap-4 text-slate-300">
+                        <div class="mt-2 h-1.5 w-1.5 rounded-full bg-brand-secondary shrink-0"></div>
+                        <span class="text-lg leading-relaxed">{{ bullet }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+
+        <!-- Branding Footer -->
+        <div class="absolute bottom-10 left-16 right-16 flex justify-between items-center border-t border-white/5 pt-6 opacity-40">
+            <div class="text-[10px] text-slate-500 uppercase tracking-widest font-bold">L-Founders | Executive Intelligence</div>
+            <img src="{{ agency_logo }}" class="h-5 brightness-0 invert">
+        </div>
+    </div>
+</body>
+</html>

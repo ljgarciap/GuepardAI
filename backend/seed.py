@@ -1,10 +1,9 @@
 """
-seed.py — GuepardAI v8.0
+seed.py — GuepardAI v8.5
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CAMBIOS v8.0:
-  - prompt_analyst_v1: ahora decide grammar_type con reglas completas
-  - prompt_art_director_v1: ahora solo asigna assets (no decide tipo)
-  - Nuevas configs: variety rules, painter mode
+CAMBIOS v8.5:
+  - Meta-Prompting: Prompt Architect + Content Synthesizer v2
+  - Audience-Centric Hero Layout support
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
@@ -30,231 +29,199 @@ def seed_data():
             },
             {
                 "key": "agency_logo_path",
-                "value": "uploads/L-founders_logo.png",
+                "value": "assets/agency/L-founders_logo.png",
                 "description": "Ruta al logo de la agencia para el footer/firma."
+            },
+            {
+                "key": "agency_contact_email",
+                "value": "partners@l-founders.com",
+                "description": "Email de contacto para el cierre de presentaciones."
             },
             {
                 "key": "asset_score_threshold",
                 "value": "0.45",
-                "description": "Umbral mínimo de similitud semántica para aceptar asset. 0.45 es el punto dulce para evitar logos pero permitir fotos reales."
+                "description": "Umbral mínimo de similitud semántica para aceptar asset."
             },
             {
                 "key": "embedding_model_chain",
                 "value": "mistral-embed,models/gemini-embedding-2",
-                "description": "Cadena de modelos de embedding. MISTRAL primero para consistencia de 1024 dims."
+                "description": "Cadena de modelos de embedding."
             },
             {
                 "key": "model_image_gen",
                 "value": "imagen-4.0-generate-001",
-                "description": "Modelo Google Imagen 4 para generación de imágenes de alta fidelidad."
+                "description": "Modelo Google Imagen 4."
             },
             {
                 "key": "renderer_mode",
                 "value": "painter",
-                "description": "Motor de renderizado activo. 'painter' = GammaPainter (v8.0). 'legacy' = render_pptx_from_db."
+                "description": "Motor de renderizado activo."
             },
             {
                 "key": "max_consecutive_same_layout",
                 "value": "3",
-                "description": "Número máximo de slides consecutivos con el mismo layout_type antes de forzar variedad."
+                "description": "Número máximo de slides consecutivos con el mismo layout_type."
             },
             
-            # ─────────────────────────────────────────────────────
-            # API KEYS Y CREDENCIALES (Protegidas)
-            # ─────────────────────────────────────────────────────
-            {
-                "key": "mistral_api_key",
-                "value": "",
-                "description": "API Key de Mistral (requerida para mistral-embed y mistral-large).",
-                "preserve_existing": True
-            },
-            {
-                "key": "gemini_api_key",
-                "value": "",
-                "description": "API Key de Google Gemini (requerida para multimodal y embeddings secundarios).",
-                "preserve_existing": True
-            },
-            {
-                "key": "metric_value_scaling",
-                "value": """# Metric Value (v24.2: Intelligent Scaling)
-            val = str(m.get("value", ""))
-            v_len = len(val)
-            if v_len < 6: v_size = 44
-            elif v_len < 12: v_size = 28
-            elif v_len < 20: v_size = 18
-            else: v_size = 12
-            
-            self.add_text(slide, val, x_pos, y_pos + self.h(1), w_pos, self.h(11), 
-                          size=v_size, bold=True, color=text_color, align=PP_ALIGN.CENTER, v_align=MSO_ANCHOR.MIDDLE)""",
-                "description": "Logic for dynamic text sizing in metrics to prevent overlap.",
-                "preserve_existing": True
-            },
-            {
-                "key": "anthropic_api_key",
-                "value": "",
-                "description": "API Key de Anthropic (Claude 3.5 Sonnet, etc.).",
-                "preserve_existing": True
-            },
-            {
-                "key": "gcp_project_id",
-                "value": "",
-                "description": "ID del Proyecto de Google Cloud Platform (Para Vertex AI, Imagen 3, etc).",
-                "preserve_existing": True
-            },
-            {
-                "key": "gcp_location",
-                "value": "us-central1",
-                "description": "Ubicación de GCP para Vertex AI.",
-                "preserve_existing": True
-            },
-
             # ─────────────────────────────────────────────────────
             # PROMPT: ANALISTA ESTRATÉGICO v8.5
             # ─────────────────────────────────────────────────────
             {
                 "key": "prompt_analyst_v1",
-                "value": """You are a Strategic Design Analyst for executive presentations (Board of Directors level).
-Analyze the slide content and the RAG Context to define the Visual Strategy.
+                "value": """You are a Strategic Design Analyst for executive presentations.
+Analyze the slide content and define the Visual Strategy.
 
 SLIDE CONTENT:
 Title: {slide_title}
 Bullets: {bullets}
 RAG Context: {rag_context}
 
-GRAMMAR TYPE RULES (Pick the most IMPACTFUL):
-- "composition_hero": ONLY for Title slides or major Section Breaks. 
-- "composition_split": The workhorse for content. Use when a strong image supports the text.
-- "big_metric": Use when a SINGLE number is the main hero (e.g. "$500M ROI").
-- "composition_quote": CRITICAL for testimonials or single powerful strategic pillars. Use for emotional/authority impact.
-- "data_grid_cards": ONLY for dashboards with 3-6 metrics. If less than 3, use "composition_pillars" or "composition_split".
-- "composition_pillars": Use for exactly 3-4 distinct strategic columns.
-
-STRATEGIC DIRECTIVE:
-1. NARRATIVE FLOW (CRITICAL): DO NOT use the same layout twice in a row. If the previous was "data_grid_cards", MUST use "composition_split", "composition_pillars" or "composition_quote".
-2. VISUAL INTENT: Describe a CORPORATE photography scene. DO NOT ask for charts, text, or graphics. (e.g., "Modern architectural lobby with glass and steel").
-3. METRIC EXTRACTION: If you see a key KPI, extract it for the "metric_value" field.
-4. VARIETY: Prioritize "composition_split" for most slides to maintain a cinematic quality. Use "data_grid_cards" only when the RAG context contains 4+ distinct numbers.
+GRAMMAR TYPE RULES:
+- "composition_hero": Cover or Section Breaks.
+- "composition_split": Content with supporting image.
+- "big_metric": Single major KPI hero.
+- "composition_quote": Testimonials or strategic pillars.
+- "data_grid_cards": Dashboards (3-6 metrics).
+- "composition_pillars": 3-4 distinct columns.
 
 OUTPUT JSON:
 {{
-  "visual_intent": "Brief description of a clean, text-free corporate photo",
-  "suggested_keywords": ["keyword1", "keyword2"],
+  "visual_intent": "...",
+  "suggested_keywords": ["..."],
   "grammar_type": "...",
-  "requires_hero": false,
-  "metric_value": null,
-  "narrative_tone": "authoritative"
+  "metric_value": null
 }}""",
-                "description": "Strategic Analyst v8.6 — High-Impact Selection Logic."
+                "description": "Strategic Analyst v8.6."
             },
-
 
             # ─────────────────────────────────────────────────────
             # PROMPT: ART DIRECTOR v8.0
-            # Solo asigna assets. El grammar_type ya viene del Analista.
             # ─────────────────────────────────────────────────────
             {
                 "key": "prompt_art_director_v1",
-                "value": """You are a Senior Art Director for an executive presentation.
-The grammar type has already been decided. Your ONLY job is to select the best asset.
-
+                "value": """You are a Senior Art Director. Select the best asset.
 VISUAL STRATEGY: {visual_strategy}
-BRAND: Primary={primary_color} Secondary={secondary_color} Font={primary_font}
-
+BRAND: {primary_color}, {secondary_color}
 SLIDE: {slide_title}
-BULLETS: {bullets}
+AVAILABLE ASSETS: {found_assets}
 
-AVAILABLE ASSETS (use ONLY these IDs):
-{found_assets}
-
-VISUAL HISTORY (avoid repeating these descriptions):
-{visual_history}
-
-ASSET SELECTION RULES:
-1. 'lifestyle_photos' category: Use for main image (split, hero layouts).
-2. 'design_elements' or 'logos': Use for accents only — NEVER as main image.
-3. If no suitable lifestyle photo exists, set primary_asset_id to null.
-4. Never repeat an asset that appears in visual_history.
-5. accent_asset_id should only be set if there is a decorative element (fruit, icon, brand mark).
-
-OUTPUT ONLY THIS JSON (no other text, no markdown):
+OUTPUT ONLY THIS JSON:
 {{
-  "primary_asset_id": <integer or null>,
-  "accent_asset_id": <integer or null>,
-  "reasoning": "One sentence explaining the choice"
+  "primary_asset_id": <int>,
+  "reasoning": "..."
 }}""",
-                "description": "Art Director prompt v8.0 — asset assignment only, grammar_type decided by Analyst."
+                "description": "Art Director prompt v8.0."
             },
 
             # ─────────────────────────────────────────────────────
-            # PROMPT: CONTENT SYNTHESIZER
-            # El prompt que genera el contenido de los slides
+            # PROMPT: PROMPT ARCHITECT v1.2
             # ─────────────────────────────────────────────────────
             {
-                "key": "prompt_content_synthesizer_v1",
-                "value": """### ROLE: SENIOR STRATEGIC PARTNER & LEAD CONSULTANT for {agency_name}
-### CORE MISSION (PRIORITY 1): "{topic}"
-### AUDIENCE: Board of Directors / CEO Level
-### BRAND CONTEXT: {brand_name}
-### OUTPUT LANGUAGE: {target_lang} (MANDATORY)
+                "key": "prompt_architect_v1",
+                "value": """### ROLE: ELITE PROMPT ENGINEER & STRATEGIC ARCHITECT
+### TASK: Transform the USER PROMPT into a HYPER-SPECIFIC, high-fidelity MASTER INSTRUCTION.
 
-### STRATEGIC MANDATE:
-Execute the CORE MISSION with absolute precision. You are a High-End Strategy Consultant. Your goal is to articulate the "SO WHAT?"—don't just report data; interpret it for strategic impact according to the specific requirements of the CORE MISSION.
+### CRITICAL RULES:
+1. NO SUMMARIZING: Do NOT condense the user's specific requests. If they ask for "Global case studies" and "CEO testimonials", those exact phrases and their context MUST be in the master instruction.
+2. NARRATIVE AMPLIFICATION: Expand the user's intent into a 20-slide narrative flow.
+3. BRAND & TONE LOYALTY: Force the synthesizer to use the specific corporate tone of {brand_name}.
+4. DATA HUNGER: Explicitly instruct the synthesizer to DIG into the RAG context for names, dates, and figures.
 
-### CORE PRINCIPLES (The Elite Consultancy Standard):
-1. THE "SO WHAT?" FACTOR: For every metric or fact, explain the business implication. (e.g., instead of "84% penetration", use "84% penetration: dominant market leverage to drive future growth").
-2. EXTREME CONCISION: Use high-impact sentence fragments. No fluff.
-3. AUTHORITATIVE PERSPECTIVE: Speak as the expert. You define the strategy.
-4. EVIDENCE-BASED: Use specific figures ($, %, ROI) from the RAG context.
-5. NARRATIVE FLOW: Strategic Hook -> Deep-Dive Reality -> ROI Proof -> Testimonials -> The Next Chapter.
+### MASTER INSTRUCTION STRUCTURE (OUTPUT ONLY THIS JSON):
+{{
+  "polished_instruction": "You are a Senior Strategic Lead for {brand_name}. YOUR MISSION: {topic}. \n\nAMPLIFICATION GUIDELINES:\n- PRESERVE: Do NOT summarize the mission. Keep all specific names and requirements.\n- DEPTH: Generate exactly 15-20 slides.\n- CASE STUDIES: You MUST include real retailer names and KPIs from the context.\n- TONE: {tone_guideline}.\n- METADATA: Populate 'prepared_for' with the recipient's name from the prompt.",
+  "strategic_rationale": "Amplified for maximum strategic depth and compliance with specific user mandates."
+}}""",
+                "description": "Prompt Architect v1.2 — Aggressive compliance and depth."
+            },
 
-### SOURCE CONTEXT (RAG):
+            # ─────────────────────────────────────────────────────
+            # PROMPT: CONTENT SYNTHESIZER v2.1
+            # ─────────────────────────────────────────────────────
+            {
+                "key": "prompt_content_synthesizer_v2",
+                "value": """### MASTER INSTRUCTION:
+{polished_prompt}
+
+### ADDITIONAL CONTEXT (RAG):
 {rag_context}
 
-### TONE & STYLE:
-Confident, hyper-concise, and strategic. Avoid "corporate speak" clichés; use precise commercial terminology.
-{tone_guideline}
+### OUTPUT SPECIFICATIONS:
+- Output Language: {target_lang}
+- Max Slides: 20
+- **Slide 1 (COVER)**: MUST have 'metadata' with 'prepared_for', 'confidential' (boolean), and 'date'.
+- **Layout Types**: [composition_hero, composition_split, composition_quote, data_grid_cards, composition_pillars]
 
-### LAYOUT CATALOG:
-- "composition_hero": Cover and Section Breaks.
-- "composition_split": Content with supporting image.
-- "composition_quote": CEO/Executive testimonials (MANDATORY for impact).
-- "big_metric": Single major KPI highlight with strategic label.
-- "data_grid_cards": Use for "Key Performance Indicators" or "Strategic Benchmarks". REQUIRES "metrics" array.
-- "composition_pillars": 3-4 core strategic pillars.
-
-### CONTENT RULES:
-- Title: Strategic, outcome-oriented (max 40 chars).
-- Bullets: Actionable, result-driven (max 80 chars, max 4 per slide).
-- Metrics: Provide structured data for cards: [ {{"label": "...", "value": "...", "growth": "..."}} ].
-- **IMAGE PROMPTS (CRITICAL):** Request ONLY "Clean, high-end professional corporate photography, commercial aesthetic, minimalist composition". 
-  **STRICT FORBIDDEN:** DO NOT request charts, text, labels, or people holding signs. NO GRAPHICS inside images.
-
-### TASK:
-Analyze the RAG Context and the user's specific CORE MISSION to generate a strategic presentation (10-15 slides).
-Absolute priority to the specific instructions in the "{topic}" MISSION while maintaining this elite consultancy framework.
-
-### MANDATORY JSON STRUCTURE (OUTPUT ONLY THIS):
+### MANDATORY JSON FORMAT:
 {{
   "slides": [
     {{
-      "title": "Impactful Slide Title",
-      "bullets": ["Strategic bullet 1 (So what?)", "Strategic bullet 2 (Business impact)"],
-      "layout_type": "composition_split",
-      "metrics": [ {{"label": "KPI", "value": "20%", "growth": "+5%"}} ],
-      "section_label": "STRATEGY"
+      "title": "...",
+      "subtitle": "Strategic Subtitle",
+      "layout_type": "composition_pillars",
+      "section_label": "...",
+      "bullets": ["Point 1 with data", "Point 2 with detail", "Point 3 with outcome"],
+      "metrics": [ {{"label": "KPI", "value": "X%", "growth": "+Y%"}} ],
+      "metadata": {{ "prepared_for": "...", "confidential": true, "date": "..." }}
     }}
   ]
-}}
-
-### CONTENT INTEGRITY RULES:
-1. NO EMPTY SLIDES: Every slide MUST have a non-empty title and at least 2 high-impact bullets.
-2. NO PLACEHOLDERS: If you don't have enough data for a slide, don't generate it.
-3. DATA RECOVERY: If specific metrics are missing in RAG, use qualitative strategic observations instead of empty metrics.""",
-                "description": "Content Synthesizer v26.2 — Priority User Mission & Scaling Logic."
+}}""",
+                "description": "Content Synthesizer v2.1 — Strategic depth and RAG extraction."
             },
+            {
+                "key": "prompt_art_director_v1",
+                "value": """# ROLE: Senior Executive Art Director
+You are responsible for the VISUAL FIDELITY and BRAND ADHERENCE of a high-stakes presentation.
 
+# BRAND ARTISTIC ESSENCE (READ CAREFULLY):
+{art_direction_note}
 
+# STRATEGIC CONTEXT:
+- Visual Strategy: {visual_strategy}
+- Slide Title: {slide_title}
+- Content: {bullets}
 
+# AVAILABLE BRAND ASSETS (From Official Library):
+{found_assets}
+
+# REPLIT-GRADE DESIGN INSTRUCTIONS (Designer Mode v4.0):
+1. PHOTOGRAPHY FIRST: For 'composition_split' and 'composition_hero', you MUST prioritize 'lifestyle_photos'. AVOID using a single 'design_element' to fill these layouts.
+2. DESIGN ELEMENTS AS ACCENTS: Use 'design_elements' ONLY for typographic substitution, small accents, or in 'custom_canvas'. NEVER scale them to fill more than 20% of the slide.
+3. QUALITY GUARD: NEVER select assets categorized as 'noise'.
+4. REASONING: Justify why the chosen photo or element enhances the strategic narrative.
+
+# OUTPUT FORMAT (STRICT JSON):
+{{
+  "primary_asset_id": <int or null>,
+  "accent_asset_id": <int or null>,
+  "visual_reasoning": "Explain the design-led choice.",
+  "suggested_layout_override": "hero | data_grid | pillars | split | custom_canvas",
+  "canvas_elements": [
+    {{{{ "type": "typo_substitution", "text": "Loyalty", "char": "a", "path": "asset_basename", "x": 10, "y": 40, "size": 90 }}}},
+    {{{{ "type": "image", "path": "person_photo", "x": 60, "y": 10, "w": 40, "h": 80 }}}},
+    {{{{ "type": "text", "content": "Data to Growth", "x": 10, "y": 55, "size": 24, "color": "#FFFFFF" }}}}
+  ]
+}}
+""",
+                "description": "Art Director v2.0 — Replit-Grade Reasoning & Creative Curation."
+            },
+            {
+                "key": "prompt_classifier_v1",
+                "value": """# ROLE: Expert Visual Asset Analyst & Art Director
+Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
+- 'category': Choose one: 
+    * 'lifestyle_photos': Complex scenes, people, stores, or environments.
+    * 'design_elements': Single isolated objects (fruits, products), icons, or accents on solid/transparent backgrounds. (CRITICAL: If it's a fruit or object, it's a 'design_element').
+    * 'logos': Brand identities.
+    * 'backgrounds': Textures or full-page backgrounds.
+    * 'noise': Blank, blurry, low-quality, or useless images.
+- 'is_person': boolean.
+- 'background_type': 'transparent', 'solid_white', 'solid_black', 'complex', or 'other'.
+- 'description': TECHNICAL INSTRUCTION: Provide a VISUAL and COMPOSITIONAL description (Max 3 sentences). Focus strictly on the Subject, Composition (e.g., 'Centered', 'Negative space on left'), Dominant Colors, and Design Potential (e.g., 'Suitable for typographic substitution'). AVOID corporate fluff like 'strategic value', 'approachable' or 'professional'.
+- 'tags': 5 technical keywords for designer search.
+""",
+                "description": "Asset Classifier v3.0 — Technical Designer Focus (Replit-Grade)."
+            }
         ]
 
         for cfg in configs:
@@ -262,8 +229,7 @@ Absolute priority to the specific instructions in the "{topic}" MISSION while ma
                 models.SystemConfig.key == cfg["key"]
             ).first()
             if existing:
-                if not cfg.get("preserve_existing", False):
-                    existing.value = cfg["value"]
+                existing.value = cfg["value"]
                 existing.description = cfg.get("description", existing.description)
                 print(f"  [Seed] Updated: {cfg['key']}")
             else:
@@ -275,8 +241,7 @@ Absolute priority to the specific instructions in the "{topic}" MISSION while ma
                 print(f"  [Seed] Inserted: {cfg['key']}")
 
         db.commit()
-        print("\n  [Seed] ✓ All system configs v8.0 seeded successfully.")
-        print("  [Seed] IMPORTANT: Restart the FastAPI server after seeding.")
+        print("\n  [Seed] ✓ All system configs v8.5 seeded successfully.")
 
     except Exception as e:
         db.rollback()

@@ -263,6 +263,11 @@ def get_layout_geometry(
     slide_height: float,
     title_lines: int = 1
 ) -> dict:
+    # Safety Check: unhashable type list guard
+    if isinstance(layout_slug, list) and len(layout_slug) > 0:
+        layout_slug = layout_slug[0]
+    layout_slug = str(layout_slug)
+
     grammar_type = SLUG_ALIASES.get(layout_slug, layout_slug)
     base_geo = GRAMMAR_GEOMETRIES.get(grammar_type)
 

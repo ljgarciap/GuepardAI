@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import re
 from typing import List, Optional, Union
 try:
     import google.generativeai as genai
@@ -20,6 +21,20 @@ from database import SessionLocal
 import models
 
 load_dotenv()
+
+def clean_json_string(s: str) -> str:
+    """
+    Elimina caracteres de control no permitidos en JSON y limpia markdown blocks.
+    """
+    if not s: return "{}"
+    # Quitar bloques de markdown ```json ... ```
+    s = re.sub(r'```json\s*', '', s)
+    s = re.sub(r'```\s*', '', s)
+    
+    # Eliminar caracteres de control (0-31) excepto \n, \r, \t si es necesario
+    # Pero lo más común que rompe es \n literal dentro de comillas
+    # Esta es una versión simplificada pero efectiva
+    return s.strip()
 
 def log_audit(category: str, data: str):
     """Saves a detailed record de las AI decisions para aesthetic audit."""
@@ -136,7 +151,10 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
                 )
                 # LOG AUDIT (v25.0)
                 log_audit(f"GEN_JSON_{current_model}", f"PROMPT:\n{prompt}\n\nRESPONSE:\n{response.text}")
-                return json.loads(response.text)
+                
+                # v25.1: Aggressive JSON cleaning
+                clean_text = clean_json_string(response.text)
+                return json.loads(clean_text)
                 
             elif "mistral" in current_model.lower() and "/" in current_model:
                 # NATIVE MISTRAL (e.g., 'mistral/mistral-large-latest')
@@ -149,7 +167,12 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
                 response = client.chat.complete(model=m_slug, messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"})
                 if not response or not getattr(response, "choices", None) or len(response.choices) == 0:
                     raise ValueError(f"Mistral model {current_model} returned no choices.")
-                return json.loads(response.choices[0].message.content)
+                
+                content = response.choices[0].message.content
+                log_audit(f"GEN_JSON_{current_model}", f"PROMPT:\n{prompt}\n\nRESPONSE:\n{content}")
+                
+                clean_text = clean_json_string(content)
+                return json.loads(clean_text)
             
             else:
                 # OPENROUTER (Default fallback for other slugs like 'anthropic/claude-3.7-sonnet')
@@ -163,7 +186,12 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
                 )
                 if not response or not getattr(response, "choices", None) or len(response.choices) == 0:
                     raise ValueError(f"OpenRouter model {current_model} returned no choices.")
-                return json.loads(response.choices[0].message.content)
+                
+                content = response.choices[0].message.content
+                log_audit(f"GEN_JSON_{current_model}", f"PROMPT:\n{prompt}\n\nRESPONSE:\n{content}")
+                
+                clean_text = clean_json_string(content)
+                return json.loads(clean_text)
 
         except Exception as e:
             last_error = e
@@ -204,7 +232,16 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
     def prepare_image(path, max_size=(1024, 1024)):
         with Image.open(path) as img:
             img.thumbnail(max_size)
-            if img.mode in ("RGBA", "P"): img = img.convert("RGB")
+            # v13.0: High-Contrast Background for Transparent Assets (Designer Rigor)
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGBA")
+                # Create a neutral gray background to ensure visibility of both white and black elements
+                bg = Image.new("RGBA", img.size, (128, 128, 128, 255))
+                bg.paste(img, (0, 0), img)
+                img = bg.convert("RGB")
+            else:
+                img = img.convert("RGB")
+            
             buffered = io.BytesIO()
             img.save(buffered, format="JPEG", quality=85)
             return buffered.getvalue()

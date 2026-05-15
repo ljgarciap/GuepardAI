@@ -1,0 +1,39 @@
+<!-- SPLIT LAYOUT -->
+<div class="flex h-full p-16 gap-12 relative z-10">
+    <!-- Image Panel -->
+    <div class="w-2/5 h-full relative">
+        <div class="absolute inset-0 rounded-3xl overflow-hidden shadow-2xl">
+            <img src="{{ slide.primary_image }}" class="w-full h-full object-cover">
+            <div class="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-transparent opacity-60"></div>
+        </div>
+        <!-- Pill Label -->
+        <div class="absolute top-6 left-6 px-4 py-2 bg-brand-secondary text-white text-[10px] font-extrabold uppercase tracking-[0.3em] rounded-full shadow-lg">
+            {{ slide.section_label|default('Operational Logic') }}
+        </div>
+    </div>
+
+    <!-- Content Panel -->
+    <div class="w-3/5 flex flex-col justify-center">
+        <div class="flex items-center gap-4 mb-8">
+            <div class="h-accent"></div>
+            <span class="text-brand-secondary font-bold tracking-[0.2em] text-xs uppercase">{{ slide.section_label|default('Operational Logic') }}</span>
+        </div>
+
+        <h1 class="text-5xl font-extrabold text-white mb-10 leading-[1.1] tracking-tight">
+            {{ slide.title }}
+        </h1>
+
+        <ul class="space-y-6">
+            {% for bullet in slide.bullets %}
+            <li class="flex items-start gap-4 text-slate-300">
+                {% if slide.bullet_icon %}
+                <img src="{{ slide.bullet_icon }}" class="w-6 h-6 object-contain shrink-0 mt-1">
+                {% else %}
+                <div class="mt-2.5 h-2 w-2 rounded-full bg-brand-secondary shrink-0"></div>
+                {% endif %}
+                <span class="text-xl leading-relaxed">{{ bullet }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>

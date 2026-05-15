@@ -26,3 +26,6 @@ Pillow
 python-dotenv
 numpy
 pydantic
+# PDF Artistic Rendering
+playwright
+jinja2

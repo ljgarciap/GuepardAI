@@ -1,0 +1,38 @@
+<!-- HERO LAYOUT (v3.0 Replit-Grade) -->
+<div class="relative w-full h-full flex flex-col items-center justify-center text-center p-20 bg-[#0f172a]">
+    <!-- Confidential Tag -->
+    <div class="absolute top-12 left-16 text-[10px] text-brand-secondary font-black tracking-[0.4em] uppercase opacity-60">
+        {{ 'Confidential' if slide.metadata.confidential else '' }}
+    </div>
+
+    <!-- Center Content -->
+    <div class="relative z-10 w-full">
+        <!-- Big Agency Initial -->
+        <div class="text-8xl font-black text-white mb-4 tracking-tighter">L</div>
+        <div class="text-[12px] font-black text-slate-400 uppercase tracking-[0.5em] mb-12">Founders of Loyalty</div>
+        
+        <div class="h-px w-24 bg-brand-secondary mx-auto mb-12"></div>
+        
+        <h1 class="text-7xl font-black text-white leading-tight tracking-tighter mb-4 max-w-5xl mx-auto">
+            {{ slide.title }}
+        </h1>
+
+        {% if slide.subtitle %}
+        <p class="text-2xl font-medium text-slate-400 tracking-tight max-w-3xl mx-auto">
+            {{ slide.subtitle }}
+        </p>
+        {% endif %}
+    </div>
+
+    <!-- Bottom Metadata -->
+    <div class="absolute bottom-16 left-16 right-16 flex justify-between items-end text-left">
+        <div>
+            <div class="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">Prepared for</div>
+            <div class="text-slate-300 text-lg font-bold">{{ slide.metadata.prepared_for|default('Ken Murphy') }}</div>
+            <div class="text-slate-500 text-[10px] font-medium uppercase tracking-wider">Group Chief Executive, Tesco</div>
+        </div>
+        <div class="text-right">
+            <div class="text-slate-300 text-lg font-bold">{{ slide.metadata.date|default('14 March 2026') }}</div>
+        </div>
+    </div>
+</div>

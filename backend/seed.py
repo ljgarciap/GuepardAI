@@ -221,8 +221,26 @@ Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
                 ))
                 print(f"  [Seed] Inserted: {cfg['key']}")
 
+        # ─────────────────────────────────────────────────────
+        # IDIOMAS BASE
+        # ─────────────────────────────────────────────────────
+        languages = [
+            {"code": "LATAM", "name": "Español (LATAM)", "priority": 1},
+            {"code": "UK", "name": "English (UK)", "priority": 2},
+            {"code": "USA", "name": "English (USA)", "priority": 3},
+            {"code": "ES", "name": "Español (España)", "priority": 4}
+        ]
+
+        for lang in languages:
+            existing_lang = db.query(models.Language).filter(
+                models.Language.code == lang["code"]
+            ).first()
+            if not existing_lang:
+                db.add(models.Language(**lang))
+                print(f"  [Seed] Inserted Language: {lang['name']}")
+
         db.commit()
-        print("\n  [Seed] ✓ All system configs v8.5 seeded successfully.")
+        print("\n  [Seed] ✓ All system configs and languages v8.5 seeded successfully.")
 
     except Exception as e:
         db.rollback()

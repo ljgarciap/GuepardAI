@@ -48,7 +48,7 @@ def update_job_step(job_key: str, ingestion_type: str, step_details: str, progre
     finally:
         db.close()
 
-def set_job_status(job_key: str, ingestion_type: str, status: str):
+def set_job_status(job_key: str, ingestion_type: str, status: str, message: str = None):
     db = SessionLocal()
     try:
         job = db.query(models.IngestionJob).filter(
@@ -57,6 +57,8 @@ def set_job_status(job_key: str, ingestion_type: str, status: str):
         ).first()
         if job:
             job.status = status
+            if message:
+                job.current_step = message
             db.commit()
     finally:
         db.close()
@@ -167,8 +169,9 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
             db.close()
         set_job_status(job_key, "visual_dna", "completed")
     except Exception as e:
-        logger.error(f"[Orchestrator] Visual DNA error: {e}")
-        set_job_status(job_key, "visual_dna", "error")
+        err_msg = f"Visual DNA error: {str(e)}"
+        logger.error(f"[Orchestrator] {err_msg}")
+        set_job_status(job_key, "visual_dna", "error", message=err_msg)
 
 def task_extract_artistic_essence(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
     """Extracts Artistic Essence (v21.0) in isolation."""
@@ -198,8 +201,9 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
             db.close()
         set_job_status(job_key, "artistic", "completed")
     except Exception as e:
-        logger.error(f"[Orchestrator] Artistic Essence error: {e}")
-        set_job_status(job_key, "artistic", "error")
+        err_msg = f"Artistic Essence error: {str(e)}"
+        logger.error(f"[Orchestrator] {err_msg}")
+        set_job_status(job_key, "artistic", "error", message=err_msg)
 
 def task_extract_full_brand_style(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
     """Decoupled brand identity orchestration (Context-Aware v22.0)."""
@@ -241,8 +245,9 @@ def task_ingest_knowledge(job_key: str, file_path: str, source_filename: str, br
         ingest_rag(file_path, client_name=source_filename, update_callback=cb, brand_id=brand_id, is_public=is_public)
         set_job_status(job_key, "knowledge", "completed")
     except Exception as e:
-        logger.error(f"[Orchestrator] Knowledge error: {e}")
-        set_job_status(job_key, "knowledge", "error")
+        err_msg = f"Knowledge error: {str(e)}"
+        logger.error(f"[Orchestrator] {err_msg}")
+        set_job_status(job_key, "knowledge", "error", message=err_msg)
 
 def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
     """Pure asset harvest (v21.0). Supports individual images and documents."""
@@ -287,8 +292,9 @@ def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str,
         set_job_status(job_key, "pure_assets", "completed")
         update_job_step(job_key, "pure_assets", "Asset harvest complete.", 100)
     except Exception as e:
-        logger.error(f"[Orchestrator] Pure Assets error: {e}")
-        set_job_status(job_key, "pure_assets", "error")
+        err_msg = f"Pure Assets error: {str(e)}"
+        logger.error(f"[Orchestrator] {err_msg}")
+        set_job_status(job_key, "pure_assets", "error", message=err_msg)
 
 def task_generate_presentation(job_id: int, req_data: dict):
     """
@@ -304,11 +310,12 @@ def task_generate_presentation(job_id: int, req_data: dict):
         generate_presentation_flow(db, job_id, req_data)
         db.close()
     except Exception as e:
-        logger.error(f"[Orchestrator] Generation error: {e}")
+        err_msg = f"Generation error: {str(e)}"
+        logger.error(f"[Orchestrator] {err_msg}")
         db = SessionLocal()
         job = db.query(models.GenerationJob).get(job_id)
         if job:
             job.status = "error"
-            job.current_step = f"Error: {str(e)}"
+            job.current_step = err_msg
             db.commit()
         db.close()

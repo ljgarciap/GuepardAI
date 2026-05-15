@@ -64,17 +64,17 @@ def seed_data():
             },
             {
                 "key": "extraction_vision_model",
-                "value": "gemini-1.5-flash",
+                "value": "gemini-flash-latest",
                 "description": "Modelo principal para análisis de visión (DNA/Assets)."
             },
             {
                 "key": "extraction_synthesis_model",
-                "value": "gemini-1.5-flash",
+                "value": "gemini-flash-latest",
                 "description": "Modelo para síntesis de contenido y estructuración."
             },
             {
                 "key": "global_fallback_model",
-                "value": "gemini-1.5-flash",
+                "value": "gemini-flash-latest",
                 "description": "Modelo de respaldo global en caso de fallo de proveedores primarios."
             },
             

@@ -124,7 +124,7 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
     """
     if not model:
         # v23.5: No hardcoded fallbacks here. Fetch from DB.
-        model = get_system_config("extraction_synthesis_model", "models/gemini-2.5-flash")
+        model = get_system_config("extraction_synthesis_model", "models/gemini-1.5-flash")
         
     models_to_try = [m.strip() for m in model.split(",")]
     last_error = None
@@ -204,7 +204,7 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
                 continue
                 
     # FINAL ATTEMPT: Global Fallback from DB
-    fallback = get_system_config("global_fallback_model", "models/gemini-2.5-flash")
+    fallback = get_system_config("global_fallback_model", "models/gemini-1.5-flash")
     if model != fallback:
         print(f"  [LLM] Chain failed. Attempting global emergency fallback ({fallback})...", flush=True)
         try:
@@ -221,7 +221,7 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
     Obtiene la cadena de modelos desde system_configs.
     """
     if not model:
-        model = get_system_config("extraction_vision_model", "models/gemini-2.5-flash")
+        model = get_system_config("extraction_vision_model", "models/gemini-1.5-flash")
         
     models_to_try = [m.strip() for m in model.split(",")]
     
@@ -326,7 +326,7 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
             continue
 
     # FINAL ATTEMPT: Global Fallback
-    fallback = get_system_config("global_fallback_model", "models/gemini-2.5-flash")
+    fallback = get_system_config("global_fallback_model", "models/gemini-1.5-flash")
     if model != fallback:
         print(f"  [Vision] Chain failed. Attempting global emergency fallback ({fallback})...", flush=True)
         try:

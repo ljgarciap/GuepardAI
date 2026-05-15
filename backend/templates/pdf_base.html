@@ -10,6 +10,18 @@
             --primary-color: {{ primary_color|default('#002D62') }};
             --secondary-color: {{ secondary_color|default('#E31837') }};
         }
+        tailwind.config = {
+          theme: {
+            extend: {
+              colors: {
+                brand: {
+                  primary: '{{ primary_color|default("#002D62") }}',
+                  secondary: '{{ secondary_color|default("#E31837") }}',
+                }
+              }
+            }
+          }
+        }
         * { box-sizing: border-box; }
         body { 
             font-family: 'Outfit', 'Helvetica', sans-serif; 

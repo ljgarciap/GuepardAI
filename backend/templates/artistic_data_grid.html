@@ -1,0 +1,47 @@
+
+<!-- DATA DASHBOARD LAYOUT (v3.0 Replit-Grade) -->
+<div class="relative w-full h-full flex flex-col p-16 bg-[#f8fafc]">
+    <!-- Top Header Bar -->
+    <div class="flex justify-between items-start mb-12">
+        <div>
+            <div class="h-1 w-12 bg-brand-secondary mb-4"></div>
+            <h2 class="text-5xl font-black text-slate-900 tracking-tighter">{{ slide.title }}</h2>
+        </div>
+        <div class="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">
+            {{ slide.section_label|default('Performance Insight') }}
+        </div>
+    </div>
+
+    <!-- Main Grid (Replit Style) -->
+    <div class="grid grid-cols-3 gap-6 flex-grow">
+        {% for metric in slide.metrics %}
+        <div class="bg-white p-8 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-slate-100 flex flex-col justify-center">
+            <div class="text-4xl font-black text-brand-primary mb-2 tracking-tighter">{{ metric.value }}</div>
+            <div class="text-sm font-bold text-slate-600 mb-4">{{ metric.label }}</div>
+            {% if metric.description %}
+            <div class="text-[11px] text-slate-400 leading-relaxed">{{ metric.description }}</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+        
+        <!-- Call to Action Card (Conditional & Span logic) -->
+        {% if slide.metrics|length % 3 != 0 %}
+        <div class="bg-brand-primary p-8 rounded-xl shadow-xl flex flex-col justify-center text-white {% if slide.metrics|length % 3 == 1 %}col-span-2{% endif %}">
+            <div class="text-2xl font-bold mb-4">{{ slide.subtitle|default('Clubcard Strategy') }}</div>
+            <div class="text-sm opacity-80 leading-relaxed">
+                At the heart of the customer proposition, driving sustained commercial impact.
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- RAG Source Footer -->
+    <div class="mt-auto pt-8 border-t border-slate-200 flex justify-between items-center opacity-50">
+        <div class="text-[9px] font-bold text-slate-500 uppercase tracking-widest">
+            Source: Tesco PLC Annual Report & Financial Statements
+        </div>
+        <div class="text-[9px] font-bold text-slate-500 uppercase tracking-widest">
+            Confidential
+        </div>
+    </div>
+</div>

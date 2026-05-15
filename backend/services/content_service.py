@@ -83,7 +83,12 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
     )
     # Usamos un modelo más potente si está disponible para el arquitecto
     architect_response = generate_json(architect_prompt, specialization="general")
-    polished_prompt = architect_response.get("polished_instruction", str(architect_response))
+    
+    # DEFENSIVE: Handle cases where the LLM might return a list or a dict
+    if isinstance(architect_response, dict):
+        polished_prompt = architect_response.get("polished_instruction", str(architect_response))
+    else:
+        polished_prompt = str(architect_response)
 
     # --- PASO 2: SINTETIZADOR DE CONTENIDO ---
     # Usa la instrucción pulida y el RAG para generar los slides
@@ -95,7 +100,12 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
     )
     
     response = generate_json(final_prompt)
-    slides_data = response.get("slides", [])
+    
+    # DEFENSIVE: Gemini 2.5+ sometimes returns a list directly instead of {"slides": [...]}
+    if isinstance(response, list):
+        slides_data = response
+    else:
+        slides_data = response.get("slides", [])
     
     print(f"  [ContentService] Saving {len(slides_data)} slides with Slide-Specific RAG...")
     # Limpiar si ya existen (por reintentos)

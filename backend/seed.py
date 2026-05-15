@@ -238,6 +238,10 @@ Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
             if not existing_lang:
                 db.add(models.Language(**lang))
                 print(f"  [Seed] Inserted Language: {lang['name']}")
+            else:
+                existing_lang.priority = lang["priority"]
+                existing_lang.name = lang["name"]
+                print(f"  [Seed] Updated Language Priority: {lang['name']}")
 
         db.commit()
         print("\n  [Seed] ✓ All system configs and languages v8.5 seeded successfully.")

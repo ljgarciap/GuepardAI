@@ -20,8 +20,10 @@ __pycache__/
 *.pyc
 
 # Project Data & Assets
-backend/uploads/
-backend/data/
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/data/*
+!backend/data/.gitkeep
 backend/chroma_db/
 .DS_Store
 

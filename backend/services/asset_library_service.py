@@ -86,7 +86,11 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
         
         # Respetar el logo manual, si no, usar lo que diga Visión
         if not is_explicit_logo:
-            final_category = vision_res.get("category", "lifestyle_photos").lower()
+            cat_val = vision_res.get("category", "lifestyle_photos")
+            # Defensa contra LLM devolviendo objetos en lugar de strings (v19.2)
+            if not isinstance(cat_val, str):
+                cat_val = str(cat_val)
+            final_category = cat_val.lower()
             
         tags = vision_res.get("tags", [])
         description = vision_res.get("description", description)

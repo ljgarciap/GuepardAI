@@ -297,8 +297,9 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
                 img_name = s.assigned_image
                 resolved_img = get_base64_image(asset_map.get(img_name)) if img_name else "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab"
                 
-                # Resolve bullet icon (v10.0 Replit-Grade)
-                icon_name = s.bullet_icon
+                # Resolve bullet icon (v23.8: Safe retrieval from planning_json)
+                plan_data = s.planning_json or {}
+                icon_name = plan_data.get("bullet_icon")
                 resolved_icon = get_base64_image(asset_map.get(icon_name)) if icon_name else None
 
                 # Dynamic Layout Selection (v3.1 Artistic)

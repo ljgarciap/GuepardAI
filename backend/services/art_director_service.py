@@ -235,9 +235,12 @@ def plan_presentation_design(db: Session, job_id: int):
             else:
                 print(f"    [ArtDirector] RECOVERY ABORTED: Best match ({best_score}) below 0.45. Triggering AI.")
 
-        # Persistir en Memoria Visual Absoluta y DB (v10.0 - Icon Support)
+        # Persistir en Memoria Visual Absoluta y DB (v10.0 - Icon Support via planning_json)
         slide.assigned_image = None
-        slide.bullet_icon = None
+        
+        # v23.8: Safe icon storage in planning_json to avoid DB schema mismatches
+        current_planning = slide.planning_json or {}
+        current_planning["bullet_icon"] = None
         
         if primary_id:
             asset_rec = db.query(models.BrandAsset).get(primary_id)
@@ -247,9 +250,8 @@ def plan_presentation_design(db: Session, job_id: int):
         if accent_id:
             accent_rec = db.query(models.BrandAsset).get(accent_id)
             if accent_rec:
-                # Resolver path para el bullet icon (Base64)
-                from services.layout_engine import get_base64_image
-                slide.bullet_icon = os.path.basename(accent_rec.local_path)
+                # Resolver path para el bullet icon (Base64) - Guardado en planning_json para estabilidad
+                current_planning["bullet_icon"] = os.path.basename(accent_rec.local_path)
         
         # v8.80: Merge Art Director reasoning into planning_json
         current_planning = slide.planning_json or {}

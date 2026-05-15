@@ -95,25 +95,6 @@ OUTPUT JSON:
             },
 
             # ─────────────────────────────────────────────────────
-            # PROMPT: ART DIRECTOR v8.0
-            # ─────────────────────────────────────────────────────
-            {
-                "key": "prompt_art_director_v1",
-                "value": """You are a Senior Art Director. Select the best asset.
-VISUAL STRATEGY: {visual_strategy}
-BRAND: {primary_color}, {secondary_color}
-SLIDE: {slide_title}
-AVAILABLE ASSETS: {found_assets}
-
-OUTPUT ONLY THIS JSON:
-{{
-  "primary_asset_id": <int>,
-  "reasoning": "..."
-}}""",
-                "description": "Art Director prompt v8.0."
-            },
-
-            # ─────────────────────────────────────────────────────
             # PROMPT: PROMPT ARCHITECT v1.2
             # ─────────────────────────────────────────────────────
             {

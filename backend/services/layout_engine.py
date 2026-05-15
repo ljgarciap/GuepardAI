@@ -4,7 +4,7 @@ import json
 import base64
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
-from llm_provider import generate_json
+from llm_provider import generate_json, get_system_config
 import models
 from database import SessionLocal
 
@@ -103,12 +103,7 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
 
     # 3. LLM ART DIRECTOR: Planificación Maestra
     # Le pedimos al LLM que analice TODO el contenido y asigne los mejores recursos.
-    from database import SessionLocal
-    from models import SystemConfig
-    db = SessionLocal()
-    pref_model = db.query(models.SystemConfig).filter(models.SystemConfig.key == 'art_director_model').first()
-    model_name = pref_model.value if pref_model else "models/gemini-1.5-flash"
-    db.close()
+    model_name = get_system_config("art_director_model", "models/gemini-1.5-flash")
 
     # 3. Director de Arte Senior - Slide by Slide Analysis (v18.7)
     # Buscamos slides de referencia del manual original para máxima fidelidad

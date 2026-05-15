@@ -47,7 +47,12 @@ def log_audit(category: str, data: str):
         f.write(f"{'='*80}\n")
 
 def get_system_config(key: str, default: str) -> str:
-    """Helper to get DB config without hardcoding."""
+    """Helper to get DB config without hardcoding. Prioritizes ENV variables (UPPERCASE)."""
+    # 1. Prioritize ENV
+    env_val = os.getenv(key.upper())
+    if env_val: return env_val
+
+    # 2. Database
     db = SessionLocal()
     try:
         cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()

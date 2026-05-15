@@ -62,6 +62,21 @@ def seed_data():
                 "value": "3",
                 "description": "Número máximo de slides consecutivos con el mismo layout_type."
             },
+            {
+                "key": "extraction_vision_model",
+                "value": "models/gemini-1.5-flash",
+                "description": "Modelo principal para análisis de visión (DNA/Assets)."
+            },
+            {
+                "key": "extraction_synthesis_model",
+                "value": "models/gemini-1.5-flash",
+                "description": "Modelo para síntesis de contenido y estructuración."
+            },
+            {
+                "key": "global_fallback_model",
+                "value": "models/gemini-1.5-flash",
+                "description": "Modelo de respaldo global en caso de fallo de proveedores primarios."
+            },
             
             # ─────────────────────────────────────────────────────
             # PROMPT: ANALISTA ESTRATÉGICO v8.5

@@ -430,7 +430,14 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
                                 print(f"  [Embeddings] Gemini FATAL error (prefix={m_name}): {gem_err}", flush=True)
                                 raise gem_err
                     except Exception as e:
+                        err_msg = str(e).lower()
                         print(f"  [Embeddings] Item failure in batch: {e}", flush=True)
+                        
+                        # CRITICAL: If it's a quota or auth error, don't continue the batch.
+                        if "429" in err_msg or "quota" in err_msg or "401" in err_msg:
+                            print(f"  [Embeddings] FATAL QUOTA/AUTH ERROR DETECTED. Aborting batch.", flush=True)
+                            raise e
+                            
                         results.append(None)
                 
                 if any(r is not None for r in results):

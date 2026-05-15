@@ -83,7 +83,7 @@ def extract_pdf_dna(file_path: str, source_filename: str,
                 base_img = doc.extract_image(xref)
                 data = base_img.get("image", b"")
                 ext = base_img.get("ext", "png")
-                if len(data) > 5120:  # > 5KB
+                if len(data) > 100:  # Any valid image
                     f_hash = hashlib.sha256(data).hexdigest()[:16]
                     if f_hash in seen_hashes: continue
                     seen_hashes.add(f_hash)
@@ -141,7 +141,7 @@ def extract_pptx_dna(file_path: str, source_filename: str,
     total_slides = len(prs.slides)
 
     def _process_img_data(blob, ext, prefix):
-        if not blob or len(blob) < 4096: return None
+        if not blob or len(blob) < 100: return None
         f_hash = hashlib.sha256(blob).hexdigest()[:16]
         if f_hash in seen_hashes: return None
         

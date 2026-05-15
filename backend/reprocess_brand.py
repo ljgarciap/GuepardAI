@@ -63,5 +63,5 @@ def reprocess(filename, source_path):
 
 if __name__ == "__main__":
     file_name = "Tesco Style_2.pptx"
-    path = "uploads/brand_style_Tesco Style_2.pptx"
+    path = "uploads/Tesco Style_2.pptx"
     reprocess(file_name, path)

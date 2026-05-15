@@ -26,7 +26,11 @@
         <ul class="space-y-6">
             {% for bullet in slide.bullets %}
             <li class="flex items-start gap-4 text-slate-300">
+                {% if slide.bullet_icon %}
+                <img src="{{ slide.bullet_icon }}" class="w-6 h-6 object-contain shrink-0 mt-1">
+                {% else %}
                 <div class="mt-2.5 h-2 w-2 rounded-full bg-brand-secondary shrink-0"></div>
+                {% endif %}
                 <span class="text-xl leading-relaxed">{{ bullet }}</span>
             </li>
             {% endfor %}

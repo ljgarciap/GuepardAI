@@ -33,6 +33,11 @@ def seed_data():
                 "description": "Ruta al logo de la agencia para el footer/firma."
             },
             {
+                "key": "agency_contact_email",
+                "value": "partners@l-founders.com",
+                "description": "Email de contacto para el cierre de presentaciones."
+            },
+            {
                 "key": "asset_score_threshold",
                 "value": "0.45",
                 "description": "Umbral mínimo de similitud semántica para aceptar asset."
@@ -163,6 +168,60 @@ OUTPUT ONLY THIS JSON:
 }}""",
                 "description": "Content Synthesizer v2.1 — Strategic depth and RAG extraction."
             },
+            {
+                "key": "prompt_art_director_v1",
+                "value": """# ROLE: Senior Executive Art Director
+You are responsible for the VISUAL FIDELITY and BRAND ADHERENCE of a high-stakes presentation.
+
+# BRAND ARTISTIC ESSENCE (READ CAREFULLY):
+{art_direction_note}
+
+# STRATEGIC CONTEXT:
+- Visual Strategy: {visual_strategy}
+- Slide Title: {slide_title}
+- Content: {bullets}
+
+# AVAILABLE BRAND ASSETS (From Official Library):
+{found_assets}
+
+# REPLIT-GRADE DESIGN INSTRUCTIONS (Designer Mode v4.0):
+1. PHOTOGRAPHY FIRST: For 'composition_split' and 'composition_hero', you MUST prioritize 'lifestyle_photos'. AVOID using a single 'design_element' to fill these layouts.
+2. DESIGN ELEMENTS AS ACCENTS: Use 'design_elements' ONLY for typographic substitution, small accents, or in 'custom_canvas'. NEVER scale them to fill more than 20% of the slide.
+3. QUALITY GUARD: NEVER select assets categorized as 'noise'.
+4. REASONING: Justify why the chosen photo or element enhances the strategic narrative.
+
+# OUTPUT FORMAT (STRICT JSON):
+{{
+  "primary_asset_id": <int or null>,
+  "accent_asset_id": <int or null>,
+  "visual_reasoning": "Explain the design-led choice.",
+  "suggested_layout_override": "hero | data_grid | pillars | split | custom_canvas",
+  "canvas_elements": [
+    {{{{ "type": "typo_substitution", "text": "Loyalty", "char": "a", "path": "asset_basename", "x": 10, "y": 40, "size": 90 }}}},
+    {{{{ "type": "image", "path": "person_photo", "x": 60, "y": 10, "w": 40, "h": 80 }}}},
+    {{{{ "type": "text", "content": "Data to Growth", "x": 10, "y": 55, "size": 24, "color": "#FFFFFF" }}}}
+  ]
+}}
+""",
+                "description": "Art Director v2.0 — Replit-Grade Reasoning & Creative Curation."
+            },
+            {
+                "key": "prompt_classifier_v1",
+                "value": """# ROLE: Expert Visual Asset Analyst & Art Director
+Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
+- 'category': Choose one: 
+    * 'lifestyle_photos': Complex scenes, people, stores, or environments.
+    * 'design_elements': Single isolated objects (fruits, products), icons, or accents on solid/transparent backgrounds. (CRITICAL: If it's a fruit or object, it's a 'design_element').
+    * 'logos': Brand identities.
+    * 'backgrounds': Textures or full-page backgrounds.
+    * 'noise': Blank, blurry, low-quality, or useless images.
+- 'is_person': boolean.
+- 'background_type': 'transparent', 'solid_white', 'solid_black', 'complex', or 'other'.
+- 'description': TECHNICAL INSTRUCTION: Provide a VISUAL and COMPOSITIONAL description (Max 3 sentences). Focus strictly on the Subject, Composition (e.g., 'Centered', 'Negative space on left'), Dominant Colors, and Design Potential (e.g., 'Suitable for typographic substitution'). AVOID corporate fluff like 'strategic value', 'approachable' or 'professional'.
+- 'tags': 5 technical keywords for designer search.
+""",
+                "description": "Asset Classifier v3.0 — Technical Designer Focus (Replit-Grade)."
+            }
         ]
 
         for cfg in configs:

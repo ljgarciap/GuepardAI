@@ -160,6 +160,15 @@ def _build_slide_data(slide, asset_map: dict, db: Session) -> dict:
     }
     tag = content.get("section_label") or tag_map.get(layout_type, "STRATEGY")
 
+    # v12.0: Designer Override (Custom Canvas)
+    planning = slide.planning_json or {}
+    ad_planning = planning.get("art_director", {})
+    
+    if ad_planning.get("layout_override"):
+        grammar_type = ad_planning["layout_override"]
+        if grammar_type == "custom_canvas":
+            layout_type = "custom_canvas"
+
     return {
         "layout_type":          layout_type,
         "title":                slide.title or "",
@@ -171,7 +180,9 @@ def _build_slide_data(slide, asset_map: dict, db: Session) -> dict:
         # Metadata extra para tipos especiales
         "grammar_type":         grammar_type,
         "slide_number":         slide.slide_number,
-        "metrics":              content.get("metrics", []), # Soporte para grid de datos
+        "metrics":              content.get("metrics", []),
+        "metadata":             content.get("metadata", {}),
+        "elements":             ad_planning.get("canvas_elements", [])
     }
 
 
@@ -205,7 +216,47 @@ def render_with_painter(db: Session, job_id: int, asset_map: dict, output_path: 
     #    (GammaPainter espera un objeto con atributos, no un dict)
     _patch_dna_for_painter(dna_record, db, job, asset_map)
 
-    # 3. Cargar slides ordenados
+    # 3. Branding Metadata
+    logo_path = None
+    if job.brand_id:
+        brand = db.query(models.Brand).filter(models.Brand.id == job.brand_id).first()
+        if brand and brand.logo_path:
+            logo_path = _resolve_asset_path(brand.logo_path, asset_map)
+            
+            # v16.7: Smart Fallback (Anti-Hardcoding)
+            # If the path doesn't exist, search for it in uploads
+            if logo_path and not os.path.exists(logo_path):
+                print(f"  [PainterBridge] Logo path not found: {logo_path}. Searching in uploads...")
+                brand_slug = job.client_name.lower() if job.client_name else "client"
+                uploads_dir = os.path.abspath("uploads")
+                if os.path.exists(uploads_dir):
+                    for f in os.listdir(uploads_dir):
+                        if "logo" in f.lower() and brand_slug in f.lower():
+                            logo_path = os.path.join(uploads_dir, f)
+                            print(f"  [PainterBridge] Dynamic Logo Found: {logo_path}")
+                            break
+            
+            # Absolute path enforcement
+            if logo_path and not os.path.isabs(logo_path):
+                logo_path = os.path.abspath(logo_path)
+    
+    agency_name = db.query(models.SystemConfig).filter(models.SystemConfig.key == "agency_name").first()
+    agency_logo = db.query(models.SystemConfig).filter(models.SystemConfig.key == "agency_logo_path").first()
+    agency_email = db.query(models.SystemConfig).filter(models.SystemConfig.key == "agency_contact_email").first()
+    
+    # Resolve agency logo to absolute path too
+    agency_logo_path = agency_logo.value if agency_logo else "assets/agency/L-founders_logo.png"
+    if agency_logo_path and not os.path.isabs(agency_logo_path):
+        agency_logo_path = os.path.abspath(agency_logo_path)
+
+    agency_branding = {
+        "name": agency_name.value if agency_name else "L - Founders of Loyalty",
+        "logo_path": agency_logo_path,
+        "client_name": job.client_name or "Client",
+        "email": agency_email.value if agency_email else "contact@l-founders.com"
+    }
+
+    # 4. Cargar slides ordenados
     slides = db.query(models.PresentationSlide).filter(
         models.PresentationSlide.job_id == job_id
     ).order_by(models.PresentationSlide.slide_number.asc()).all()
@@ -215,12 +266,15 @@ def render_with_painter(db: Session, job_id: int, asset_map: dict, output_path: 
 
     print(f"  [PainterBridge] Found {len(slides)} slides. Building content_json...")
 
-    # 4. Construir content_json con reglas de variedad
+    # 5. Construir content_json con reglas de variedad
     slide_data_list = []
     grammar_type_history = []
 
-    for slide in slides:
+    for i, slide in enumerate(slides):
         data = _build_slide_data(slide, asset_map, db)
+        data["is_last"] = (i == len(slides) - 1)
+        data["logo_path"] = logo_path
+        data["agency_branding"] = agency_branding
 
         # REGLA DE VARIEDAD: si el mismo layout se repite 3 veces seguidas, forzar cambio
         layout = data["layout_type"]
@@ -251,17 +305,10 @@ def render_with_painter(db: Session, job_id: int, asset_map: dict, output_path: 
     if brand and brand.logo_path:
         logo_path = _resolve_asset_path(brand.logo_path, asset_map)
     
-    # Agency Branding (L-Founders)
-    agency_name = db.query(models.SystemConfig).filter(models.SystemConfig.key == "agency_name").first()
-    agency_logo = db.query(models.SystemConfig).filter(models.SystemConfig.key == "agency_logo_path").first()
-    
     content_json = {
         "slides": slide_data_list,
         "logo_path": logo_path,
-        "agency_branding": {
-            "name": agency_name.value if agency_name else "L - Founders of Loyalty",
-            "logo_path": _resolve_asset_path(agency_logo.value, asset_map) if agency_logo else None
-        }
+        "agency_branding": agency_branding
     }
 
     # 5. Estadísticas de variedad
@@ -271,6 +318,13 @@ def render_with_painter(db: Session, job_id: int, asset_map: dict, output_path: 
 
     # 6. Instanciar GammaPainter y renderizar
     painter = GammaPainter(dna_record)
+    print(f"  [DEBUG] Painter Type: {type(painter)}")
+    print(f"  [DEBUG] Painter Methods: {dir(painter)}")
+    
+    # Check if method exists to prevent crash and show truth
+    if not hasattr(painter, "render_slides"):
+        print(f"  [CRITICAL] render_slides MISSING in this instance!")
+    
     painter.render_slides(content_json)
 
     # 7. Guardar y retornar

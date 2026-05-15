@@ -78,8 +78,8 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
                 
         if brand_name != "Unknown Brand" or rulebook:
             vision_prompt += f"\n\nCRITICAL BRAND CONTEXT:\nYou are extracting assets for the brand '{brand_name}'. \n"
-            vision_prompt += "STRATEGIC RULE: High-quality professional portraits (humans in suits/business casual) are VALUABLE strategic assets for 'Team' and 'Leadership' sections. Do NOT classify them as 'noise' or 'off-brand' just for being corporate or lacking brand colors. If they are professional, classify them as 'lifestyle_photos'.\n"
-            vision_prompt += f"Brand Rulebook Context (Use as creative guide, not as a filter for human assets): {rulebook[:1500]}"
+            vision_prompt += "DESIGNER GUIDELINE: Focus on composition and potential for creative layouts. If it is a clean object or fruit, it is a 'design_element'. If it is a person, identify their posture and background.\n"
+            vision_prompt += f"Brand Rulebook Context: {rulebook[:1500]}"
 
             
         vision_res = generate_vision_json(vision_prompt, [file_path])

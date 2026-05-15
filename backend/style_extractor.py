@@ -147,8 +147,8 @@ def extract_pptx_style(file_path, client_name="brand", update_callback=None):
         if not os.path.exists(a_path): continue
         size = os.path.getsize(a_path)
         
-        # Filtro de Calidad: Ignorar basura muy pequeña (< 10KB)
-        if size < 10240:
+        # Conservar todos los activos, por pequeños que sean (crucial para iconos y letras decorativas)
+        if size < 100: # Solo ignorar archivos corruptos de < 100 bytes
             os.remove(a_path)
             continue
             

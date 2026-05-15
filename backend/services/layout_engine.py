@@ -1,7 +1,8 @@
 import os
 import time
 import json
-from typing import Optional, List, Dict
+import base64
+from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from llm_provider import generate_json
 import models
@@ -16,6 +17,26 @@ def _infer_slide_type(slide: dict) -> str:
     if "quote" in intent or "testimonial" in title: return "image_hero"
     if num >= 14 or "thank you" in title or "conclusion" in title: return "conclusion"
     return "content"
+
+def get_base64_image(raw_path: Optional[str]) -> str:
+    """Helper para convertir un asset local en Base64 seguro para HTML."""
+    if not raw_path: return ""
+    
+    # Resolve path relative to /app
+    actual_path = raw_path if raw_path.startswith("/") else os.path.join("/app", raw_path)
+    
+    if os.path.exists(actual_path):
+        try:
+            with open(actual_path, "rb") as img_f:
+                b64_data = base64.b64encode(img_f.read()).decode()
+                ext = os.path.splitext(actual_path)[1].lower().replace(".", "")
+                if ext == "jpg": ext = "jpeg"
+                if not ext: ext = "png"
+                mime_type = f"image/{ext}"
+                return f"data:{mime_type};base64,{b64_data}"
+        except Exception as e:
+            print(f"  [ERROR] Encoding failed for {actual_path}: {e}")
+    return "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab"
 
 def _get_contrast_color(hex_bg: str, brand_primary: str, brand_text: str) -> str:
     hex_bg = str(hex_bg).lstrip('#')
@@ -277,57 +298,33 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
             slides_for_html = []
             for s in db_slides:
                 content = s.content_json
-                # Enriquecer con imagen real resuelta
+                # Resolve primary image
                 img_name = s.assigned_image
-                raw_img_path = asset_map.get(img_name)
+                resolved_img = get_base64_image(asset_map.get(img_name)) if img_name else "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab"
                 
-                resolved_img = "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab"
-                print(f"  [DEBUG] Slide {s.slide_number}: assigned_image='{img_name}', path_in_map='{raw_img_path}'")
-                if raw_img_path:
-                    # Resolve path: try absolute, then relative to /app
-                    actual_path = raw_img_path if raw_img_path.startswith("/") else os.path.join("/app", raw_img_path)
-                    print(f"  [DEBUG] Attempting to open: {actual_path}")
-                    
-                    if os.path.exists(actual_path):
-                        import base64
-                        try:
-                            with open(actual_path, "rb") as img_f:
-                                b64_data = base64.b64encode(img_f.read()).decode()
-                                ext = os.path.splitext(actual_path)[1].lower().replace(".", "")
-                                if ext == "jpg": ext = "jpeg"
-                                mime_type = f"image/{ext}"
-                                resolved_img = f"data:{mime_type};base64,{b64_data}"
-                                print(f"  [SUCCESS] Slide {s.slide_number}: Embedded {actual_path} ({len(b64_data)} bytes)")
-                        except Exception as e:
-                            print(f"  [ERROR] Slide {s.slide_number}: Encoding failed for {actual_path}: {e}")
-                    else:
-                        print(f"  [ERROR] Slide {s.slide_number}: File NOT FOUND at {actual_path}")
-                else:
-                    print(f"  [WARNING] Slide {s.slide_number}: No image assigned by Art Director.")
-                
-                # Dynamic Layout Selection (v2.0 Artistic) - Respecting Strategic Choice
-                chosen_layout = content.get("layout_type", "composition_split")
-                
-                # Mapping LLM Grammars to HTML Templates
-                layout_map = {
-                    "composition_hero": "hero",
-                    "composition_split": "split",
-                    "composition_quote": "quote",
-                    "data_grid_cards": "data",
-                    "composition_pillars": "pillars",
-                    "big_metric": "quote" # Fallback
-                }
-                layout = layout_map.get(chosen_layout, "split")
+                # Resolve bullet icon (v10.0 Replit-Grade)
+                icon_name = s.bullet_icon
+                resolved_icon = get_base64_image(asset_map.get(icon_name)) if icon_name else None
 
+                # Dynamic Layout Selection (v3.1 Artistic)
+                chosen_layout = "split"
+                grammar_type = content.get("layout_type", "composition_split")
+                
+                if "hero" in grammar_type: chosen_layout = "hero"
+                elif "data" in grammar_type: chosen_layout = "data_grid"
+                elif "quote" in grammar_type: chosen_layout = "quote"
+                elif "pillars" in grammar_type: chosen_layout = "pillars"
+                
                 slides_for_html.append({
                     "title": s.title,
                     "subtitle": content.get("subtitle", ""),
                     "metadata": content.get("metadata", {}),
                     "section_label": content.get("section_label", "Executive Insights"),
                     "primary_image": resolved_img,
+                    "bullet_icon": resolved_icon,
                     "bullets": content.get("bullets", []),
                     "metrics": content.get("metrics", []),
-                    "layout": layout
+                    "layout": chosen_layout
                 })
 
             import asyncio

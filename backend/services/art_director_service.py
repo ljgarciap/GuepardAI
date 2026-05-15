@@ -1,5 +1,7 @@
 import os
 import json
+import random
+import datetime
 import models
 import time
 from sqlalchemy.orm import Session
@@ -59,6 +61,10 @@ def plan_presentation_design(db: Session, job_id: int):
         strategy = get_slide_visual_strategy(db, slide, job)
         visual_intent = strategy.get("visual_intent", "Executive")
 
+        # Inyectar esencia artística del manual de marca (v10.0 Replit-Upgrade)
+        essence = db.query(models.BrandArtisticEssence).filter(models.BrandArtisticEssence.brand_id == job.brand_id).first()
+        art_direction_note = essence.art_direction_note if essence else "Maintain a clean, professional corporate style."
+        
         # v8.0: El Analista decide el grammar_type — el Art Director lo respeta
         analyst_grammar_type = strategy.get("grammar_type", "composition_split")
 
@@ -124,7 +130,13 @@ def plan_presentation_design(db: Session, job_id: int):
         requires_hi_res = suggested_layout in ["hero", "full_brand_overlay", "big_image"]
         
         for asset, score in asset_candidates:
-            asset_info = {"id": asset.id, "score": score, "category": asset.category, "desc": asset.description[:50]}
+            asset_info = {
+                "id": asset.id, 
+                "score": score, 
+                "category": asset.category, 
+                "desc": asset.description[:80],
+                "path": os.path.basename(asset.local_path)
+            }
             
             # REGLA DE CALIDAD v8.9: Verificación Física si no hay Metadata
             res_ok = True
@@ -149,16 +161,16 @@ def plan_presentation_design(db: Session, job_id: int):
             u_asset = db.query(models.BrandAsset).get(uid)
             if u_asset: visual_history.append(u_asset.description[:100])
 
-        prompt = prompt_tpl.value.format(
-            visual_strategy=json.dumps(strategy),
-            primary_color=p_color,
-            secondary_color=s_color,
-            primary_font=dna_record.primary_font if dna_record else "Arial",
-            slide_title=slide.title,
-            bullets=str(slide.content_json.get("bullets", [])),
-            found_assets=json.dumps(filtered_assets),
-            visual_history=json.dumps(visual_history)
-        )
+        prompt = prompt_tpl.value \
+            .replace("{visual_strategy}", json.dumps(strategy)) \
+            .replace("{primary_color}", p_color) \
+            .replace("{secondary_color}", s_color) \
+            .replace("{primary_font}", dna_record.primary_font if dna_record else "Arial") \
+            .replace("{slide_title}", slide.title) \
+            .replace("{bullets}", str(slide.content_json.get("bullets", []))) \
+            .replace("{found_assets}", json.dumps(filtered_assets)) \
+            .replace("{visual_history}", json.dumps(visual_history)) \
+            .replace("{art_direction_note}", art_direction_note)
         
         decision = generate_json(prompt)
         
@@ -166,7 +178,7 @@ def plan_presentation_design(db: Session, job_id: int):
         if isinstance(decision, list) and len(decision) > 0: decision = decision[0]
         
         # FASE D: AUDITORÍA (Bitácora)
-        raw_reasoning = decision.get("reasoning", "Strategic choice.")
+        raw_reasoning = decision.get("visual_reasoning") or decision.get("reasoning", "Strategic choice.")
         if isinstance(raw_reasoning, dict): raw_reasoning = json.dumps(raw_reasoning)
 
         audit = models.ArtDirectorDecision(
@@ -187,6 +199,13 @@ def plan_presentation_design(db: Session, job_id: int):
         primary_id = decision.get("primary_asset_id")
         accent_id = decision.get("accent_asset_id")
         
+        # v12.0: Layout Override (Soledad del Diseñador)
+        layout_override = decision.get("suggested_layout_override")
+        if layout_override:
+            print(f"    [ArtDirector] LAYOUT OVERRIDE: {grammar_type} -> {layout_override}")
+            grammar_type = layout_override
+            slide.layout_slug = layout_override
+
         # GUARDIA DE HIERRO (v8.5) - Prioridad Library y No Repetición
         valid_ids = [a["id"] for a in filtered_assets]
         
@@ -216,20 +235,32 @@ def plan_presentation_design(db: Session, job_id: int):
             else:
                 print(f"    [ArtDirector] RECOVERY ABORTED: Best match ({best_score}) below 0.45. Triggering AI.")
 
-        # Persistir en Memoria Visual Absoluta y DB (v8.1)
-        # Sincronización DB-PDF: assigned_image DEBE ser el basename para el renderer
+        # Persistir en Memoria Visual Absoluta y DB (v10.0 - Icon Support)
         slide.assigned_image = None
+        slide.bullet_icon = None
+        
         if primary_id:
             asset_rec = db.query(models.BrandAsset).get(primary_id)
             if asset_rec:
                 slide.assigned_image = os.path.basename(asset_rec.local_path)
         
+        if accent_id:
+            accent_rec = db.query(models.BrandAsset).get(accent_id)
+            if accent_rec:
+                # Resolver path para el bullet icon (Base64)
+                from services.layout_engine import get_base64_image
+                slide.bullet_icon = os.path.basename(accent_rec.local_path)
+        
         # v8.80: Merge Art Director reasoning into planning_json
         current_planning = slide.planning_json or {}
         current_planning["art_director"] = {
             "selected_asset": primary_id,
-            "logic": "Library Recovery" if not job.allow_ai_images else "Primary Selection/AI",
-            "threshold": 0.45
+            "logic": "Designer Mode v3.0",
+            "reasoning": raw_reasoning,
+            "layout_override": layout_override,
+            "canvas_elements": decision.get("canvas_elements", []),
+            "threshold": 0.45,
+            "timestamp": datetime.datetime.utcnow().isoformat()
         }
         slide.planning_json = current_planning
         

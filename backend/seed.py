@@ -95,25 +95,6 @@ OUTPUT JSON:
             },
 
             # ─────────────────────────────────────────────────────
-            # PROMPT: ART DIRECTOR v8.0
-            # ─────────────────────────────────────────────────────
-            {
-                "key": "prompt_art_director_v1",
-                "value": """You are a Senior Art Director. Select the best asset.
-VISUAL STRATEGY: {visual_strategy}
-BRAND: {primary_color}, {secondary_color}
-SLIDE: {slide_title}
-AVAILABLE ASSETS: {found_assets}
-
-OUTPUT ONLY THIS JSON:
-{{
-  "primary_asset_id": <int>,
-  "reasoning": "..."
-}}""",
-                "description": "Art Director prompt v8.0."
-            },
-
-            # ─────────────────────────────────────────────────────
             # PROMPT: PROMPT ARCHITECT v1.2
             # ─────────────────────────────────────────────────────
             {
@@ -240,8 +221,31 @@ Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
                 ))
                 print(f"  [Seed] Inserted: {cfg['key']}")
 
+        # ─────────────────────────────────────────────────────
+        # IDIOMAS BASE
+        # ─────────────────────────────────────────────────────
+        languages = [
+            {"code": "UK", "name": "English (UK)", "priority": 1},
+            {"code": "USA", "name": "English (USA)", "priority": 2},
+            {"code": "FR", "name": "French", "priority": 3},
+            {"code": "LATAM", "name": "Spanish (LATAM)", "priority": 4},
+            {"code": "ES", "name": "Spanish (Spain)", "priority": 5}
+        ]
+
+        for lang in languages:
+            existing_lang = db.query(models.Language).filter(
+                models.Language.code == lang["code"]
+            ).first()
+            if not existing_lang:
+                db.add(models.Language(**lang))
+                print(f"  [Seed] Inserted Language: {lang['name']}")
+            else:
+                existing_lang.priority = lang["priority"]
+                existing_lang.name = lang["name"]
+                print(f"  [Seed] Updated Language Priority: {lang['name']}")
+
         db.commit()
-        print("\n  [Seed] ✓ All system configs v8.5 seeded successfully.")
+        print("\n  [Seed] ✓ All system configs and languages v8.5 seeded successfully.")
 
     except Exception as e:
         db.rollback()

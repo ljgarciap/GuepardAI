@@ -109,11 +109,17 @@ def extract_pdf_dna(file_path: str, source_filename: str,
     color_freq = Counter(c for c in colors)
 
     labeled_assets = {"photos": [], "logos": [], "icons": []}
-    for asset_name in assets:
+    for asset_info in assets:
         category = "photos"
-        if "logo" in asset_name.lower(): category = "logos"
-        elif "icon" in asset_name.lower(): category = "icons"
-        labeled_assets[category].append({"path": asset_name, "description": "Extracted PDF asset"})
+        fname = asset_info.get("path", "")
+        if "logo" in fname.lower(): category = "logos"
+        elif "icon" in fname.lower(): category = "icons"
+        labeled_assets[category].append({
+            "path": fname, 
+            "width": asset_info.get("width", 0),
+            "height": asset_info.get("height", 0),
+            "description": "Extracted PDF asset"
+        })
 
     return {
         "primary_fonts": [f[0] for f in font_freq.most_common(5)],

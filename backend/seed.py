@@ -225,9 +225,9 @@ Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
         # IDIOMAS BASE
         # ─────────────────────────────────────────────────────
         languages = [
-            {"code": "LATAM", "name": "Español (LATAM)", "priority": 1},
-            {"code": "UK", "name": "English (UK)", "priority": 2},
-            {"code": "USA", "name": "English (USA)", "priority": 3},
+            {"code": "UK", "name": "English (UK)", "priority": 1},
+            {"code": "USA", "name": "English (USA)", "priority": 2},
+            {"code": "LATAM", "name": "Español (LATAM)", "priority": 3},
             {"code": "ES", "name": "Español (España)", "priority": 4}
         ]
 

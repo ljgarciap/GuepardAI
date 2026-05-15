@@ -117,8 +117,15 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
                     try:
                         raw_path = os.path.join(upload_dir, item["path"])
                         if os.path.exists(raw_path):
+                            # Respetar el logo manual, si no, usar lo que diga Visión
+                            cat_val = item.get("category", cat)
+                            # Defensa contra LLM devolviendo objetos en lugar de strings (v19.2)
+                            if not isinstance(cat_val, str):
+                                cat_val = str(cat_val)
+                            final_category = cat_val.lower()
+                            
                             asset_record = register_asset(
-                                local_db, brand_id, raw_path, category=cat,
+                                local_db, brand_id, raw_path, category=final_category,
                                 is_public=is_public, source_doc=source_filename,
                                 manual_tags=manual_tags,
                                 width=item.get("width"), height=item.get("height")
@@ -271,6 +278,8 @@ def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str,
                         width, height = img.size
                 except: pass
                 
+                # v36.6: Definir categoría por defecto para evitar NameError
+                category = "photos"
                 register_asset(db, brand_id, file_path, category=category, is_public=is_public, source_doc=source_filename, manual_tags=manual_tags, width=width, height=height)
                 db.commit()
             else:

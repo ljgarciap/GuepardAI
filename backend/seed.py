@@ -64,17 +64,17 @@ def seed_data():
             },
             {
                 "key": "extraction_vision_model",
-                "value": "gemini-flash-latest",
+                "value": "pixtral-12b-2409,gemini-flash-latest",
                 "description": "Modelo principal para análisis de visión (DNA/Assets)."
             },
             {
                 "key": "extraction_synthesis_model",
-                "value": "gemini-flash-latest",
+                "value": "gemini-flash-latest,ollama/qwen2.5:1.5b",
                 "description": "Modelo para síntesis de contenido y estructuración."
             },
             {
                 "key": "global_fallback_model",
-                "value": "gemini-flash-latest",
+                "value": "gemini-flash-latest,ollama/qwen2.5:1.5b",
                 "description": "Modelo de respaldo global en caso de fallo de proveedores primarios."
             },
             
@@ -225,9 +225,7 @@ Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
                 models.SystemConfig.key == cfg["key"]
             ).first()
             if existing:
-                existing.value = cfg["value"]
-                existing.description = cfg.get("description", existing.description)
-                print(f"  [Seed] Updated: {cfg['key']}")
+                print(f"  [Seed] Skipped (already exists): {cfg['key']}")
             else:
                 db.add(models.SystemConfig(
                     key=cfg["key"],
@@ -255,9 +253,7 @@ Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
                 db.add(models.Language(**lang))
                 print(f"  [Seed] Inserted Language: {lang['name']}")
             else:
-                existing_lang.priority = lang["priority"]
-                existing_lang.name = lang["name"]
-                print(f"  [Seed] Updated Language Priority: {lang['name']}")
+                print(f"  [Seed] Skipped Language (already exists): {lang['name']}")
 
         db.commit()
         print("\n  [Seed] ✓ All system configs and languages v8.5 seeded successfully.")

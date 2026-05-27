@@ -64,8 +64,8 @@ services:
       sh -c "
       echo 'Waiting for Ollama to start...';
       sleep 10;
-      echo 'Pulling MiniCPM-V model...';
-      curl -s -X POST http://vision:11434/api/pull -d '{\"name\": \"minicpm-v\"}';
+      echo 'Pulling Qwen2.5-VL model...';
+      curl -s -X POST http://vision:11434/api/pull -d '{\"name\": \"qwen2.5vl\"}';
       echo 'Model pulled successfully!';
       "
 

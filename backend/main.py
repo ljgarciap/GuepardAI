@@ -13,7 +13,7 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 import models
 from database import SessionLocal, engine, Base
-from services.ingestion_orchestrator import (
+from services.ingestion.ingestion_orchestrator import (
     task_extract_visual_dna,
     task_extract_artistic_essence,
     task_extract_full_brand_style,
@@ -21,23 +21,23 @@ from services.ingestion_orchestrator import (
     task_extract_pure_assets,
     task_generate_presentation
 )
-from services.brand_service import create_brand_logic, update_brand_logic
+from services.core.brand_service import create_brand_logic, update_brand_logic
 import uuid
 from datetime import datetime
 from sqlalchemy import JSON
 
 # ── PIPELINE SERVICES ──
-from services.content_engine import synthesize_strategic_content
-from services.asset_engine import orchestrate_assets
-from services.layout_engine import apply_design_policy
-from services.pptx_renderer import render_pptx_manifest
+from services.generation.content_engine import synthesize_strategic_content
+from services.assets.asset_engine import orchestrate_assets
+from services.rendering.layout_engine import apply_design_policy
+from services.rendering.pptx_renderer import render_pptx_manifest
 
 # ── INGESTION SERVICES (nuevos) ──
-from services.visual_dna_service import extract_visual_dna
-from services.artistic_essence_service import extract_artistic_essence
+from services.ingestion.visual_dna_service import extract_visual_dna
+from services.ingestion.artistic_essence_service import extract_artistic_essence
 
 # ── INGESTION SERVICES (legacy RAG — sin cambios) ──
-from ingest_knowledge import ingest_document as ingest_rag
+from services.ingestion.ingest_knowledge import ingest_document as ingest_rag
 
 print("[System] PowerAI Engine v11.0 (Clean Architecture) IS LIVE.", flush=True)
 

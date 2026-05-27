@@ -1,11 +1,11 @@
 import pytest
-from services.art_director_service import plan_presentation_design
+from services.generation.art_director_service import plan_presentation_design
 from unittest.mock import MagicMock, patch
 
 def test_safe_int_id_handling():
     # Este test valida que el parche anti-hallucinación funcione
     # Necesitamos acceder a la función interna o simular el flujo
-    from services.art_director_service import plan_presentation_design
+    from services.generation.art_director_service import plan_presentation_design
     
     # Creamos un mock de la decisión de la IA con basura en los IDs
     mock_decision = {
@@ -15,8 +15,8 @@ def test_safe_int_id_handling():
         "reasoning": "Test reasoning"
     }
     
-    with patch("services.art_director_service.generate_json", return_value=mock_decision):
-        with patch("services.art_director_service.ensure_brand_fonts"):
+    with patch("services.generation.art_director_service.generate_json", return_value=mock_decision):
+        with patch("services.generation.art_director_service.ensure_brand_fonts"):
             db = MagicMock()
             # Simular que el job existe
             job = MagicMock(style_id=1, brand_id=1)

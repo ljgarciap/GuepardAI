@@ -1,7 +1,7 @@
 import os
 import tempfile
 from schemas.presentation import RenderManifest, PainterSlideData, PainterAgencyBranding
-from services.painter import GammaPainter
+from services.rendering.painter import GammaPainter
 
 class MockBrandStyle:
     primary_color = "#FF0000"

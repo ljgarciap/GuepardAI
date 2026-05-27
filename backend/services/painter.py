@@ -148,11 +148,47 @@ class GammaPainter:
                 new_w = orig_w * ratio
                 new_h = orig_h * ratio
                 # Centering within the max box
-                off_x = (max_w - new_w) / 2
-                off_y = (max_h - new_h) / 2
-                pic = slide.shapes.add_picture(img_path, x + off_x, y + off_y, width=new_w, height=new_h)
-                return pic
-        except: return None
+                x_offset = max(0, (max_w - new_w) / 2)
+                y_offset = max(0, (max_h - new_h) / 2)
+                pic = slide.shapes.add_picture(img_path, x + x_offset, y + y_offset, new_w, new_h)
+                
+                # If transparent flag or circle_crop is needed, we'd apply it here, but python-pptx has limits.
+        except Exception as e:
+            print(f"  [Painter] Failed to add fitted image {img_path}: {e}")
+
+    def paint_premium_geometry(self, slide, geometry_json_str, primary_asset_path):
+        """v24.0: Native Premium Geometry Engine (Glassmorphism)"""
+        if not geometry_json_str: return
+        try:
+            geom = json.loads(geometry_json_str)
+        except:
+            return
+            
+        img_treatment = geom.get("image_treatment", {})
+        if primary_asset_path:
+            img_path = self.resolve_image(primary_asset_path)
+            if img_path:
+                # Si el JSON dictó medidas las usamos, si no, full bleed por defecto
+                ix = self.w(img_treatment.get("x_pct", 0))
+                iy = self.h(img_treatment.get("y_pct", 0))
+                iw = self.w(img_treatment.get("w_pct", 100))
+                ih = self.h(img_treatment.get("h_pct", 100))
+                self.add_fitted_image(slide, img_path, ix, iy, iw, ih)
+            
+        panels = geom.get("glass_panels", [])
+        for panel in panels:
+            x = self.w(panel.get("x_pct", 0))
+            y = self.h(panel.get("y_pct", 0))
+            w = self.w(panel.get("w_pct", 100))
+            h = self.h(panel.get("h_pct", 100))
+            color = hex_to_rgb(panel.get("color_hex", self.brand.primary_color))
+            transparency = panel.get("transparency", 0.0)
+            rounded = panel.get("rounded", False)
+            
+            # Dibujar el panel
+            self.add_rect(slide, x, y, w, h, color, transparency=transparency, rounded=rounded)
+            
+        return img_treatment, panels[0] if panels else None
 
     def add_typo_composition(self, slide, full_text, sub_char, asset_path, x, y, size=80, color=None):
         parts = full_text.split(sub_char)
@@ -172,8 +208,9 @@ class GammaPainter:
             self.add_text(slide, parts[1], current_x, y, get_width(parts[1], size), Pt(size * 1.2), size=size, bold=True, color=color)
 
     def paint_custom_canvas(self, slide_data):
-        slide = self.secure_slide()
-        self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.bg)
+        slide = self.secure_slide(slide_data)
+        if not slide_data.get("background_asset_path"):
+            self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.bg)
         elements = slide_data.get("elements", [])
         for el in elements:
             type, x, y, w, h = el.get("type"), self.w(el.get("x", 0)), self.h(el.get("y", 0)), self.w(el.get("w", 0)), self.h(el.get("h", 0))
@@ -190,32 +227,50 @@ class GammaPainter:
         """v10.0: Centralized branding logic (Tesco Logo + L-Founders Signature)."""
         is_title = (slide_data.get("slide_number") == 1)
         if logo_path:
-            # v16.9: Reliable Logo Placement (Top Right)
-            self.add_fitted_image(slide, logo_path, self.w(82), self.h(3), self.w(15), self.h(8))
+            # Fix: Ensure logo_path is resolved properly
+            resolved_logo = self.resolve_image(logo_path)
+            if resolved_logo:
+                self.add_fitted_image(slide, resolved_logo, self.w(82), self.h(3), self.w(15), self.h(8))
         self.add_agency_signature(slide, agency, is_title=is_title)
 
     def paint_split(self, slide_data):
-        slide = self.secure_slide()
+        slide = self.secure_slide(slide_data)
+        
+        # v24.0: Premium Geometry Interception
+        bg_data = slide_data.get("background_asset_path")
+        has_premium_geometry = bg_data and bg_data.startswith("{")
+        
         img = self.resolve_image(slide_data.get("primary_asset_path"), 300)
         
         # Grid Setup
         start_col, span_cols = 6, 6
         tx, tw = self.grid_x(start_col), self.grid_w(span_cols)
         
-        if img:
-            self.add_fitted_image(slide, img, 0, 0, self.w(50), self.prs.slide_height)
+        if has_premium_geometry:
+            # Dibuja la geometría premium de glassmorphism basada en el VLM
+            img_treatment, glass_box = self.paint_premium_geometry(slide, bg_data, slide_data.get("primary_asset_path"))
+            if glass_box:
+                tx = self.w(glass_box.get("x_pct", 0) + 2) # add padding
+                tw = self.w(glass_box.get("w_pct", 100) - 4) # subtract padding
+                self.title_color = get_contrast_text_color(hex_to_rgb(glass_box.get("color_hex", self.brand.primary_color)))
         else:
-            # v16.9: Robust Visual Fallback for split slides
-            fb = blend_colors(self.secondary, self.bg, 0.15)
-            self.add_rect(slide, 0, 0, self.w(50), self.prs.slide_height, fb)
-            self.add_text(slide, "Strategic Vision", self.w(5), self.h(45), self.w(40), self.h(10), size=32, bold=True, color=self.primary, align=PP_ALIGN.CENTER)
-            
-        self.add_rect(slide, self.w(50), 0, self.w(50), self.prs.slide_height, self.bg)
+            if img:
+                self.add_fitted_image(slide, img, 0, 0, self.w(50), self.prs.slide_height)
+            else:
+                # v16.9: Robust Visual Fallback for split slides
+                fb = blend_colors(self.secondary, self.bg, 0.15)
+                self.add_rect(slide, 0, 0, self.w(50), self.prs.slide_height, fb)
+                self.add_text(slide, "Strategic Vision", self.w(5), self.h(45), self.w(40), self.h(10), size=32, bold=True, color=self.primary, align=PP_ALIGN.CENTER)
+                
+            self.add_rect(slide, self.w(50), 0, self.w(50), self.prs.slide_height, self.bg)
         
         title = slide_data.get("title", "")
         approx_lines = (len(title) // 25) + 1
         t_size = 28 if approx_lines == 1 else 22
-        title_y, title_h = self.MARGIN_Y + 5.0, approx_lines * 6.0
+        
+        # Determine title Y position based on glass box or fallback to grid
+        base_y_pct = glass_box.get("y_pct", self.MARGIN_Y) if has_premium_geometry and glass_box else self.MARGIN_Y
+        title_y, title_h = base_y_pct + 5.0, approx_lines * 6.0
         self.add_text(slide, title, tx, self.h(title_y), tw, self.h(title_h), size=t_size, bold=True, color=self.title_color)
         
         content_top = title_y + title_h + 4.0
@@ -266,7 +321,7 @@ class GammaPainter:
         for idx, b in enumerate(bullets[:5]):
             y_pct = content_top + (idx * (row_h + 2))
             self.add_rect(slide, tx, self.h(y_pct + 1), Pt(12), Pt(12), self.primary, rounded=True)
-            self.add_text(slide, b, tx + Pt(20), self.h(y_pct), tw - Pt(20), self.h(row_h), size=14, color=get_contrast_text_color(self.bg))
+            self.add_text(slide, b, tx + Pt(20), self.h(y_pct), tw - Pt(20), self.h(row_h), size=14, color=self.title_color)
         return slide
 
     def paint_big_metric(self, slide_data):
@@ -275,8 +330,9 @@ class GammaPainter:
             metrics = slide_data.get("metrics", [])
             if metrics: metric = metrics[0].get("value", "")
         if len(metric) < 2 and not any(c.isdigit() for c in metric): return self.paint_split(slide_data)
-        slide = self.secure_slide()
-        self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.bg)
+        slide = self.secure_slide(slide_data)
+        if not slide_data.get("background_asset_path"):
+            self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.bg)
         title, tx, tw = slide_data.get("title", ""), self.grid_x(1), self.grid_w(10)
         if title: self.add_text(slide, title, tx, self.h(15), tw, self.h(15), size=36, bold=True, color=self.title_color, align=PP_ALIGN.CENTER)
         self.add_text(slide, metric, 0, self.h(40), self.prs.slide_width, self.h(30), size=140, bold=True, color=self.primary, align=PP_ALIGN.CENTER)
@@ -285,15 +341,37 @@ class GammaPainter:
         return slide
 
     def paint_quote(self, slide_data):
-        slide = self.secure_slide()
-        self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.primary)
+        slide = self.secure_slide(slide_data)
+        
+        bg_data = slide_data.get("background_asset_path")
+        has_premium_geometry = bg_data and bg_data.startswith("{")
+        
+        glass_box = None
+        if has_premium_geometry:
+            img_treatment, glass_box = self.paint_premium_geometry(slide, bg_data, slide_data.get("primary_asset_path"))
+        else:
+            if not bg_data:
+                self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.primary)
+                
         bullets = slide_data.get("bullets") or [""]
+        base_y_pct = glass_box.get("y_pct", 35) if has_premium_geometry and glass_box else 35
         q, tx, tw = bullets[0] if bullets else slide_data.get("title", ""), self.grid_x(2), self.grid_w(8)
-        self.add_text(slide, f"\"{q}\"", tx, self.h(30), tw, self.h(50), size=44, bold=True, color=get_contrast_text_color(self.primary), align=PP_ALIGN.CENTER)
+        
+        q_len = len(q)
+        if q_len > 250: size = 20
+        elif q_len > 150: size = 28
+        elif q_len > 100: size = 36
+        else: size = 44
+        
+        color = get_contrast_text_color(self.primary) if not slide_data.get("background_asset_path") else self.title_color
+        if has_premium_geometry and glass_box:
+            color = get_contrast_text_color(hex_to_rgb(glass_box.get("color_hex", self.brand.primary_color)))
+        
+        self.add_text(slide, f"\"{q}\"", tx, self.h(base_y_pct), tw, self.h(50), size=size, bold=True, color=color, align=PP_ALIGN.CENTER)
         return slide
 
     def paint_hero(self, slide_data):
-        slide = self.secure_slide()
+        slide = self.secure_slide(slide_data)
         img = self.resolve_image(slide_data.get("primary_asset_path"), 1024)
         if img:
             self.add_fitted_image(slide, img, 0, 0, self.prs.slide_width, self.prs.slide_height)
@@ -307,8 +385,9 @@ class GammaPainter:
         return slide
 
     def paint_grid(self, slide_data):
-        slide = self.secure_slide()
-        self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.bg)
+        slide = self.secure_slide(slide_data)
+        if not slide_data.get("background_asset_path"):
+            self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.bg)
         tx, tw = self.grid_x(0), self.grid_w(12)
         self.add_text(slide, slide_data.get("title", ""), tx, self.h(6), tw, self.h(15), size=34, bold=True, color=self.title_color)
         bullets, col_span = slide_data.get("bullets", []), 3
@@ -319,7 +398,7 @@ class GammaPainter:
         return slide
 
     def paint_data_grid_cards(self, slide_data):
-        slide = self.secure_slide()
+        slide = self.secure_slide(slide_data)
         img = self.resolve_image(slide_data.get("primary_asset_path"), 300)
         if img:
             self.add_fitted_image(slide, img, 0, 0, self.grid_x(5), self.prs.slide_height)
@@ -361,10 +440,24 @@ class GammaPainter:
         return slide
 
     def paint_pillars(self, slide_data):
-        slide = self.secure_slide()
-        self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.bg)
-        self.add_text(slide, slide_data.get("title", ""), self.grid_x(0), self.h(self.MARGIN_Y + 3), self.grid_w(12), self.h(12), size=38, bold=True, color=self.title_color, align=PP_ALIGN.CENTER)
-        self.add_accent_line(slide, self.grid_x(5), self.h(self.MARGIN_Y + 12), self.grid_w(2), h_pt=4, color=self.secondary)
+        slide = self.secure_slide(slide_data)
+        bg_data = slide_data.get("background_asset_path")
+        has_premium_geometry = bg_data and bg_data.startswith("{")
+        
+        glass_box = None
+        if has_premium_geometry:
+            img_treatment, glass_box = self.paint_premium_geometry(slide, bg_data, slide_data.get("primary_asset_path"))
+        else:
+            if not bg_data:
+                self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.bg)
+        
+        base_y_pct = glass_box.get("y_pct", self.MARGIN_Y) if has_premium_geometry and glass_box else self.MARGIN_Y
+        
+        if has_premium_geometry and glass_box:
+            self.title_color = get_contrast_text_color(hex_to_rgb(glass_box.get("color_hex", self.brand.primary_color)))
+            
+        self.add_text(slide, slide_data.get("title", ""), self.grid_x(0), self.h(base_y_pct + 3), self.grid_w(12), self.h(12), size=38, bold=True, color=self.title_color, align=PP_ALIGN.CENTER)
+        self.add_accent_line(slide, self.grid_x(5), self.h(base_y_pct + 12), self.grid_w(2), h_pt=4, color=self.secondary)
         bullets = slide_data.get("bullets", [])
         num_bullets = min(len(bullets), 4)
         if num_bullets == 0: return slide
@@ -372,8 +465,13 @@ class GammaPainter:
         start_col = (12 - (num_bullets * col_span)) // 2
         for idx, b in enumerate(bullets[:num_bullets]):
             x_pos, w_pos = self.grid_x(start_col + (idx * col_span)), self.grid_w(col_span)
-            self.add_rect(slide, x_pos + self.w(1), self.h(35), w_pos - self.w(2), self.h(50), self.primary, rounded=True)
-            self.add_text(slide, b, x_pos + self.w(2), self.h(38), w_pos - self.w(4), self.h(44), size=16, color=get_contrast_text_color(self.primary), align=PP_ALIGN.CENTER, v_align=MSO_ANCHOR.MIDDLE)
+            
+            if has_premium_geometry and glass_box:
+                # Si hay panel de cristal general, no dibujamos sub-cajas sólidas para no dañar el look Premium
+                self.add_text(slide, b, x_pos + self.w(2), self.h(base_y_pct + 20), w_pos - self.w(4), self.h(44), size=16, color=self.title_color, align=PP_ALIGN.CENTER, v_align=MSO_ANCHOR.MIDDLE)
+            else:
+                self.add_rect(slide, x_pos + self.w(1), self.h(35), w_pos - self.w(2), self.h(50), self.primary, rounded=True)
+                self.add_text(slide, b, x_pos + self.w(2), self.h(38), w_pos - self.w(4), self.h(44), size=16, color=get_contrast_text_color(self.primary), align=PP_ALIGN.CENTER, v_align=MSO_ANCHOR.MIDDLE)
         return slide
 
     def add_agency_signature(self, slide, agency, is_title=False):
@@ -386,21 +484,39 @@ class GammaPainter:
             self.add_rect(slide, self.w(self.MARGIN_X), self.h(91), self.w(footer_w), Pt(0.2), footer_color, transparency=0.8)
             self.add_text(slide, f"L — {name}  CONFIDENTIAL", self.w(self.MARGIN_X), self.h(92), self.w(40), self.h(3), size=7, color=footer_color)
 
-    def secure_slide(self):
+    def secure_slide(self, slide_data=None):
         slide = self.prs.slides.add_slide(self.blank_layout)
         for shape in list(slide.placeholders):
             sp = shape.element
             sp.getparent().remove(sp)
+            
+        if slide_data and slide_data.get("background_asset_path"):
+            bg_path = slide_data.get("background_asset_path")
+            if os.path.exists(bg_path):
+                try:
+                    # Fill entire background
+                    self.add_fitted_image(slide, bg_path, 0, 0, self.prs.slide_width, self.prs.slide_height)
+                except Exception as e:
+                    print(f"    [Painter] Error applying background SVG: {e}")
+                    
         return slide
 
     def save(self, path):
         self.prs.save(path)
         return path
 
-    def render_slides(self, content_json):
-        slides, logo_path, agency = content_json.get("slides", []), content_json.get("logo_path"), content_json.get("agency_branding", {})
+    def render_slides(self, manifest):
+        # Now expects a RenderManifest object
+        slides = manifest.slides
+        logo_path = manifest.logo_path
+        agency = manifest.agency_branding.model_dump() if manifest.agency_branding else {}
+        
         print(f"  [Painter] Rendering {len(slides)} slides...")
-        for i, slide_data in enumerate(slides):
+        for i, slide_data_obj in enumerate(slides):
+            # Converting to dict for backwards compatibility with paint_* methods temporarily
+            # A full refactor of paint_* methods would take much more time, so we dump to dict
+            slide_data = slide_data_obj.model_dump()
+            
             l_type = slide_data.get("layout_type", "composition_split")
             print(f"    - Slide {i+1}: {l_type}")
             slide = None
@@ -409,7 +525,7 @@ class GammaPainter:
             elif l_type == "big_metric": slide = self.paint_big_metric(slide_data)
             elif l_type == "composition_quote": slide = self.paint_quote(slide_data)
             elif l_type == "composition_pillars": slide = self.paint_pillars(slide_data)
-            elif l_type == "data_grid_cards": slide = self.paint_data_grid_cards(slide_data)
+            elif l_type == "data_grid_cards" or l_type == "paint_data_grid_cards": slide = self.paint_data_grid_cards(slide_data)
             elif l_type == "custom_canvas": slide = self.paint_custom_canvas(slide_data)
             else: slide = self.paint_split(slide_data)
             if slide: self.apply_branding(slide, slide_data, logo_path, agency)

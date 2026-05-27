@@ -25,6 +25,7 @@ export class GeneratorComponent implements OnInit {
   selectedRegion: string = '';
   allowAiImages: boolean = true;
   selectedFormat: string = 'pptx'; // 'pptx' or 'pdf_artistic'
+  selectedTier: string = 'free'; // 'free' or 'premium' (Fix/Roadmap 1)
   
   // --- OPTIONS ---
   brands: any[] = [];
@@ -125,7 +126,8 @@ export class GeneratorComponent implements OnInit {
       region: this.selectedRegion,
       brand_id: this.selectedBrandId || undefined,
       allow_ai_images: this.allowAiImages,
-      output_format: this.selectedFormat
+      output_format: this.selectedFormat,
+      tier: this.selectedTier
     }).subscribe({
         next: (res: any) => {
           this.addLog('Analyst', 'Strategic command received and validated.');

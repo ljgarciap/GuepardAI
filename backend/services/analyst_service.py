@@ -27,7 +27,14 @@ def get_slide_visual_strategy(db: Session, slide: models.PresentationSlide, job:
         rag_context=rag_context
     )
     
-    strategy = generate_json(prompt)
+    try:
+        from llm_provider import generate_premium_json
+        strategy = generate_premium_json(prompt)
+        if not strategy or not isinstance(strategy, dict):
+            raise ValueError("Invalid strategy JSON")
+    except Exception as e:
+        print(f"    [Error] Analyst failed: {e}")
+        return {"visual_intent": "General", "suggested_keywords": [slide.title], "requires_hero": True}
     
     # Robustness Check
     if isinstance(strategy, list) and len(strategy) > 0:

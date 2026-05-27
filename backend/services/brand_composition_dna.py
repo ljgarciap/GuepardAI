@@ -115,8 +115,32 @@ def parse_essence_to_policy(
 ) -> BrandCompositionPolicy:
 
     policy = BrandCompositionPolicy(brand_id=brand_id, brand_name=brand_name)
-    w_in = force_width or 13.33
-    h_in = force_height or 7.5
+    
+    # Resolve exact dimensions from multi-layered sources (v3.1)
+    w_in = force_width
+    h_in = force_height
+    
+    if not w_in or not h_in:
+        if source_pptx_path and os.path.exists(source_pptx_path):
+            try:
+                from pptx import Presentation
+                prs = Presentation(source_pptx_path)
+                w_in = prs.slide_width.inches
+                h_in = prs.slide_height.inches
+                print(f"  [DNA] Read dimensions programmatically from PPTX: {w_in:.2f}x{h_in:.2f} inches", flush=True)
+            except Exception as e:
+                print(f"  [DNA] Failed to read dimensions from source PPTX: {e}", flush=True)
+                
+    if not w_in or not h_in and isinstance(visual_dna, dict):
+        w_in = visual_dna.get("slide_width_inches") or visual_dna.get("raw_extraction", {}).get("slide_width_inches")
+        h_in = visual_dna.get("slide_height_inches") or visual_dna.get("raw_extraction", {}).get("slide_height_inches")
+        if w_in and h_in:
+            print(f"  [DNA] Read dimensions from visual_dna metadata: {w_in}x{h_in} inches", flush=True)
+            
+    # Default fallbacks
+    w_in = w_in or 13.33
+    h_in = h_in or 7.5
+    
     policy.canvas = SlideCanvasSpec(width_inches=round(w_in, 2), height_inches=round(h_in, 2))
 
     composition = artistic_essence.get("composition_rules") or {}

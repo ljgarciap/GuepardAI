@@ -105,6 +105,7 @@ class PresentationRequest(BaseModel):
     brand_id: Optional[int] = None
     allow_ai_images: bool = False
     output_format: str = "pptx" # 'pptx' or 'pdf_artistic'
+    tier: str = "free"         # 'free' | 'premium' (Fix/Roadmap 1)
 
 
 # ──────────────────────────────────────────────
@@ -452,7 +453,8 @@ async def generate_presentation(
         "prompt": request.prompt,
         "region": request.region,
         "allow_ai_images": request.allow_ai_images,
-        "output_format": request.output_format
+        "output_format": request.output_format,
+        "tier": request.tier
     }
     
     background_tasks.add_task(

@@ -349,6 +349,127 @@ def base_64_encode(data):
     import base64
     return base64.b64encode(data).decode('utf-8')
 
+# ── PREMIUM TIER: Canal dedicado Claude Sonnet ──────────────────────────────
+# Estas funciones son exclusivas del tier premium. NO participan del sistema
+# de fallback general. Claude Sonnet es el modelo designado, no un fallback.
+# Audit log separado: premium_llm_audit.log
+
+PREMIUM_MODEL = "claude-sonnet-4-5"
+
+def log_premium_audit(category: str, data: str):
+    """Registro de auditoría exclusivo del tier premium — separado del log general."""
+    log_path = os.path.join(os.path.dirname(__file__), "premium_llm_audit.log")
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    with open(log_path, "a") as f:
+        f.write(f"\n{'='*80}\n")
+        f.write(f"[{timestamp}] [PREMIUM] CATEGORY: {category}\n")
+        f.write(f"{data}\n")
+        f.write(f"{'='*80}\n")
+
+def generate_premium_json(prompt: str) -> dict:
+    """
+    PREMIUM DESIGN ENGINE — Claude Sonnet exclusivo.
+    Canal dedicado para el tier premium. Sin fallbacks al sistema general.
+    Usa ANTHROPIC_API_KEY del .env. Audit log: premium_llm_audit.log
+    """
+    ant_key = os.getenv("ANTHROPIC_API_KEY")
+    if not ant_key:
+        raise ValueError("[Premium] ANTHROPIC_API_KEY no configurada en .env")
+
+    print(f"  [Premium LLM] Calling {PREMIUM_MODEL} (dedicated premium channel)...", flush=True)
+
+    client = anthropic.Anthropic(api_key=ant_key)
+    response = client.messages.create(
+        model=PREMIUM_MODEL,
+        max_tokens=8192,
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    raw_text = response.content[0].text if response.content else ""
+    log_premium_audit(f"DESIGN_JSON", f"MODEL: {PREMIUM_MODEL}\nPROMPT:\n{prompt[:500]}...\nRESPONSE:\n{raw_text[:1000]}...")
+
+    # Limpiar posibles bloques markdown que Claude a veces incluye
+    clean_text = clean_json_string(raw_text)
+
+    # Claude no soporta response_mime_type=json, así que extraemos el JSON manualmente
+    # Primero intentamos parsear directamente
+    try:
+        return json.loads(clean_text)
+    except json.JSONDecodeError:
+        # Buscar el primer bloque JSON válido en la respuesta
+        match = re.search(r'\{.*\}', clean_text, re.DOTALL)
+        if match:
+            return json.loads(match.group(0))
+        raise ValueError(f"[Premium] Claude no devolvió JSON válido: {clean_text[:300]}")
+
+
+def generate_premium_vision_json(prompt: str, image_paths: List[str]) -> dict:
+    """
+    PREMIUM VISION ENGINE — Claude Sonnet exclusivo con visión.
+    Canal dedicado para evaluación de fidelidad visual en el tier premium.
+    Usa ANTHROPIC_API_KEY del .env. Audit log: premium_llm_audit.log
+    """
+    import base64
+
+    ant_key = os.getenv("ANTHROPIC_API_KEY")
+    if not ant_key:
+        raise ValueError("[Premium Vision] ANTHROPIC_API_KEY no configurada en .env")
+
+    print(f"  [Premium Vision] Calling {PREMIUM_MODEL} with {len(image_paths)} image(s)...", flush=True)
+
+    from PIL import Image
+    import io
+
+    def prepare_image_b64(path: str, max_size=(1024, 1024)) -> str:
+        """Prepara imagen redimensionada en base64 para la API de Anthropic."""
+        with Image.open(path) as img:
+            img.thumbnail(max_size)
+            if img.mode in ("RGBA", "P"):
+                bg = Image.new("RGB", img.size, (128, 128, 128))
+                bg.paste(img.convert("RGBA"), mask=img.convert("RGBA").split()[3])
+                img = bg
+            else:
+                img = img.convert("RGB")
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=85)
+            return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    # Construir el contenido del mensaje con imágenes intercaladas
+    msg_content = []
+    for path in image_paths:
+        if os.path.exists(path):
+            img_b64 = prepare_image_b64(path)
+            msg_content.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": img_b64
+                }
+            })
+    msg_content.append({"type": "text", "text": prompt})
+
+    client = anthropic.Anthropic(api_key=ant_key)
+    response = client.messages.create(
+        model=PREMIUM_MODEL,
+        max_tokens=2048,
+        messages=[{"role": "user", "content": msg_content}]
+    )
+
+    raw_text = response.content[0].text if response.content else ""
+    log_premium_audit(f"VISION_JSON", f"MODEL: {PREMIUM_MODEL}\nIMAGES: {image_paths}\nRESPONSE:\n{raw_text[:1000]}...")
+
+    clean_text = clean_json_string(raw_text)
+    try:
+        return json.loads(clean_text)
+    except json.JSONDecodeError:
+        match = re.search(r'\{.*\}', clean_text, re.DOTALL)
+        if match:
+            return json.loads(match.group(0))
+        raise ValueError(f"[Premium Vision] Claude no devolvió JSON válido: {clean_text[:300]}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 @retry_with_backoff(retries=5)
 def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] = None) -> List[Optional[list]]:
     """

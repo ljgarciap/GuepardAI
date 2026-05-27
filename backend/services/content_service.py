@@ -122,6 +122,7 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
             slide_number=i + 1,
             title=slide_title,
             content_json={
+                "title": slide_title,
                 "bullets": s_data.get("bullets", []),
                 "metrics": s_data.get("metrics", []),
                 "section_label": s_data.get("section_label", "STRATEGY"),
@@ -141,4 +142,31 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
         db.add(new_slide)
     
     db.commit()
-    return True
+    
+    # ── DECOUPLED V11: Build ContentManifest to pass downstream ──
+    from schemas.presentation import ContentManifest, ContentManifestSlide
+    slides = []
+    
+    # Fetch from DB to ensure IDs and states are correct, though we could build it in memory
+    saved_slides = db.query(models.PresentationSlide).filter(models.PresentationSlide.job_id == job_id).order_by(models.PresentationSlide.slide_number.asc()).all()
+    for s in saved_slides:
+        cjson = s.content_json or {}
+        slides.append(ContentManifestSlide(
+            slide_number=s.slide_number,
+            title=s.title,
+            subtitle=cjson.get("subtitle"),
+            bullets=cjson.get("bullets", []),
+            metrics=cjson.get("metrics", []),
+            metric=cjson.get("metric"),
+            label=cjson.get("label"),
+            layout_type=cjson.get("layout_type", "strategic_split"),
+            section_label=cjson.get("section_label"),
+            metadata=cjson.get("metadata", {}),
+            planning_json=s.planning_json or {}
+        ))
+        
+    return ContentManifest(
+        job_id=job_id,
+        slides=slides,
+        client_name=None
+    )

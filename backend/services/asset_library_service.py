@@ -194,10 +194,35 @@ def find_best_assets(db: Session, brand_id: int, keywords: List[str],
     if category: sql_query = sql_query.filter(models.BrandAsset.category == category)
     if exclude_ids: sql_query = sql_query.filter(models.BrandAsset.id.not_in(exclude_ids))
     
-    results = sql_query.order_by(text("score DESC")).limit(limit).all()
+    # We get top 10 candidates first, then filter visually
+    raw_results = sql_query.order_by(text("score DESC")).limit(max(10, limit * 2)).all()
     
-    # Retornar como lista de tuplas (asset, score)
-    return [(r[0], float(r[1])) for r in results]
+    # --- FASE 6: LOCAL VISION RERANKING ---
+    final_results = []
+    if raw_results:
+        try:
+            from services.vision_service import evaluate_image_with_vision
+            for r in raw_results:
+                asset = r[0]
+                text_score = float(r[1])
+                
+                # Rerank with local vision
+                vision_score = evaluate_image_with_vision(asset.local_path, query_text)
+                
+                # Combined Score (70% Vision, 30% Text)
+                combined_score = (vision_score * 0.7) + (text_score * 0.3)
+                print(f"  [AssetLibrary] '{os.path.basename(asset.local_path)}' - Text: {text_score:.2f}, Vision: {vision_score:.2f} -> Combined: {combined_score:.2f}")
+                
+                final_results.append((asset, combined_score))
+                
+            # Sort by combined score descending
+            final_results.sort(key=lambda x: x[1], reverse=True)
+            return final_results[:limit]
+        except Exception as e:
+            print(f"  [AssetLibrary] Vision reranking failed: {e}. Returning pure text scores.")
+            return [(r[0], float(r[1])) for r in raw_results[:limit]]
+            
+    return []
 
 def find_assets_by_tags(db: Session, brand_id: int, tags: List[str], min_matches: int = 2, limit: int = 5, exclude_ids: Optional[List[int]] = None) -> List[tuple]:
     """

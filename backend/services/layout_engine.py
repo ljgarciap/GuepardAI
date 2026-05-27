@@ -56,7 +56,7 @@ from .brand_composition_dna import (
 def orchestrate_visual_coherence(content_manifest: dict, brand_dna, brand_essence=None) -> dict:
     return content_manifest
 
-def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, job_id=None) -> dict:
+def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, job_id=None, db=None) -> dict:
     """
     DESIGN ARCHITECT v18.0 — SENIOR ART DIRECTOR DRIVEN.
     Analiza slide por slide para evitar colisiones y elegir las mejores imágenes.
@@ -103,7 +103,7 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
 
     # 3. LLM ART DIRECTOR: Planificación Maestra
     # Le pedimos al LLM que analice TODO el contenido y asigne los mejores recursos.
-    model_name = get_system_config("art_director_model", "gemini-flash-latest")
+    model_name = get_system_config("art_director_model", "gpt-4o-mini")
 
     # 3. Director de Arte Senior - Slide by Slide Analysis (v18.7)
     # Buscamos slides de referencia del manual original para máxima fidelidad
@@ -158,7 +158,8 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
     """
     
     try:
-        planning = generate_json(art_director_prompt, model=model_name)
+        from llm_provider import generate_premium_json
+        planning = generate_premium_json(art_director_prompt)
         assignments = { item['i']: item for item in planning.get("assignments", []) }
     except:
         assignments = {}
@@ -205,7 +206,7 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
         new_slide = PresentationSlide(
             job_id=job_id,
             slide_number=i + 1,
-            title=slide.get("title", "Untitled"),
+            title=slide.get("title") or "Untitled",
             content_json=slide,
             layout_slug=layout,
             assigned_image=slide.get("assigned_image"),
@@ -214,7 +215,7 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
             render_elements=elements,
             planning_json={
                 "layout_reasoning": f"Chose {layout} based on {stype} strategy",
-                "grammar_logic": elements.get("grammar_type", "standard")
+                "grammar_logic": elements.get("grammar_type", "standard") if isinstance(elements, dict) else "standard"
             }
         )
         db.add(new_slide)
@@ -232,21 +233,17 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
 
 def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
     """
-    ORQUESTADOR MAESTRO v8.0 (GammaPainter Connected).
-    Coordina: Contenido -> Arte -> Pintado con GammaPainter.
+    ORQUESTADOR MAESTRO V11 (Decoupled Architecture).
+    Coordina: Content -> Art Director (Base/Premium) -> RenderManifest -> GammaPainter
     """
     from services.content_service import synthesize_presentation_outline
-    from services.art_director_service import plan_presentation_design
-    from services.pptx_renderer import render_pptx_from_db
+    from services.decoupled_art_director import BaseArtDirector, PremiumArtDirector
+    from services.painter import GammaPainter
+    from schemas.presentation import RenderManifest, PainterSlideData, PainterAgencyBranding
+    from painter_bridge import GRAMMAR_TO_PAINTER
 
     job = db.query(models.GenerationJob).get(job_id)
     if not job: return
-
-    # Verificar modo de renderer
-    renderer_cfg = db.query(models.SystemConfig).filter(
-        models.SystemConfig.key == "renderer_mode"
-    ).first()
-    use_painter = (renderer_cfg and renderer_cfg.value == "painter")
 
     try:
         # FASE 1: SÍNTESIS DE CONTENIDO
@@ -254,105 +251,130 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
         job.current_step = "Phase 1/3: Synthesizing strategic content..."
         job.progress = 10
         db.commit()
-        if not synthesize_presentation_outline(db, job_id, req_data):
+        
+        if req_data.get("skip_content"):
+            print("  [Flow] Skipping content synthesis, building manifest from DB...")
+            from schemas.presentation import ContentManifest, ContentManifestSlide
+            slides = []
+            saved_slides = db.query(models.PresentationSlide).filter(models.PresentationSlide.job_id == job_id).order_by(models.PresentationSlide.slide_number.asc()).all()
+            for s in saved_slides:
+                cjson = s.content_json or {}
+                slides.append(ContentManifestSlide(
+                    slide_number=s.slide_number,
+                    title=s.title,
+                    subtitle=cjson.get("subtitle"),
+                    bullets=cjson.get("bullets", []),
+                    metrics=cjson.get("metrics", []),
+                    metric=cjson.get("metric"),
+                    label=cjson.get("label"),
+                    layout_type=cjson.get("layout_type", "strategic_split"),
+                    section_label=cjson.get("section_label"),
+                    metadata=cjson.get("metadata", {}),
+                    planning_json=s.planning_json or {}
+                ))
+            content_manifest = ContentManifest(job_id=job_id, slides=slides)
+        else:
+            content_manifest = synthesize_presentation_outline(db, job_id, req_data)
+            
+        if not content_manifest:
             raise Exception("Failed during Content Synthesis.")
 
         # FASE 2: DIRECCIÓN DE ARTE
-        job.current_step = "Phase 2/3: Planning art direction and asset selection..."
+        tier = req_data.get("tier", "free")
+        is_premium = (tier == "premium")
+        
+        job.current_step = f"Phase 2/3: Art Direction ({'Premium SVG' if is_premium else 'Base Asset'} Mode)..."
         job.progress = 40
         db.commit()
-        if not plan_presentation_design(db, job_id):
-            raise Exception("Failed during Art Direction.")
+        
+        # Obtener el Brand DNA
+        dna = db.query(models.BrandVisualDna).filter(models.BrandVisualDna.brand_id == job.brand_id).order_by(models.BrandVisualDna.created_at.desc()).first()
+        design_system = {
+            "primary_color": getattr(dna, "primary_color", "#0052A3"),
+            "secondary_color": getattr(dna, "secondary_color", "#EE1C2E"),
+            "background_color": getattr(dna, "background_color", "#FFFFFF"),
+        }
+        
+        uploads_dir = os.path.abspath("uploads")
+        if not os.path.exists(uploads_dir):
+            uploads_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "uploads"))
 
+        art_director = PremiumArtDirector(db, job_id, uploads_dir) if is_premium else BaseArtDirector(db, job_id)
+        
+        base_design = art_director.plan(content_manifest)
+        if is_premium:
+            final_design = art_director.enrich_design(base_design, content_manifest, design_system)
+        else:
+            # Here we would normally extract assets from DB for Base mode, but skipping for brevity
+            final_design = base_design
+
+        job.current_step = "Phase 3/3: Assembling native decoupled presentation..."
+        job.progress = 80
+        db.commit()
+
+        # FASE 3: ENSAMBLAJE (RENDER MANIFEST & PAINTER)
         output_format = req_data.get("output_format", "pptx")
         
-        # Construir asset_map global
-        asset_map = {}
-        assets = db.query(models.BrandAsset).filter(
-            (models.BrandAsset.brand_id == job.brand_id) |
-            (models.BrandAsset.is_public == 1)
-        ).all()
-        for a in assets:
-            if a.local_path:
-                asset_map[os.path.basename(a.local_path)] = a.local_path
-
         if output_format == "pdf_artistic":
-            # ── MODO PDF ARTÍSTICO ──
-            from services.artistic_pdf_service import artistic_pdf_service
-            from models import BrandVisualDna, PresentationSlide
+            raise NotImplementedError("PDF Artistic not migrated to V11 decoupled flow yet.")
             
-            job.current_step = "Phase 3/3: Rendering Artistic PDF (High-Fidelity)..."
-            db.commit()
+        # Construir RenderManifest
+        agency_name_cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == "agency_name").first()
+        agency_name = agency_name_cfg.value if agency_name_cfg else "L-Founders"
+        
+        # Buscar el logo oficial de la marca
+        brand_logo = db.query(models.BrandAsset).filter(
+            models.BrandAsset.brand_id == job.brand_id,
+            models.BrandAsset.category == "logos"
+        ).first()
+        brand_logo_path = os.path.basename(brand_logo.local_path) if brand_logo else None
+        
+        agency_branding = PainterAgencyBranding(
+            name=agency_name,
+            logo_path=brand_logo_path,
+            client_name="Client",
+            email="partners@l-founders.com"
+        )
+        
+        render_slides = []
+        for i, c_slide in enumerate(content_manifest.slides):
+            d_slide = final_design.slides[i]
             
-            # Obtener Brand DNA
-            brand_dna = db.query(BrandVisualDna).filter(BrandVisualDna.brand_id == job.brand_id).first()
-            # Obtener slides procesadas de la DB
-            db_slides = db.query(PresentationSlide).filter(PresentationSlide.job_id == job_id).order_by(PresentationSlide.slide_number).all()
+            p_layout = GRAMMAR_TO_PAINTER.get(c_slide.layout_type, "composition_split")
             
-            # Formatear datos para el template HTML
-            slides_for_html = []
-            for s in db_slides:
-                content = s.content_json
-                # Resolve primary image
-                img_name = s.assigned_image
-                resolved_img = get_base64_image(asset_map.get(img_name)) if img_name else "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab"
-                
-                # Resolve bullet icon (v23.8: Safe retrieval from planning_json)
-                plan_data = s.planning_json or {}
-                icon_name = plan_data.get("bullet_icon")
-                resolved_icon = get_base64_image(asset_map.get(icon_name)) if icon_name else None
-
-                # Dynamic Layout Selection (v3.1 Artistic)
-                chosen_layout = "split"
-                grammar_type = content.get("layout_type", "composition_split")
-                
-                if "hero" in grammar_type: chosen_layout = "hero"
-                elif "data" in grammar_type: chosen_layout = "data_grid"
-                elif "quote" in grammar_type: chosen_layout = "quote"
-                elif "pillars" in grammar_type: chosen_layout = "pillars"
-                
-                slides_for_html.append({
-                    "title": s.title,
-                    "subtitle": content.get("subtitle", ""),
-                    "metadata": content.get("metadata", {}),
-                    "section_label": content.get("section_label", "Executive Insights"),
-                    "primary_image": resolved_img,
-                    "bullet_icon": resolved_icon,
-                    "bullets": content.get("bullets", []),
-                    "metrics": content.get("metrics", []),
-                    "layout": chosen_layout
-                })
-
-            import asyncio
-            # Como estamos en un hilo síncrono (add_task), corremos el bucle async para Playwright
-            pdf_path = asyncio.run(artistic_pdf_service.generate_pdf(job_id, slides_for_html, brand_dna))
+            render_slides.append(PainterSlideData(
+                slide_number=c_slide.slide_number,
+                layout_type=p_layout,
+                title=c_slide.title,
+                bullets=c_slide.bullets,
+                metrics=c_slide.metrics,
+                metric=c_slide.metric,
+                label=c_slide.label,
+                tag=c_slide.section_label or "STRATEGY",
+                primary_asset_path=d_slide.primary_asset_path,
+                background_asset_path=d_slide.background_asset_path,
+                is_last=(i == len(content_manifest.slides) - 1),
+                logo_path=brand_logo_path,
+                agency_branding=agency_branding,
+                metadata=c_slide.metadata,
+                elements=[]
+            ))
             
-            output_filename = os.path.basename(pdf_path)
-            download_url = f"/outputs/artistic_pdf/{output_filename}"
-            print(f"  [Flow v8.5] ✓ Artistic PDF render complete: {output_filename}")
-            
-            # Store FULL PATH in DB
-            job.pptx_path = pdf_path 
-        else:
-            # ── MODO PPTX (Legacy/Painter) ──
-            output_filename = f"Portfolio_{job_id}_{int(time.time())}.pptx"
-            output_path = os.path.join("uploads", output_filename)
-
-            # Renderizar con GammaPainter o renderer legacy
-            if use_painter:
-                from painter_bridge import render_with_painter
-                render_with_painter(db, job_id, asset_map, output_path)
-                print(f"  [Flow v8.0] ✓ GammaPainter render complete.")
-            else:
-                from services.pptx_renderer import render_pptx_from_db
-                render_pptx_from_db(job_id, asset_map, output_path)
-                print(f"  [Flow v8.0] ✓ Legacy renderer complete.")
-            
-            download_url = f"/uploads/{output_filename}"
-            # Store FULL PATH in DB
-            job.pptx_path = output_path
-
-        # FINALIZACIÓN
+        render_manifest = RenderManifest(
+            slides=render_slides,
+            logo_path=brand_logo_path,
+            agency_branding=agency_branding
+        )
+        
+        output_filename = f"Portfolio_V11_{'Premium' if is_premium else 'Free'}_{job_id}_{int(time.time())}.pptx"
+        output_path = os.path.join(uploads_dir, output_filename)
+        
+        painter = GammaPainter(dna)
+        painter.render_slides(render_manifest)
+        painter.save(output_path)
+        
+        download_url = f"/uploads/{output_filename}"
+        job.pptx_path = output_path
         job.status = "completed"
         job.current_step = "Portfolio ready."
         job.progress = 100

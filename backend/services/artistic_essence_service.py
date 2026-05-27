@@ -40,10 +40,49 @@ def _pdf_to_images(file_path: str, out_dir: str, max_pages: int = MAX_SLIDES_TO_
     return image_paths
 
 def _pptx_to_images(file_path: str, out_dir: str, max_slides: int = MAX_SLIDES_TO_ANALYZE) -> List[str]:
-    image_paths = []
-    if not Presentation: return []
+    # --- 1. Primary High-Fidelity Rendering via LibreOffice + PyMuPDF ---
+    import subprocess
     abs_out_dir = os.path.abspath(out_dir)
     os.makedirs(abs_out_dir, exist_ok=True)
+    base_name = os.path.splitext(os.path.basename(file_path))[0]
+    temp_pdf_path = os.path.join(abs_out_dir, f"_temp_essence_{base_name}.pdf")
+    
+    try:
+        print(f"  [Essence] Rendering PPTX to PDF via LibreOffice...", flush=True)
+        # Convert to pdf in out_dir, naming it the temp_pdf_path
+        cmd = [
+            "libreoffice", "--headless", "--convert-to", "pdf",
+            "--outdir", abs_out_dir, file_path
+        ]
+        subprocess.run(cmd, check=True, capture_output=True, timeout=60)
+        
+        # Libreoffice output will be named as original base_name + .pdf
+        standard_pdf_path = os.path.join(abs_out_dir, base_name + ".pdf")
+        if os.path.exists(standard_pdf_path):
+            os.rename(standard_pdf_path, temp_pdf_path)
+            
+        if os.path.exists(temp_pdf_path):
+            print(f"  [Essence] Rendering PDF pages to slide PNGs...", flush=True)
+            image_paths = _pdf_to_images(temp_pdf_path, abs_out_dir, max_slides)
+            
+            # Clean up the temporary PDF file
+            try:
+                os.remove(temp_pdf_path)
+            except: pass
+            
+            if image_paths:
+                print(f"  [Essence] Success: Rendered {len(image_paths)} full slides using LibreOffice+PyMuPDF.", flush=True)
+                return image_paths
+    except Exception as e:
+        print(f"  [Essence] Warning: LibreOffice slide rendering failed: {e}. Falling back to extraction...", flush=True)
+        # Clean up temp PDF if left over
+        if os.path.exists(temp_pdf_path):
+            try: os.remove(temp_pdf_path)
+            except: pass
+
+    # --- 2. Fallback Legacy Extraction (Extracts embedded thumbnails or large pictures) ---
+    image_paths = []
+    if not Presentation: return []
     prs = Presentation(file_path)
     for i in range(min(len(prs.slides), max_slides)):
         slide = prs.slides[i]
@@ -56,7 +95,6 @@ def _pptx_to_images(file_path: str, out_dir: str, max_slides: int = MAX_SLIDES_T
                     thumb_rel = rel; break
             if thumb_rel:
                 with open(fname, "wb") as f: f.write(thumb_rel.target_part.blob)
-                # Validar tamaño (si es < 10KB es probablemente un placeholder blanco)
                 if os.path.getsize(fname) > 10240:
                     image_paths.append(fname); continue
             
@@ -74,8 +112,8 @@ def _pptx_to_images(file_path: str, out_dir: str, max_slides: int = MAX_SLIDES_T
                 with open(fname, "wb") as f: f.write(best_img)
                 image_paths.append(fname)
         except Exception as e:
-            print(f"  [Essence] Error extracting PPTX visual: {e}")
-            # Fallback Pillow (SOLO SI FALLA TODO LO ANTERIOR)
+            print(f"  [Essence] Error extracting PPTX visual: {e}", flush=True)
+            # Fallback Pillow
             from PIL import Image, ImageDraw
             img = Image.new("RGB", (1280, 720), color=(255, 255, 255))
             draw = ImageDraw.Draw(img)
@@ -90,6 +128,34 @@ def _cleanup_images(image_paths: List[str]):
             if os.path.exists(p) and "_vision_" in p: os.remove(p)
         except: pass
 
+VISION_BRAND_EXTRACTION_PROMPT = """
+You are a Senior Brand Identity Designer analyzing a brand template.
+
+Your task: Extract the VISUAL DESIGN DNA with extreme precision.
+
+Return JSON with exactly this structure:
+{
+  "visual_strategy": "A high-level explanation of the brand layout style and tone",
+  "structural_archetypes": {
+    "persistent_blocks": [
+      {
+        "decorator_type": "accent_line | brand_bar | background_shape | sidebar",
+        "description": "where it is placed and how it looks"
+      }
+    ]
+  },
+  "design_gestures": {
+    "corner_style": "rounded | sharp | pill",
+    "visual_density": "dense | balanced | minimal"
+  },
+  "composition_rules": {
+    "max_img_ratio": 0.25,
+    "typography_style": "how titles and bodies are treated visually",
+    "color_application": "how dominant colors are used in shapes vs text"
+  }
+}
+"""
+
 def analyze_with_vision(image_paths: List[str], cb: Optional[Callable] = None) -> dict:
     """
     STRATEGIC MULTIMODAL ANALYSIS (v18.7).
@@ -98,18 +164,18 @@ def analyze_with_vision(image_paths: List[str], cb: Optional[Callable] = None) -
     if not image_paths:
         return {}
 
-    # Carga dinámica del Prompt desde la DB (v20.0)
+    # Carga dinámica del Prompt desde la DB para diseño (v20.0)
     from database import SessionLocal
     import models
     db = SessionLocal()
-    config_record = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_analyst_v1").first()
+    config_record = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_brand_designer_v1").first()
     db.close()
     
     if config_record:
         prompt = config_record.value
     else:
-        # Fallback si no hay DB
-        prompt = "Analyze this brand manual and extract visual DNA."
+        # Fallback de diseño estricto
+        prompt = VISION_BRAND_EXTRACTION_PROMPT
     
     try:
         if cb: cb("Esencia Artística — Consultando al Director de Arte Visual (Vision LLM)...", 60)

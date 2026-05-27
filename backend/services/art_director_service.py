@@ -172,7 +172,8 @@ def plan_presentation_design(db: Session, job_id: int):
             .replace("{visual_history}", json.dumps(visual_history)) \
             .replace("{art_direction_note}", art_direction_note)
         
-        decision = generate_json(prompt)
+        from llm_provider import generate_premium_json
+        decision = generate_premium_json(prompt)
         
         # Robustness check
         if isinstance(decision, list) and len(decision) > 0: decision = decision[0]

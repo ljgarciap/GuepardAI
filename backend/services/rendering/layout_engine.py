@@ -328,18 +328,10 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
                     "background_color": dna.primary_color if hasattr(dna, 'primary_color') else "#002D62",
                     "text_color": "#FFFFFF",
                     "hero_image": d_slide.primary_asset_path,
-                    "layout_intent": c_slide.layout_type
+                    "layout": c_slide.layout_type
                 })
             
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            
-            output_path = loop.run_until_complete(
-                artistic_pdf_service.generate_pdf(job_id, slides_data, dna)
-            )
+            output_path = artistic_pdf_service.generate_pdf(job_id, slides_data, dna)
             
             job.pptx_path = output_path
             job.status = "completed"

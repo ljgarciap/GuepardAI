@@ -58,7 +58,7 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
         print(f"    [Engine v4.0] Strategic Planning for Slide {slide.slide_number}...")
         
         # FASE A: ANALISTA ESTRATÉGICO
-        strategy = get_slide_visual_strategy(db, slide, job)
+        strategy = get_slide_visual_strategy(db, slide, job, is_premium=is_premium)
         visual_intent = strategy.get("visual_intent", "Executive")
 
         # Inyectar esencia artística del manual de marca (v10.0 Replit-Upgrade)

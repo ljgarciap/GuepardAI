@@ -320,14 +320,15 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
             import asyncio
             
             slides_data = []
-            for item in render_manifest.slides:
+            for i, c_slide in enumerate(content_manifest.slides):
+                d_slide = final_design.slides[i]
                 slides_data.append({
-                    "title": item.heading,
-                    "bullets": item.body,
+                    "title": c_slide.title,
+                    "bullets": c_slide.bullets,
                     "background_color": dna.primary_color if hasattr(dna, 'primary_color') else "#002D62",
                     "text_color": "#FFFFFF",
-                    "hero_image": item.hero_image,
-                    "layout_intent": item.layout_archetype
+                    "hero_image": d_slide.primary_asset_path,
+                    "layout_intent": c_slide.layout_type
                 })
             
             try:

@@ -470,12 +470,18 @@ async def generate_presentation(
     return {"job_id": job.id, "status": "pending"}
 
 @app.delete("/api/admin/reset-db", tags=["Admin"])
-def reset_database(db: Session = Depends(get_db)):
+def reset_database(admin_token: str = None, db: Session = Depends(get_db)):
     """HARD RESET: Limpia toda la base de datos y vuelve a sembrar las configuraciones."""
+    from fastapi import HTTPException
+    import os
+    
+    expected_token = os.getenv("ADMIN_TOKEN")
+    if not expected_token or admin_token != expected_token:
+        raise HTTPException(status_code=403, detail="Forbidden: Invalid or missing admin token")
+        
     from database import engine, Base
     import subprocess
     import sys
-    import os
     
     try:
         # Drop and recreate all tables
@@ -489,7 +495,6 @@ def reset_database(db: Session = Depends(get_db)):
         
         return {"status": "success", "message": "Database reset and seeded successfully."}
     except Exception as e:
-        from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

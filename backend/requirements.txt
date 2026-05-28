@@ -23,6 +23,7 @@ Pillow
 # Utilities
 python-dotenv
 numpy
+loguru
 pydantic
 # Templating
 jinja2

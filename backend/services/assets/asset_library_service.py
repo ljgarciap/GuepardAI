@@ -229,7 +229,7 @@ def find_best_assets(db: Session, brand_id: int, keywords: List[str],
             from services.ingestion.vision_service import evaluate_image_with_vision
             for r in raw_results:
                 asset = r[0]
-                text_score = float(r[1])
+                text_score = float(r[1]) if r[1] is not None else 0.5
                 
                 # Rerank with local vision
                 vision_score = evaluate_image_with_vision(asset.local_path, query_text)
@@ -245,7 +245,7 @@ def find_best_assets(db: Session, brand_id: int, keywords: List[str],
             return final_results[:limit]
         except Exception as e:
             print(f"  [AssetLibrary] Vision reranking failed: {e}. Returning pure text scores.")
-            return [(r[0], float(r[1])) for r in raw_results[:limit]]
+            return [(r[0], float(r[1]) if r[1] is not None else 0.5) for r in raw_results[:limit]]
             
     return []
 

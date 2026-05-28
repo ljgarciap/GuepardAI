@@ -209,9 +209,9 @@ def extract_pptx_dna(file_path: str, source_filename: str,
     try:
         with zipfile.ZipFile(file_path, "r") as z:
             for name in z.namelist():
-                if name.startswith("ppt/media/") and name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg')):
+                if name.startswith("ppt/media/") and "/" not in name[10:]:
                     blob = z.read(name)
-                    ext = name.split(".")[-1].lower()
+                    ext = name.split(".")[-1].lower() if "." in name else "bin"
                     res = _process_img_data(blob, ext, "raw")
                     if res: raw_assets_paths.append(res)
     except Exception as e:

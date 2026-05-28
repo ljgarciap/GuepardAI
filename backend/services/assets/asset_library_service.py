@@ -69,9 +69,10 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
   "tags": ["tag1", "tag2"]
 }
 RULES:
-1. Description MUST be in SPANISH and extremely short.
-2. Tags must be in English or Spanish, lowercase, max 5 tags.
-3. Never write huge paragraphs."""
+1. 'logos' category is STRICTLY for brand logos, wordmarks, or company identities (even if on transparent backgrounds).
+2. Description MUST be in SPANISH and extremely short.
+3. Tags must be in English or Spanish, lowercase, max 5 tags.
+4. Never write huge paragraphs."""
             
         # CONTEXT-AWARE INJECTION (v23.0)
         # La instrucción de concisión se movió al seeder (prompt_classifier_v1)
@@ -132,15 +133,30 @@ RULES:
         from providers.llm_provider import get_embeddings_batch
         with open(file_path, "rb") as f:
             image_bytes = f.read()
-        embedding_fallback = get_embeddings_batch([image_bytes])[0]
-        intel = AssetIntelligence.categorize_by_similarity(embedding_fallback)
-        category = intel["primary_category"]
+        try:
+            embedding_fallback = get_embeddings_batch([image_bytes])[0]
+            if embedding_fallback is None:
+                category = "photos" # Default if embedding fails entirely (e.g. invalid bytes)
+            else:
+                intel = AssetIntelligence.categorize_by_similarity(embedding_fallback)
+                category = intel["primary_category"]
+        except Exception as embed_err:
+            print(f"  [Library] Embedding fallback ALSO failed (likely 429 quota): {embed_err}")
+            category = "photos"
+            
+    # RESTAURAR LOGO: Si era un logo explícito, la categoría forzada NUNCA debe sobreescribirse.
+    if is_explicit_logo:
+        category = "logos"
 
     # 3. Generar Embedding para Búsqueda (v4.0 - Coherencia Vectorial)
     # IMPORTANTE: Generamos el embedding del TEXTO descriptivo (Mistral 1024)
     # para asegurar que coincida con el espacio vectorial del buscador.
     from providers.llm_provider import get_embedding
-    embedding = get_embedding(description)
+    try:
+        embedding = get_embedding(description)
+    except Exception as e:
+        print(f"  [Library] Text embedding failed (likely 429 quota): {e}")
+        embedding = None
 
     # 4. Guardar en DB
     new_asset = models.BrandAsset(

@@ -8,6 +8,11 @@ RUN apt-get update && apt-get install -y \
     curl \
     libreoffice-draw \
     libreoffice-impress \
+    fontconfig \
+    fonts-liberation \
+    fonts-crosextra-carlito \
+    fonts-crosextra-caladea \
+    fontforge \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install

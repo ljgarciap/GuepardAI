@@ -223,7 +223,39 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
         except Exception as e:
             last_error = e
             err_msg = str(e).lower()
-            if "quota" in err_msg or "credit" in err_msg or "429" in err_msg or "limit" in err_msg:
+            if "429" in err_msg or "too many requests" in err_msg:
+                # Simple inline retry for rate limits (Mistral Experiment tier is 1 RPS)
+                success = False
+                for attempt in range(3):
+                    print(f"  [LLM] Rate limit 429 on {current_model}. Wait 2s and retry (Attempt {attempt+1}/3)...", flush=True)
+                    time.sleep(2)
+                    try:
+                        if "gemini" in api_model_name.lower():
+                            if "flash" in api_model_name:
+                                res = genai.GenerativeModel(api_model_name).generate_content(prompt, generation_config={"response_mime_type": "application/json"})
+                            else:
+                                res = genai.GenerativeModel(api_model_name).generate_content(prompt)
+                            content = res.text
+                        elif "mistral" in current_model.lower():
+                            m_slug = current_model.replace("mistral/", "")
+                            res = client.chat.complete(model=m_slug, messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"})
+                            content = res.choices[0].message.content
+                        elif "qwen" in current_model.lower() or "ollama" in current_model.lower():
+                            res = requests.post(f"{ollama_url}/api/generate", json=payload, timeout=300)
+                            content = res.json().get("response", "{}")
+                        else:
+                            res = client.chat.completions.create(model=current_model, messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"})
+                            content = res.choices[0].message.content
+                        
+                        log_audit(f"GEN_JSON_{current_model}_RETRY", f"PROMPT:\n{prompt}\n\nRESPONSE:\n{content}")
+                        clean_text = clean_json_string(content)
+                        return json.loads(clean_text)
+                    except Exception as retry_e:
+                        last_error = retry_e
+                
+                print(f"  [LLM] Model {current_model} rate limit persists after 3 retries. Falling back...", flush=True)
+                continue
+            elif "quota" in err_msg or "credit" in err_msg or "limit" in err_msg:
                 print(f"  [LLM] Model {current_model} exhausted/limit hit. Falling back...", flush=True)
                 continue
             else:
@@ -390,9 +422,38 @@ def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[st
                 return json.loads(response.choices[0].message.content)
 
         except Exception as e:
-            last_error = e
-            print(f"  [Vision] {current_model} failed: {e}. Trying next...")
-            continue
+            err_str = str(e).lower()
+            if "429" in err_str or "too many requests" in err_str:
+                success = False
+                for attempt in range(3):
+                    print(f"  [Vision] Rate Limit 429 on {current_model}. Wait 3s and retry (Attempt {attempt+1}/3)...", flush=True)
+                    time.sleep(3)
+                    try:
+                        if "gemini" in current_model.lower():
+                            res = genai.GenerativeModel(current_model).generate_content(msg_content, generation_config={"response_mime_type": "application/json"})
+                            content_text = res.text
+                        elif "mistral" in current_model.lower() or "pixtral" in current_model.lower():
+                            m_slug = current_model.replace("mistral/", "")
+                            res = client.chat.complete(model=m_slug, messages=[{"role": "user", "content": mistral_content}], response_format={"type": "json_object"})
+                            content_text = res.choices[0].message.content
+                        elif "qwen" in current_model.lower() or "ollama" in current_model.lower():
+                            res = requests.post(f"{ollama_url}/api/generate", json=payload, timeout=300)
+                            content_text = res.json().get("response", "{}")
+                        else:
+                            res = client.chat.completions.create(model=current_model, messages=[{"role": "user", "content": msg_content}], response_format={"type": "json_object"})
+                            content_text = res.choices[0].message.content
+                            
+                        log_audit(f"VISION_JSON_{current_model}_RETRY", f"PROMPT:\n{prompt}\n\nRESPONSE:\n{content_text}")
+                        return json.loads(clean_json_string(content_text))
+                    except Exception as inner_e:
+                        last_error = inner_e
+                
+                print(f"  [Vision] {current_model} rate limit persists. Trying next...")
+                continue
+            else:
+                last_error = e
+                print(f"  [Vision] {current_model} failed: {e}. Trying next...")
+                continue
 
     # FINAL ATTEMPT: Global Fallback
     fallback = get_system_config("global_fallback_model", "gemini-flash-latest")

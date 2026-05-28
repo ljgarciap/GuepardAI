@@ -30,6 +30,7 @@ services:
     volumes:
       - ./backend:/app
       - ./backend/uploads:/app/uploads
+      - ./backend/custom_fonts:/usr/share/fonts/custom
     depends_on:
       - db
     restart: always

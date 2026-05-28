@@ -64,17 +64,17 @@ def seed_data():
             },
             {
                 "key": "extraction_vision_model",
-                "value": "pixtral-12b-2409,gemini-flash-latest",
+                "value": "pixtral-12b-2409,gemini-flash-latest,claude-3-5-sonnet-20241022",
                 "description": "Modelo principal para análisis de visión (DNA/Assets)."
             },
             {
                 "key": "extraction_synthesis_model",
-                "value": "gemini-flash-latest,ollama/qwen2.5:1.5b",
+                "value": "mistral/mistral-large-latest,gemini-flash-latest,claude-3-5-sonnet-20241022",
                 "description": "Modelo para síntesis de contenido y estructuración."
             },
             {
                 "key": "global_fallback_model",
-                "value": "gemini-flash-latest,ollama/qwen2.5:1.5b",
+                "value": "mistral/mistral-large-latest,gemini-flash-latest,claude-3-5-sonnet-20241022",
                 "description": "Modelo de respaldo global en caso de fallo de proveedores primarios."
             },
             
@@ -207,15 +207,14 @@ You are responsible for the VISUAL FIDELITY and BRAND ADHERENCE of a high-stakes
 Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
 - 'category': Choose one: 
     * 'lifestyle_photos': Complex scenes, people, stores, or environments.
-    * 'design_elements': Single isolated objects (fruits, products), icons, or accents on solid/transparent backgrounds. (CRITICAL: If it's a fruit or object, it's a 'design_element').
-    * 'logos': Brand identities.
+    * 'design_elements': Single isolated objects (fruits, products), icons, or accents on solid/transparent backgrounds. 
+    * 'logos': Brand identities, company names, or wordmarks. (CRITICAL: If it is a brand logo, it MUST be 'logos' regardless of transparency or isolation).
     * 'backgrounds': Textures or full-page backgrounds.
     * 'noise': Blank, blurry, low-quality, or useless images.
 - 'is_person': boolean.
 - 'background_type': 'transparent', 'solid_white', 'solid_black', 'complex', or 'other'.
 - 'description': TECHNICAL INSTRUCTION: Provide a VISUAL and COMPOSITIONAL description (Max 3 sentences). Focus strictly on the Subject, Composition (e.g., 'Centered', 'Negative space on left'), Dominant Colors, and Design Potential (e.g., 'Suitable for typographic substitution'). AVOID corporate fluff like 'strategic value', 'approachable' or 'professional'.
-- 'tags': 5 technical keywords for designer search.
-""",
+- 'tags': 5 technical keywords for designer search.""",
                 "description": "Asset Classifier v3.0 — Technical Designer Focus (Replit-Grade)."
             }
         ]

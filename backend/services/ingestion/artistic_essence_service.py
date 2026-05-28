@@ -39,46 +39,14 @@ def _pdf_to_images(file_path: str, out_dir: str, max_pages: int = MAX_SLIDES_TO_
     doc.close()
     return image_paths
 
-def _pptx_to_images(file_path: str, out_dir: str, max_slides: int = MAX_SLIDES_TO_ANALYZE) -> List[str]:
-    # --- 1. Primary High-Fidelity Rendering via LibreOffice + PyMuPDF ---
-    import subprocess
+def _pptx_to_images(file_path: str, out_dir: str, max_slides: int = MAX_SLIDES_TO_ANALYZE, cb: Optional[Callable] = None) -> List[str]:
     abs_out_dir = os.path.abspath(out_dir)
     os.makedirs(abs_out_dir, exist_ok=True)
-    base_name = os.path.splitext(os.path.basename(file_path))[0]
-    temp_pdf_path = os.path.join(abs_out_dir, f"_temp_essence_{base_name}.pdf")
     
-    try:
-        print(f"  [Essence] Rendering PPTX to PDF via LibreOffice...", flush=True)
-        # Convert to pdf in out_dir, naming it the temp_pdf_path
-        cmd = [
-            "libreoffice", "--headless", "--convert-to", "pdf",
-            "--outdir", abs_out_dir, file_path
-        ]
-        subprocess.run(cmd, check=True, capture_output=True, timeout=60)
-        
-        # Libreoffice output will be named as original base_name + .pdf
-        standard_pdf_path = os.path.join(abs_out_dir, base_name + ".pdf")
-        if os.path.exists(standard_pdf_path):
-            os.rename(standard_pdf_path, temp_pdf_path)
-            
-        if os.path.exists(temp_pdf_path):
-            print(f"  [Essence] Rendering PDF pages to slide PNGs...", flush=True)
-            image_paths = _pdf_to_images(temp_pdf_path, abs_out_dir, max_slides)
-            
-            # Clean up the temporary PDF file
-            try:
-                os.remove(temp_pdf_path)
-            except: pass
-            
-            if image_paths:
-                print(f"  [Essence] Success: Rendered {len(image_paths)} full slides using LibreOffice+PyMuPDF.", flush=True)
-                return image_paths
-    except Exception as e:
-        print(f"  [Essence] Warning: LibreOffice slide rendering failed: {e}. Falling back to extraction...", flush=True)
-        # Clean up temp PDF if left over
-        if os.path.exists(temp_pdf_path):
-            try: os.remove(temp_pdf_path)
-            except: pass
+    # En Replit, LibreOffice no se usaba porque corrompe las animaciones y tipografías
+    # devolviendo PDFs superpuestos. Vamos a extraer las imágenes directamente del PPTX
+    # tal y como se hacía en Replit (Fallback Legacy Extraction).
+    print(f"  [Essence] Extracting slide visual components natively via python-pptx...", flush=True)
 
     # --- 2. Fallback Legacy Extraction (Extracts embedded thumbnails or large pictures) ---
     image_paths = []

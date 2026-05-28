@@ -44,9 +44,12 @@ async def create_brand_logic(db: Session, name: str, about: Optional[str], core_
                     file_path=temp_path, 
                     category="logo", 
                     source_doc=f"Initial Brand Identity: {name}",
-                    manual_tags=["official-logo", "identity"]
+                    manual_tags=["official-logo", "identity"],
+                    force_tagging=True
                 )
+                db.commit() # ¡CRÍTICO! Commit para guardar el asset en la DB
             except Exception as ai_e:
+                db.rollback() # Limpiar la transacción si falló la IA
                 print(f"  [BrandService] Advertencia: Logo guardado pero falló el análisis IA: {ai_e}")
                 
         except Exception as e:
@@ -74,8 +77,10 @@ async def update_brand_logic(db: Session, brand_id: int, name: str, about: Optio
             db.commit()
             
             try:
-                register_asset(db, brand_id=brand.id, file_path=temp_path, category="logo", source_doc=f"Brand Update: {name}")
+                register_asset(db, brand_id=brand.id, file_path=temp_path, category="logo", source_doc=f"Brand Update: {name}", force_tagging=True)
+                db.commit() # ¡CRÍTICO! Commit para guardar el asset
             except Exception as ai_e:
+                db.rollback() # Limpiar la transacción si falló la IA
                 print(f"  [BrandService] Advertencia: Logo actualizado pero falló el análisis IA: {ai_e}")
                 
         except Exception as e:

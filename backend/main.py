@@ -39,6 +39,10 @@ from services.ingestion.artistic_essence_service import extract_artistic_essence
 # ── INGESTION SERVICES (legacy RAG — sin cambios) ──
 from services.ingestion.ingest_knowledge import ingest_document as ingest_rag
 
+# Actualizar caché de fuentes por si se subieron fuentes personalizadas
+print("[System] Updating font cache for LibreOffice...", flush=True)
+os.system("fc-cache -f")
+
 print("[System] PowerAI Engine v11.0 (Clean Architecture) IS LIVE.", flush=True)
 
 logging.basicConfig(level=logging.INFO)

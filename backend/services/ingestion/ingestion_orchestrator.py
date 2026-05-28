@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 def convert_pptx_to_pdf(pptx_path: str, output_dir: str) -> Optional[str]:
     """Uses LibreOffice to convert PPTX a PDF para análisis de visión fiel."""
     try:
+        from services.rendering.font_extractor import extract_and_install_fonts
+        extract_and_install_fonts(pptx_path)
+        
         logger.info(f"  [Orchestrator] Converting {pptx_path} to PDF...")
         cmd = [
             "libreoffice", "--headless", "--convert-to", "pdf",

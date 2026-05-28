@@ -4,7 +4,7 @@ import models
 from sqlalchemy.orm import Session
 from providers.llm_provider import generate_json
 
-def get_slide_visual_strategy(db: Session, slide: models.PresentationSlide, job: models.GenerationJob) -> dict:
+def get_slide_visual_strategy(db: Session, slide: models.PresentationSlide, job: models.GenerationJob, is_premium: bool = False) -> dict:
     """
     ANALYST SERVICE v1.0 — Strategic pre-planning.
     Analyzes slide content + RAG context to define a visual mission.
@@ -28,8 +28,11 @@ def get_slide_visual_strategy(db: Session, slide: models.PresentationSlide, job:
     )
     
     try:
-        from providers.llm_provider import generate_premium_json
-        strategy = generate_premium_json(prompt)
+        if is_premium:
+            from providers.llm_provider import generate_premium_json
+            strategy = generate_premium_json(prompt)
+        else:
+            strategy = generate_json(prompt)
         if not strategy or not isinstance(strategy, dict):
             raise ValueError("Invalid strategy JSON")
     except Exception as e:

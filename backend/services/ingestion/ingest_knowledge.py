@@ -94,6 +94,7 @@ def ingest_document(file_path, client_name="Internal", update_callback=None, bra
                     perc = 10 + int((i / total_chunks) * 85)
                     update_callback(f"Indexing fragments ({current_count}/{total_chunks})...", perc)
                 
+                current_batch_idx = (i // batch_size) + 1
                 try:
                     batch_embeddings = get_embeddings_batch(batch_texts)
                     if not batch_embeddings or len(batch_embeddings) == 0:

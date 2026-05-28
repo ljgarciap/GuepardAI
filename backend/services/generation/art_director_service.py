@@ -12,7 +12,7 @@ from services.rendering.placeholder_service import get_placeholder_image
 from services.ingestion.brand_composition_dna import get_layout_geometry, build_decorator_elements
 from services.rendering.font_service import ensure_brand_fonts
 
-def plan_presentation_design(db: Session, job_id: int):
+def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False):
     """
     STRATEGIC DESIGN ENGINE v4.0.
     Sequential flow: Analysis -> Asset Scoring -> Audited Execution.
@@ -172,8 +172,12 @@ def plan_presentation_design(db: Session, job_id: int):
             .replace("{visual_history}", json.dumps(visual_history)) \
             .replace("{art_direction_note}", art_direction_note)
         
-        from providers.llm_provider import generate_premium_json
-        decision = generate_premium_json(prompt)
+        if is_premium:
+            from providers.llm_provider import generate_premium_json
+            decision = generate_premium_json(prompt)
+        else:
+            from providers.llm_provider import generate_json
+            decision = generate_json(prompt)
         
         # Robustness check
         if isinstance(decision, list) and len(decision) > 0: decision = decision[0]

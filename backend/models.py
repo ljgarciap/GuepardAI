@@ -110,6 +110,9 @@ class BrandArtisticEssence(Base):
     source_filename = Column(String, index=True, nullable=False)  # mismo archivo que BrandVisualDna
 
     brand = relationship("Brand", back_populates="artistic_essence")
+    
+    # Estrategia visual general (extraída por Vision)
+    visual_strategy = Column(JSON, nullable=True)
 
     # Arquetipos de layout por tipo de slide
     # {
@@ -118,8 +121,8 @@ class BrandArtisticEssence(Base):
     #   "image":      { "treatment": "full-bleed-overlay-40", ... },
     #   "conclusion": { "layout": "centered-dark", ... }
     # }
-    slide_archetypes   = Column(JSONB, nullable=True)
-    structural_archetypes = Column(JSONB, nullable=True) # ADN Estructural (rejillas, columnas)
+    slide_archetypes   = Column(JSON, nullable=True)
+    structural_archetypes = Column(JSON, nullable=True) # ADN Estructural (rejillas, columnas)
 
     # Gestures distintivos del diseñador
     # {
@@ -131,7 +134,7 @@ class BrandArtisticEssence(Base):
     #   "accent_geometry": "vertical-line|horizontal-bar|dot|none",
     #   "accent_color_source": "primary|secondary|accent"
     # }
-    design_gestures    = Column(JSONB, nullable=True)
+    design_gestures    = Column(JSON, nullable=True)
 
     # Rules de composición y espacio
     # {
@@ -142,7 +145,7 @@ class BrandArtisticEssence(Base):
     #   "image_role": "background|supporting|hero",
     #   "text_hierarchy": "high-contrast|minimalist|executive"
     # }
-    composition_rules  = Column(JSONB, nullable=True)
+    composition_rules  = Column(JSON, nullable=True)
 
     # Description en lenguaje natural del estilo (útil para el prompt de generación)
     art_direction_note = Column(Text, nullable=True)

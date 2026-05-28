@@ -13,9 +13,10 @@ from schemas.presentation import ContentManifest, ContentManifestSlide, DesignMa
 logger = logging.getLogger(__name__)
 
 class BaseArtDirector:
-    def __init__(self, db: Session, job_id: int):
+    def __init__(self, db: Session, job_id: int, is_premium: bool = False):
         self.db = db
         self.job_id = job_id
+        self.is_premium = is_premium
         
     def plan(self, content_manifest: ContentManifest) -> DesignManifest:
         from services.generation.art_director_service import plan_presentation_design
@@ -24,7 +25,7 @@ class BaseArtDirector:
         # If it's already run in a previous resume run, we can check if images exist, but plan_presentation_design is safe to call
         # wait, we only want to run it if it hasn't been run.
         # But for safety we just call it.
-        plan_presentation_design(self.db, self.job_id)
+        plan_presentation_design(self.db, self.job_id, is_premium=self.is_premium)
         
         # Now read from DB to get the assigned images
         slides = []
@@ -97,7 +98,7 @@ Make it look PREMIUM and EXPENSIVE. Use glass panels (high transparency, rounded
 """
     
     def __init__(self, db: Session, job_id: int, uploads_dir: str):
-        super().__init__(db, job_id)
+        super().__init__(db, job_id, is_premium=True)
         self.uploads_dir = uploads_dir
         self.sem = asyncio.Semaphore(5)  # Restored concurrency; LLM provider will throttle locally if needed
         

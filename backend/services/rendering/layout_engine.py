@@ -316,7 +316,36 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
         output_format = req_data.get("output_format", "pptx")
         
         if output_format == "pdf_artistic":
-            raise NotImplementedError("PDF Artistic not migrated to V11 decoupled flow yet.")
+            from services.rendering.artistic_pdf_service import artistic_pdf_service
+            import asyncio
+            
+            slides_data = []
+            for item in render_manifest.slides:
+                slides_data.append({
+                    "title": item.heading,
+                    "bullets": item.body,
+                    "background_color": dna.primary_color if hasattr(dna, 'primary_color') else "#002D62",
+                    "text_color": "#FFFFFF",
+                    "hero_image": item.hero_image,
+                    "layout_intent": item.layout_archetype
+                })
+            
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            output_path = loop.run_until_complete(
+                artistic_pdf_service.generate_pdf(job_id, slides_data, dna)
+            )
+            
+            job.pptx_path = output_path
+            job.status = "completed"
+            job.current_step = "Portfolio ready (PDF)."
+            job.progress = 100
+            db.commit()
+            return
             
         # Construir RenderManifest
         agency_name_cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == "agency_name").first()
@@ -373,12 +402,10 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
         painter.render_slides(render_manifest)
         painter.save(output_path)
         
-        download_url = f"/uploads/{output_filename}"
         job.pptx_path = output_path
         job.status = "completed"
         job.current_step = "Portfolio ready."
         job.progress = 100
-        job.download_url = download_url
         db.commit()
 
     except Exception as e:

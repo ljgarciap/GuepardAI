@@ -6,10 +6,16 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
+        @page {
+            size: 1280px 720px;
+            margin: 0;
+        }
         :root {
             --primary-color: {{ primary_color|default('#002D62') }};
             --secondary-color: {{ secondary_color|default('#E31837') }};
         }
+    </style>
+    <script>
         tailwind.config = {
           theme: {
             extend: {
@@ -22,6 +28,8 @@
             }
           }
         }
+    </script>
+    <style>
         * { box-sizing: border-box; }
         body { 
             font-family: 'Outfit', 'Helvetica', sans-serif; 
@@ -107,13 +115,14 @@
 <body>
     {% for slide in slides %}
         <div class="slide-page">
-            {% if slide.layout == 'hero' %}
+            {% set layout = slide.layout|default(slide.layout_intent|default('split'), true) %}
+            {% if layout == 'hero' or layout == 'composition_hero' %}
                 {% include 'artistic_hero.html' %}
-            {% elif slide.layout == 'data_grid' %}
+            {% elif layout == 'data_grid' or layout == 'data_grid_cards' %}
                 {% include 'artistic_data_grid.html' %}
-            {% elif slide.layout == 'quote' %}
+            {% elif layout == 'quote' or layout == 'composition_quote' %}
                 {% include 'artistic_quote.html' %}
-            {% elif slide.layout == 'pillars' %}
+            {% elif layout == 'pillars' or layout == 'composition_pillars' %}
                 {% include 'artistic_pillars.html' %}
             {% else %}
                 {% include 'artistic_split.html' %}

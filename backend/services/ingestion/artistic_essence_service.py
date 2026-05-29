@@ -104,6 +104,17 @@ Your task: Extract the VISUAL DESIGN DNA with extreme precision.
 Return JSON with exactly this structure:
 {
   "visual_strategy": "A high-level explanation of the brand layout style and tone",
+  "executable_visual_patterns": [
+    {
+      "pattern_type": "object_as_letter | typographic_substitution | editorial_split | brand_footer | logo_locked_footer | full_bleed_hero | image_masked_title | data_cards_brand_grid",
+      "description": "What the pattern does visually",
+      "execution_hint": "Concrete HTML/CSS/canvas instruction for reproducing it",
+      "preferred_layouts": ["composition_hero", "composition_split"],
+      "asset_role": "hero | accent | mask | footer_logo",
+      "confidence": 0.0,
+      "source_slide": 1
+    }
+  ],
   "structural_archetypes": {
     "persistent_blocks": [
       {
@@ -153,6 +164,9 @@ def analyze_with_vision(image_paths: List[str], cb: Optional[Callable] = None) -
         
         from providers.llm_provider import generate_vision_json
         result = generate_vision_json(prompt, sample_images)
+        if not result.get("executable_visual_patterns"):
+            from services.ingestion.visual_pattern_service import normalize_executable_patterns
+            result["executable_visual_patterns"] = normalize_executable_patterns(result)
         print(f"[Vision] AI RAW Response:\n{json.dumps(result, indent=2)}", flush=True)
         return result
     except Exception as e:
@@ -212,6 +226,7 @@ def extract_artistic_essence(file_path: str, upload_dir: str, cb: Optional[Calla
         "design_gestures":       vision_result.get("design_gestures", {}),
         "composition_rules":     vision_result.get("composition_rules", {}),
         "slide_archetypes":      vision_result.get("slide_archetypes", {}),
+        "executable_visual_patterns": vision_result.get("executable_visual_patterns", []),
         "visual_strategy":       vision_result.get("visual_strategy", ""),
         "art_direction_note":    vision_result.get("visual_strategy", ""), # Mapeo directo
         "raw_vision_response":   vision_result,

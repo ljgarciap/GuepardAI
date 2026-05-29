@@ -206,6 +206,20 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
             record.design_gestures       = brand_essence.get("design_gestures", {})
             record.composition_rules     = brand_essence.get("composition_rules", {})
             record.art_direction_note    = brand_essence.get("art_direction_note", "")
+            record.raw_vision_response   = brand_essence.get("raw_vision_response", {})
+
+            from services.ingestion.visual_pattern_service import (
+                normalize_executable_patterns,
+                upsert_brand_patterns,
+            )
+            executable_patterns = brand_essence.get("executable_visual_patterns") or normalize_executable_patterns(brand_essence)
+            upsert_brand_patterns(
+                db,
+                brand_id=brand_id,
+                source_filename=source_filename,
+                patterns=executable_patterns,
+                raw_extraction=brand_essence.get("raw_vision_response", brand_essence),
+            )
             db.commit()
         finally:
             db.close()

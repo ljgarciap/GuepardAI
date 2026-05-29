@@ -158,6 +158,26 @@ class BrandArtisticEssence(Base):
     is_public          = Column(Integer, default=0) # 0=Exclusive, 1=Public
 
 
+class BrandPremiumVisualPattern(Base):
+    """
+    Premium Visual Agent pattern store.
+    Keeps executable visual patterns separate from BrandVisualDna so the PPTX
+    pipeline can continue using its existing brand DNA contract.
+    """
+    __tablename__ = "brand_premium_visual_patterns"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    brand_id        = Column(Integer, ForeignKey("brands.id"), index=True)
+    source_filename = Column(String, index=True, nullable=False)
+
+    patterns_json   = Column(JSONB, nullable=True)
+    pattern_summary = Column(Text, nullable=True)
+    raw_extraction  = Column(JSONB, nullable=True)
+
+    created_at      = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at      = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
 # ============================================================
 # TABLA EXISTENTE: ingestion_jobs (actualizada)
 # ingestion_type valid: 'visual_dna' | 'artistic' | 'knowledge'

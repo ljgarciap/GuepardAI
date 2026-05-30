@@ -20,6 +20,7 @@ except ImportError:
 from database import SessionLocal
 import models
 import threading
+import json_repair
 
 local_vlm_lock = threading.Lock()
 load_dotenv()
@@ -519,9 +520,13 @@ def generate_premium_json(prompt: str) -> dict:
     except json.JSONDecodeError:
         # Buscar el primer bloque JSON válido en la respuesta
         match = re.search(r'\{.*\}', clean_text, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-        raise ValueError(f"[Premium] Claude no devolvió JSON válido: {clean_text[:300]}")
+        target_text = match.group(0) if match else clean_text
+        try:
+            return json_repair.loads(target_text)
+        except Exception as e2:
+            with open("/app/providers/failed_json.log", "w", encoding="utf-8") as f:
+                f.write(target_text)
+            raise ValueError(f"[Premium] json_repair failed: {e2}. Text saved to failed_json.log")
 
 
 def generate_premium_vision_json(prompt: str, image_paths: List[str]) -> dict:
@@ -733,6 +738,28 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
                         # Item was NOT sent (empty string or image)
                         final_results.append(None)
                 return final_results
+
+            elif "ollama" in current_model.lower() or "mxbai" in current_model.lower():
+                # OLLAMA LOCAL EMBEDDINGS (Nivel 3 Fallback)
+                import requests
+                ollama_url = os.getenv("OLLAMA_URL", "http://vision:11434")
+                clean_model = current_model.replace("ollama/", "")
+                
+                final_results = []
+                try:
+                    for item in inputs:
+                        if isinstance(item, str) and item.strip():
+                            payload = {"model": clean_model, "prompt": item}
+                            response = requests.post(f"{ollama_url}/api/embeddings", json=payload, timeout=300)
+                            response.raise_for_status()
+                            vec = response.json().get("embedding", [])
+                            final_results.append(normalize_vector(vec, TARGET_DIM))
+                        else:
+                            final_results.append(None)
+                    return final_results
+                except Exception as ollama_err:
+                    print(f"  [Embeddings] Ollama local call failed: {ollama_err}")
+                    raise ollama_err
 
         except Exception as e:
             last_error = e

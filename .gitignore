@@ -21,6 +21,8 @@ __pycache__/
 
 # Project Data & Assets
 backend/uploads/*
+backend/outputs/*
+!backend/outputs/.gitkeep
 !backend/uploads/.gitkeep
 backend/data/*
 !backend/data/.gitkeep

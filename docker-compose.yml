@@ -67,7 +67,9 @@ services:
       sleep 10;
       echo 'Pulling Qwen2.5-VL model...';
       curl -s -X POST http://vision:11434/api/pull -d '{\"name\": \"qwen2.5vl\"}';
-      echo 'Model pulled successfully!';
+      echo 'Pulling mxbai-embed-large model...';
+      curl -s -X POST http://vision:11434/api/pull -d '{\"name\": \"mxbai-embed-large\"}';
+      echo 'Models pulled successfully!';
       "
 
 volumes:

@@ -308,7 +308,7 @@ class ArtDirectorDecision(Base):
     slide_number = Column(Integer)
     
     decision_type = Column(String(50)) # 'layout', 'asset_selection', 'color_logic'
-    summary       = Column(String(500))
+    summary       = Column(Text)
     reasoning     = Column(Text)
     
     # Bitácora de Auditoría (v4.0)

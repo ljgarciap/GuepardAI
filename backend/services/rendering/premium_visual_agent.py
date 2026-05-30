@@ -42,7 +42,8 @@ class PremiumVisualAgent:
             slides_data = self._vision_adjust_loop(slides_data, patterns, brand_dna, brand_assets)
             print(f"  [PremiumVisualAgent] Vision Adjust Loop completed.", flush=True)
         except Exception as e:
-            print(f"  [PremiumVisualAgent] Vision Adjust Loop failed, falling back to iteration 1: {e}", flush=True)
+            import traceback
+            print(f"  [PremiumVisualAgent] Vision Adjust Loop failed, falling back to iteration 1: {traceback.format_exc()}", flush=True)
 
         output_path = artistic_pdf_service.generate_premium_pdf(
             self.job_id,
@@ -77,7 +78,7 @@ class PremiumVisualAgent:
         } for p in patterns], indent=2)}
         
         CURRENT GENERATION (Iteration 1):
-        {json.dumps([{{'slide_number': s['slide_number'], 'title': s['title'], 'pattern_type': s['pattern_type']}} for s in slides_data], indent=2)}
+        {json.dumps([{'slide_number': s['slide_number'], 'title': s['title'], 'pattern_type': s['pattern_type']} for s in slides_data], indent=2)}
         
         INSTRUCTIONS:
         1. If you see repeated patterns (e.g., all "editorial_split"), break the monotony by assigning more creative patterns from the AVAILABLE BRAND PATTERNS list.
@@ -152,7 +153,6 @@ class PremiumVisualAgent:
 
     def _build_slides(self, content_manifest, design_manifest, brand_dna, patterns, brand_assets) -> List[Dict[str, Any]]:
         logo_asset = self._first_asset(brand_assets, ["logos"])
-        accent_asset = self._first_asset(brand_assets, ["design_elements", "icons", "photos", "lifestyle_photos"])
         photo_asset = self._first_asset(brand_assets, ["lifestyle_photos", "photos", "backgrounds"])
 
         slides_data: List[Dict[str, Any]] = []
@@ -161,11 +161,31 @@ class PremiumVisualAgent:
             layout_type = getattr(content_slide, "layout_type", "") or ""
             pattern = self._choose_pattern(index, layout_type, patterns)
 
+            planning = getattr(content_slide, "planning_json", {}) or {}
+            ad_plan = planning.get("art_director", {})
+            canvas_elements = ad_plan.get("canvas_elements", [])
+            
+            accent_image_path = None
+            if ad_plan.get("accent_asset_id"):
+                for assets in brand_assets.values():
+                    for a in assets:
+                        if str(a.id) == str(ad_plan.get("accent_asset_id")):
+                            accent_image_path = self._asset_path(a)
+                            break
+                    if accent_image_path:
+                        break
+
             hero_image = (
                 getattr(design_slide, "primary_asset_path", None)
                 or getattr(design_slide, "background_asset_path", None)
                 or self._asset_path(photo_asset)
             )
+
+            brand = self.db.query(models.Brand).get(getattr(brand_dna, "brand_id", 0)) if brand_dna else None
+            logo_path = brand.logo_path if brand and brand.logo_path else self._asset_path(logo_asset)
+            
+            client_name = getattr(self.job, "client_name", None)
+            footer_label = f"L - founders of loyalty CONFIDENTIAL FOR {client_name.upper()} USE ONLY" if client_name else "L - founders of loyalty CONFIDENTIAL"
 
             slides_data.append({
                 "slide_number": content_slide.slide_number,
@@ -180,9 +200,10 @@ class PremiumVisualAgent:
                 "pattern_id": pattern.get("id"),
                 "pattern_hint": pattern.get("execution_hint", ""),
                 "hero_image": hero_image,
-                "accent_image": self._asset_path(accent_asset),
-                "logo_image": self._asset_path(logo_asset),
-                "footer_label": getattr(self.job, "client_name", None) or "Confidential",
+                "accent_image": accent_image_path,
+                "logo_image": logo_path,
+                "footer_label": footer_label,
+                "canvas_elements": canvas_elements,
             })
 
         return slides_data

@@ -23,8 +23,10 @@
             width: 1280px;
             height: 720px;
             position: relative;
-            overflow: hidden;
+            overflow: hidden !important;
             page-break-after: always;
+            page-break-inside: avoid;
+            break-inside: avoid;
             background: var(--brand-bg);
         }
         .slide:last-child { page-break-after: auto; }
@@ -38,19 +40,19 @@
         .footer-lockup {
             position: absolute;
             left: 56px;
-            right: 56px;
             bottom: 32px;
             height: 34px;
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            border-top: 1px solid rgba(17, 17, 17, 0.16);
-            color: rgba(17, 17, 17, 0.58);
+            justify-content: flex-start;
+            gap: 12px;
+            color: inherit;
             font-size: 10px;
             font-weight: 700;
             letter-spacing: 0.12em;
             text-transform: uppercase;
-            z-index: 8;
+            z-index: 15;
+            opacity: 0.6;
         }
         .footer-lockup img {
             max-height: 22px;
@@ -123,8 +125,8 @@
             max-width: 650px;
         }
         .bullets li {
-            display: grid;
-            grid-template-columns: 12px 1fr;
+            display: flex;
+            align-items: flex-start;
             gap: 16px;
             font-size: 19px;
             line-height: 1.36;
@@ -132,7 +134,7 @@
         }
         .bullets li::before {
             content: "";
-            width: 9px;
+            min-width: 9px;
             height: 9px;
             margin-top: 8px;
             background: var(--brand-secondary);
@@ -218,25 +220,10 @@
             -webkit-text-stroke: 2px var(--brand-primary);
             text-shadow: 10px 10px 0 rgba(0,0,0,0.05);
         }
-        .object-letter {
+        .canvas-element {
             position: absolute;
-            right: 72px;
-            top: 64px;
-            width: 188px;
-            height: 188px;
+            z-index: 10;
             object-fit: contain;
-            z-index: 7;
-        }
-        .pattern-tag {
-            position: absolute;
-            top: 30px;
-            right: 56px;
-            color: rgba(17,17,17,0.34);
-            font-size: 9px;
-            font-weight: 800;
-            letter-spacing: 0.15em;
-            text-transform: uppercase;
-            z-index: 9;
         }
     </style>
 </head>
@@ -253,9 +240,20 @@
             {% if slide.subtitle %}<p class="subtitle">{{ slide.subtitle }}</p>{% endif %}
         </div>
         <div class="footer-lockup">
+            {% if agency_logo %}<img src="{{ agency_logo }}">{% endif %}
             <span>{{ slide.footer_label|default('Premium Visual Agent') }}</span>
-            {% if slide.logo_image %}<img src="{{ slide.logo_image }}">{% elif agency_logo %}<img src="{{ agency_logo }}">{% endif %}
         </div>
+        {% if slide.canvas_elements %}
+            {% for el in slide.canvas_elements %}
+                {% if el.type == 'typo_substitution' or el.type == 'image' %}
+                    <img class="canvas-element" src="{{ el.path }}" style="left: {{ el.x }}%; top: {{ el.y }}%; width: {{ el.size|default(el.w)|default(20) }}%; height: {{ el.h|default('auto') }};">
+                {% elif el.type == 'text' %}
+                    <div class="canvas-element" style="left: {{ el.x }}%; top: {{ el.y }}%; font-size: {{ el.size|default(24) }}px; color: {{ el.color|default('var(--brand-text)') }}; font-weight: bold;">
+                        {{ el.content|default(el.text) }}
+                    </div>
+                {% endif %}
+            {% endfor %}
+        {% endif %}
     </section>
     {% elif pattern_type == 'data_cards_brand_grid' %}
     <section class="slide grid-slide">
@@ -268,15 +266,17 @@
             {% if slide.logo_image %}<img src="{{ slide.logo_image }}" style="max-width: 120px; max-height: 56px; object-fit: contain;">{% endif %}
         </div>
         <div class="metric-grid">
-            {% for metric in slide.metrics %}
+            {% set metrics_list = slide.metrics or [] %}
+            {% for metric in metrics_list %}
             <div class="metric-card">
                 <div class="metric-value">{{ metric.value|default(metric.label|default('')) }}</div>
                 <div class="metric-label">{{ metric.label|default(metric.name|default('Metric')) }}</div>
                 {% if metric.description %}<div class="metric-desc">{{ metric.description }}</div>{% endif %}
             </div>
             {% endfor %}
-            {% if not slide.metrics %}
-                {% for bullet in slide.bullets[:6] %}
+            {% set metrics_count = metrics_list|length %}
+            {% if metrics_count < 3 and slide.bullets %}
+                {% for bullet in slide.bullets[:(3 - metrics_count)] %}
                 <div class="metric-card">
                     <div class="metric-label">{{ bullet }}</div>
                 </div>
@@ -284,9 +284,20 @@
             {% endif %}
         </div>
         <div class="footer-lockup">
-            <span>{{ slide.footer_label|default('Premium Visual Agent') }}</span>
             {% if agency_logo %}<img src="{{ agency_logo }}">{% endif %}
+            <span>{{ slide.footer_label|default('Premium Visual Agent') }}</span>
         </div>
+        {% if slide.canvas_elements %}
+            {% for el in slide.canvas_elements %}
+                {% if el.type == 'typo_substitution' or el.type == 'image' %}
+                    <img class="canvas-element" src="{{ el.path }}" style="left: {{ el.x }}%; top: {{ el.y }}%; width: {{ el.size|default(el.w)|default(20) }}%; height: {{ el.h|default('auto') }};">
+                {% elif el.type == 'text' %}
+                    <div class="canvas-element" style="left: {{ el.x }}%; top: {{ el.y }}%; font-size: {{ el.size|default(24) }}px; color: {{ el.color|default('var(--brand-text)') }}; font-weight: bold;">
+                        {{ el.content|default(el.text) }}
+                    </div>
+                {% endif %}
+            {% endfor %}
+        {% endif %}
     </section>
     {% else %}
     <section class="slide editorial-split {% if pattern_type == 'image_masked_title' %}masked-title{% endif %}">
@@ -294,8 +305,8 @@
         <div class="editorial-image">
             {% if slide.hero_image %}<img class="hero-image" src="{{ slide.hero_image }}">{% endif %}
         </div>
-        {% if slide.accent_image and pattern_type in ['object_as_letter', 'typographic_substitution'] %}
-            <img class="object-letter" src="{{ slide.accent_image }}">
+        {% if slide.accent_image and not slide.canvas_elements %}
+            <img class="canvas-element" src="{{ slide.accent_image }}" style="right: 72px; top: 64px; width: 188px; height: 188px;">
         {% endif %}
         <div class="editorial-copy">
             <div class="kicker">{{ slide.section_label|default('Strategic Narrative') }}</div>
@@ -308,11 +319,28 @@
             </ul>
         </div>
         <div class="footer-lockup">
+            {% if agency_logo %}<img src="{{ agency_logo }}">{% endif %}
             <span>{{ slide.footer_label|default('Premium Visual Agent') }}</span>
-            {% if slide.logo_image %}<img src="{{ slide.logo_image }}">{% elif agency_logo %}<img src="{{ agency_logo }}">{% endif %}
         </div>
+        {% if slide.canvas_elements %}
+            {% for el in slide.canvas_elements %}
+                {% if el.type == 'typo_substitution' or el.type == 'image' %}
+                    <img class="canvas-element" src="{{ el.path }}" style="left: {{ el.x }}%; top: {{ el.y }}%; width: {{ el.size|default(el.w)|default(20) }}%; height: {{ el.h|default('auto') }};">
+                {% elif el.type == 'text' %}
+                    <div class="canvas-element" style="left: {{ el.x }}%; top: {{ el.y }}%; font-size: {{ el.size|default(24) }}px; color: {{ el.color|default('var(--brand-text)') }}; font-weight: bold;">
+                        {{ el.content|default(el.text) }}
+                    </div>
+                {% endif %}
+            {% endfor %}
+        {% endif %}
     </section>
     {% endif %}
 {% endfor %}
+<script>
+    document.querySelectorAll('.bullets li, .metric-desc, .subtitle').forEach(el => {
+        el.innerHTML = el.innerHTML.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+        el.innerHTML = el.innerHTML.replace(/\*(.*?)\*/g, '<i>$1</i>');
+    });
+</script>
 </body>
 </html>

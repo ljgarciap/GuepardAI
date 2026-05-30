@@ -118,12 +118,26 @@ def infer_patterns_from_essence(essence: Dict[str, Any]) -> List[Dict[str, Any]]
         })
 
     if not inferred:
-        inferred.append({
-            "pattern_type": "editorial_split",
-            "description": "Default premium editorial split with disciplined image/text rhythm.",
-            "preferred_layouts": ["composition_split", "composition_pillars"],
-            "confidence": 0.64,
-        })
+        inferred.extend([
+            {
+                "pattern_type": "editorial_split",
+                "description": "Default premium editorial split with disciplined image/text rhythm.",
+                "preferred_layouts": ["composition_split", "composition_pillars"],
+                "confidence": 1.0,
+            },
+            {
+                "pattern_type": "full_bleed_hero",
+                "description": "Large image-led compositions with text overlay. Great for covers and section breaks.",
+                "preferred_layouts": ["composition_hero", "hero"],
+                "confidence": 1.0,
+            },
+            {
+                "pattern_type": "data_cards_brand_grid",
+                "description": "Structured KPI grid with branded cards. Perfect for metrics and multiple data points.",
+                "preferred_layouts": ["data_grid_cards", "data_grid"],
+                "confidence": 1.0,
+            }
+        ])
 
     return [
         normalized

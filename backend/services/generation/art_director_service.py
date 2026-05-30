@@ -65,6 +65,21 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
         essence = db.query(models.BrandArtisticEssence).filter(models.BrandArtisticEssence.brand_id == job.brand_id).first()
         art_direction_note = essence.art_direction_note if essence else "Maintain a clean, professional corporate style."
         
+        # Inyectar Patrones Premium disponibles (v15.0)
+        premium_patterns = db.query(models.BrandPremiumVisualPattern).filter(models.BrandPremiumVisualPattern.brand_id == job.brand_id).all()
+        premium_layout_options = []
+        if premium_patterns:
+            for p in premium_patterns:
+                if p.patterns_json:
+                    for pattern_dict in p.patterns_json:
+                        if isinstance(pattern_dict, dict) and "pattern_type" in pattern_dict:
+                            premium_layout_options.append(pattern_dict["pattern_type"])
+        if premium_layout_options:
+            art_direction_note += f"\n\nCRITICAL LAYOUT OVERRIDE PERMISSION: You are HIGHLY ENCOURAGED to override the basic grammar_type using one of the following premium layouts extracted from the brand's DNA: {', '.join(premium_layout_options)}. Choose the one that best fits the slide content."
+            
+        # Filtro semántico anti-competidores
+        art_direction_note += f"\n\nCRITICAL BRAND SAFETY: If any asset in the 'found_assets' list belongs to a direct competitor (e.g., a competitor's logo or store), DO NOT select it under any circumstances. Always prioritize assets that belong specifically to the brand we are designing for."
+        
         # v8.0: El Analista decide el grammar_type — el Art Director lo respeta
         analyst_grammar_type = strategy.get("grammar_type", "composition_split")
 
@@ -127,7 +142,8 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
         
         # Obtener el layout sugerido por el analista para el filtro de resolución
         suggested_layout = strategy.get("grammar_type", "strategic_split")
-        requires_hi_res = suggested_layout in ["hero", "full_brand_overlay", "big_image"]
+        # Consideramos split también como hi-res requirements para evitar estiramientos
+        requires_hi_res = suggested_layout in ["hero", "full_brand_overlay", "big_image", "full_bleed"] or "split" in suggested_layout
         
         for asset, score in asset_candidates:
             asset_info = {
@@ -138,9 +154,14 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
                 "path": os.path.basename(asset.local_path)
             }
             
+            # REGLA DE CALIDAD ESTRICTA: No logos ni íconos como imágenes de fondo
+            if requires_hi_res and asset.category in ["logos", "icons"]:
+                audit_metadata["rejected"].append({"reason": "Category forbidden for background", **asset_info})
+                continue
+            
             # REGLA DE CALIDAD v8.9: Verificación Física si no hay Metadata
             res_ok = True
-            min_required = 1024 if requires_hi_res else 400
+            min_required = 1200 if requires_hi_res else 800
             
             w, h = asset.width, asset.height
             if not w and asset.local_path and os.path.exists(asset.local_path):
@@ -148,6 +169,14 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
                     with Image.open(asset.local_path) as img:
                         w, h = img.size
                 except: pass
+
+            if w and w < min_required:
+                res_ok = False
+                audit_metadata["rejected"].append({"reason": f"Resolution too low ({w}px < {min_required}px)", **asset_info})
+            elif requires_hi_res and not w:
+                # v8.9.1: If dimensions are unknown and hi-res is required, reject it to prevent massive pixelation
+                res_ok = False
+                audit_metadata["rejected"].append({"reason": f"Unknown dimensions for hi-res layout", **asset_info})
 
             if score >= 0.40 and res_ok: 
                 filtered_assets.append(asset_info)
@@ -157,9 +186,29 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
 
         # FASE C: DIRECCIÓN DE ARTE (Ejecución con Memoria Visual)
         visual_history = []
+        # Traer layouts recientes (v5.0 Variety Enforcement)
+        recent_slides = db.query(models.PresentationSlide).filter(
+            models.PresentationSlide.job_id == job_id,
+            models.PresentationSlide.slide_number < slide.slide_number,
+            models.PresentationSlide.layout_slug != None
+        ).order_by(models.PresentationSlide.slide_number.desc()).limit(3).all()
+        
+        recent_layouts = [s.layout_slug for s in reversed(recent_slides)]
+        visual_history.append(f"Recent layouts used: {recent_layouts}")
+        
         for uid in used_assets:
             u_asset = db.query(models.BrandAsset).get(uid)
-            if u_asset: visual_history.append(u_asset.description[:100])
+            if u_asset: visual_history.append(f"Used Asset: {u_asset.description[:100]}")
+
+        # Extraer JSONs crudos para inyectarlos en el prompt
+        vision_dna_json = json.dumps(essence.raw_vision_response, indent=2) if essence and essence.raw_vision_response else "{}"
+        
+        premium_patterns_json_list = []
+        if premium_patterns:
+            for p in premium_patterns:
+                if p.patterns_json:
+                    premium_patterns_json_list.extend(p.patterns_json)
+        premium_patterns_json_str = json.dumps(premium_patterns_json_list, indent=2) if premium_patterns_json_list else "[]"
 
         prompt = prompt_tpl.value \
             .replace("{visual_strategy}", json.dumps(strategy)) \
@@ -170,7 +219,9 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
             .replace("{bullets}", str(slide.content_json.get("bullets", []))) \
             .replace("{found_assets}", json.dumps(filtered_assets)) \
             .replace("{visual_history}", json.dumps(visual_history)) \
-            .replace("{art_direction_note}", art_direction_note)
+            .replace("{art_direction_note}", art_direction_note) \
+            .replace("{vision_dna_json}", vision_dna_json) \
+            .replace("{premium_patterns_json}", premium_patterns_json_str)
         
         if is_premium:
             from providers.llm_provider import generate_premium_json

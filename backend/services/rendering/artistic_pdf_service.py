@@ -128,6 +128,11 @@ class ArtisticPDFService:
             slide["accent_image"] = self._asset_to_data_uri(slide.get("accent_image"))
             slide["logo_image"] = self._asset_to_data_uri(slide.get("logo_image"))
 
+            if slide.get("canvas_elements"):
+                for el in slide["canvas_elements"]:
+                    if el.get("path"):
+                        el["path"] = self._asset_to_data_uri(el.get("path"))
+
         common_data = {
             "primary_color": getattr(brand_dna, "primary_color", "#002D62") if brand_dna else "#002D62",
             "secondary_color": getattr(brand_dna, "secondary_color", "#E31837") if brand_dna else "#E31837",

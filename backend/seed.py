@@ -44,8 +44,8 @@ def seed_data():
             },
             {
                 "key": "embedding_model_chain",
-                "value": "mistral-embed,models/gemini-embedding-2",
-                "description": "Cadena de modelos de embedding."
+                "value": "mistral-embed,models/gemini-embedding-2,ollama/mxbai-embed-large",
+                "description": "Cadena de modelos para embeddings (v41.0)"
             },
             {
                 "key": "model_image_gen",

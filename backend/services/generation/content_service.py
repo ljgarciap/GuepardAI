@@ -151,11 +151,13 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
     saved_slides = db.query(models.PresentationSlide).filter(models.PresentationSlide.job_id == job_id).order_by(models.PresentationSlide.slide_number.asc()).all()
     for s in saved_slides:
         cjson = s.content_json or {}
+        raw_bullets = cjson.get("bullets", [])
+        safe_bullets = [b.get("description", b.get("priority", str(b))) if isinstance(b, dict) else str(b) for b in raw_bullets]
         slides.append(ContentManifestSlide(
             slide_number=s.slide_number,
             title=s.title,
             subtitle=cjson.get("subtitle"),
-            bullets=cjson.get("bullets", []),
+            bullets=safe_bullets,
             metrics=cjson.get("metrics", []),
             metric=cjson.get("metric"),
             label=cjson.get("label"),

@@ -152,8 +152,8 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
                     finally:
                         local_db.close()
                 
-                # Restored Concurrency: LLM provider will serialize if local model is used
-                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                # Restored Concurrency: Limit to 1 worker to respect Mistral's 1 RPS Free Tier limit
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                     future_to_item = {executor.submit(process_asset_worker, cat, item): item for cat, item in flat_items}
                     for future in concurrent.futures.as_completed(future_to_item):
                         processed_count += 1
@@ -206,6 +206,20 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
             record.design_gestures       = brand_essence.get("design_gestures", {})
             record.composition_rules     = brand_essence.get("composition_rules", {})
             record.art_direction_note    = brand_essence.get("art_direction_note", "")
+            record.raw_vision_response   = brand_essence.get("raw_vision_response", {})
+
+            from services.ingestion.visual_pattern_service import (
+                normalize_executable_patterns,
+                upsert_brand_patterns,
+            )
+            executable_patterns = brand_essence.get("executable_visual_patterns") or normalize_executable_patterns(brand_essence)
+            upsert_brand_patterns(
+                db,
+                brand_id=brand_id,
+                source_filename=source_filename,
+                patterns=executable_patterns,
+                raw_extraction=brand_essence.get("raw_vision_response", brand_essence),
+            )
             db.commit()
         finally:
             db.close()
@@ -224,12 +238,7 @@ def task_extract_full_brand_style(job_key: str, file_path: str, source_filename:
     try:
         cb("Analyzing Artistic Essence (Vision High-Fidelity)...", 10)
         essence_file = file_path
-        if file_path.lower().endswith(".pptx"):
-            pdf_path = convert_pptx_to_pdf(file_path, os.path.dirname(file_path))
-            if pdf_path:
-                essence_file = pdf_path
-                logger.info(f"  [Orchestrator] Using PDF for essence: {pdf_path}")
-        
+        # The artistic_essence_service already handles PPTX directly via _pptx_to_images without LibreOffice
         task_extract_artistic_essence(job_key, essence_file, source_filename, visibility_scope, brand_id, manual_tags)
     except Exception as e:
         logger.error(f"  [Orchestrator] Failed Artistic Essence: {e}")

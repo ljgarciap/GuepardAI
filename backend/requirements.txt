@@ -25,6 +25,7 @@ python-dotenv
 numpy
 loguru
 weasyprint
+playwright
 pydantic
 # Templating
 jinja2

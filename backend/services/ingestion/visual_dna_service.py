@@ -291,10 +291,10 @@ Your mission: Synthesize the brand's Visual DNA with high accuracy.
 
 STRICT COLOR RULES:
 1. primary_color: This MUST be the main institutional color (e.g., Tesco Blue #00539F). Ignore noise colors from photos or charts.
-2. secondary_color: A distinct secondary brand color (e.g., Tesco Red #EE1C2E). Must have high contrast with primary.
+2. secondary_color: A distinct secondary brand color (e.g., Tesco Red #EE1C2E). CRITICAL: Do NOT extract colors from infographics, pie charts, graphs, or competitor logos. Only extract true brand support colors.
 3. background_color: Usually #FFFFFF or a very light brand tint.
 4. text_main_color: Usually #000000 or very dark grey/navy for readability.
-5. accent_color: A vibrant accent color if present, or null.
+5. accent_color: A vibrant accent color if present, or null. CRITICAL: Again, ignore pie chart or graph colors.
 
 Return ONLY this JSON:
 {{

@@ -314,7 +314,7 @@
             {% if slide.subtitle %}<p class="subtitle">{{ slide.subtitle }}</p>{% endif %}
             <ul class="bullets">
                 {% for bullet in slide.bullets[:5] %}
-                <li>{{ bullet }}</li>
+                <li><span>{{ bullet }}</span></li>
                 {% endfor %}
             </ul>
         </div>

@@ -1,0 +1,41 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "Starting Deployment..."
+            cd /home/ubuntu/GuepardAI
+            
+            # Stash any local changes to prevent conflicts
+            git stash
+            
+            # Fetch and reset to latest
+            git fetch --all
+            git reset --hard origin/master
+            
+            # Rebuild and restart containers without downtime
+            echo "Building and restarting Docker containers..."
+            sudo docker compose up -d --build
+            
+            # Prune old images to save disk space
+            sudo docker image prune -f
+            
+            echo "Deployment completed successfully!"

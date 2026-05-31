@@ -112,11 +112,12 @@ RULES:
         is_human = vision_res.get("is_person", False)
         
         if not is_explicit_logo:
-            if final_category in ["photos", "lifestyle_photos"] or bg_type in ["solid_white", "solid_black", "transparent"]:
-                # EXCEPCIÓN: Si es una persona aislada, NO es un elemento de diseño, es lifestyle
-                if is_isolated and not is_human:
-                    print(f"  [Library] HEURISTIC TRIGGERED: Re-mapping {final_category} -> design_elements for {filename}")
-                    final_category = "design_elements"
+            if final_category != "logos":
+                if final_category in ["photos", "lifestyle_photos"] or bg_type in ["solid_white", "solid_black", "transparent"]:
+                    # EXCEPCIÓN: Si es una persona aislada, NO es un elemento de diseño, es lifestyle
+                    if is_isolated and not is_human:
+                        print(f"  [Library] HEURISTIC TRIGGERED: Re-mapping {final_category} -> design_elements for {filename}")
+                        final_category = "design_elements"
 
         # Ajuste por contenido humano (v28.0)
         if is_human:

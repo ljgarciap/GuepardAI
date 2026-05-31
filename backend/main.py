@@ -316,15 +316,7 @@ async def upload_asset(
     elif ingestion_type == "knowledge":
         background_tasks.add_task(task_ingest_knowledge, job_key, file_path, job_key, brand_id, visibility_scope, document_type)
     elif ingestion_type == "pure_assets":
-        # Hack: The frontend only sends pure_assets, but the user expects it to ALWAYS extract the full brand style too!
-        # So we dispatch the full brand style extraction, AND we also dispatch the pure_assets extraction.
-        # But wait, full_brand_style internally extracts assets too (visual_dna). 
-        # To not duplicate, we can just run full_brand_style and then update pure_assets status!
-        def wrapped_full_style():
-            task_extract_full_brand_style(job_key, file_path, job_key, visibility_scope, brand_id, safe_tags)
-            update_job_step(job_key, "pure_assets", "Asset harvest and DNA complete.", 100)
-            set_job_status(job_key, "pure_assets", "completed")
-        background_tasks.add_task(wrapped_full_style)
+        background_tasks.add_task(task_extract_pure_assets, job_key, file_path, job_key, visibility_scope, brand_id, safe_tags)
 
     return {"status": "processing", "job_key": job_key}
 

@@ -210,16 +210,22 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
                     premium_patterns_json_list.extend(p.patterns_json)
         premium_patterns_json_str = json.dumps(premium_patterns_json_list, indent=2) if premium_patterns_json_list else "[]"
 
+        safe_p_color = str(p_color) if p_color else "#0052A3"
+        safe_s_color = str(s_color) if s_color else "#EE1C2E"
+        safe_font = str(dna_record.primary_font) if dna_record and dna_record.primary_font else "Arial"
+        safe_title = str(slide.title) if slide.title else "Slide"
+        safe_art_note = str(art_direction_note) if art_direction_note else "Maintain a clean, professional corporate style."
+
         prompt = prompt_tpl.value \
             .replace("{visual_strategy}", json.dumps(strategy)) \
-            .replace("{primary_color}", p_color) \
-            .replace("{secondary_color}", s_color) \
-            .replace("{primary_font}", dna_record.primary_font if dna_record else "Arial") \
-            .replace("{slide_title}", slide.title) \
+            .replace("{primary_color}", safe_p_color) \
+            .replace("{secondary_color}", safe_s_color) \
+            .replace("{primary_font}", safe_font) \
+            .replace("{slide_title}", safe_title) \
             .replace("{bullets}", str(slide.content_json.get("bullets", []))) \
             .replace("{found_assets}", json.dumps(filtered_assets)) \
             .replace("{visual_history}", json.dumps(visual_history)) \
-            .replace("{art_direction_note}", art_direction_note) \
+            .replace("{art_direction_note}", safe_art_note) \
             .replace("{vision_dna_json}", vision_dna_json) \
             .replace("{premium_patterns_json}", premium_patterns_json_str)
         

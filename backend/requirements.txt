@@ -29,3 +29,4 @@ playwright
 pydantic
 # Templating
 jinja2
+json-repair

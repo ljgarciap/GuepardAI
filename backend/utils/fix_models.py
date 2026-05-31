@@ -1,4 +1,5 @@
-import sys
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 content = open('/app/models.py', 'r', encoding='utf-8').read()
 idx = content.find('job = relationship("GenerationJob", back_populates="slides")')

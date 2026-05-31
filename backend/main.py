@@ -48,7 +48,7 @@ print("[System] PowerAI Engine v11.0 (Clean Architecture) IS LIVE.", flush=True)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from seed import seed_data
+from utils.seed import seed_data
 
 Base.metadata.create_all(bind=engine)
 try:
@@ -489,9 +489,8 @@ def reset_database(admin_token: str = None, db: Session = Depends(get_db)):
         Base.metadata.create_all(bind=engine)
         
         # Run seed.py to re-populate configs
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        seed_path = os.path.join(script_dir, "seed.py")
-        subprocess.run([sys.executable, seed_path], check=True)
+        from utils.seed import seed_data
+        seed_data()
         
         return {"status": "success", "message": "Database reset and seeded successfully."}
     except Exception as e:

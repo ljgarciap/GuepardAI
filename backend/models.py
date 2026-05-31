@@ -110,6 +110,9 @@ class BrandArtisticEssence(Base):
     source_filename = Column(String, index=True, nullable=False)  # mismo archivo que BrandVisualDna
 
     brand = relationship("Brand", back_populates="artistic_essence")
+    
+    # Estrategia visual general (extraída por Vision)
+    visual_strategy = Column(JSON, nullable=True)
 
     # Arquetipos de layout por tipo de slide
     # {
@@ -118,8 +121,8 @@ class BrandArtisticEssence(Base):
     #   "image":      { "treatment": "full-bleed-overlay-40", ... },
     #   "conclusion": { "layout": "centered-dark", ... }
     # }
-    slide_archetypes   = Column(JSONB, nullable=True)
-    structural_archetypes = Column(JSONB, nullable=True) # ADN Estructural (rejillas, columnas)
+    slide_archetypes   = Column(JSON, nullable=True)
+    structural_archetypes = Column(JSON, nullable=True) # ADN Estructural (rejillas, columnas)
 
     # Gestures distintivos del diseñador
     # {
@@ -131,7 +134,7 @@ class BrandArtisticEssence(Base):
     #   "accent_geometry": "vertical-line|horizontal-bar|dot|none",
     #   "accent_color_source": "primary|secondary|accent"
     # }
-    design_gestures    = Column(JSONB, nullable=True)
+    design_gestures    = Column(JSON, nullable=True)
 
     # Rules de composición y espacio
     # {
@@ -142,7 +145,7 @@ class BrandArtisticEssence(Base):
     #   "image_role": "background|supporting|hero",
     #   "text_hierarchy": "high-contrast|minimalist|executive"
     # }
-    composition_rules  = Column(JSONB, nullable=True)
+    composition_rules  = Column(JSON, nullable=True)
 
     # Description en lenguaje natural del estilo (útil para el prompt de generación)
     art_direction_note = Column(Text, nullable=True)
@@ -153,6 +156,26 @@ class BrandArtisticEssence(Base):
     created_at         = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at         = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     is_public          = Column(Integer, default=0) # 0=Exclusive, 1=Public
+
+
+class BrandPremiumVisualPattern(Base):
+    """
+    Premium Visual Agent pattern store.
+    Keeps executable visual patterns separate from BrandVisualDna so the PPTX
+    pipeline can continue using its existing brand DNA contract.
+    """
+    __tablename__ = "brand_premium_visual_patterns"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    brand_id        = Column(Integer, ForeignKey("brands.id"), index=True)
+    source_filename = Column(String, index=True, nullable=False)
+
+    patterns_json   = Column(JSONB, nullable=True)
+    pattern_summary = Column(Text, nullable=True)
+    raw_extraction  = Column(JSONB, nullable=True)
+
+    created_at      = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at      = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
 
 # ============================================================
@@ -285,7 +308,7 @@ class ArtDirectorDecision(Base):
     slide_number = Column(Integer)
     
     decision_type = Column(String(50)) # 'layout', 'asset_selection', 'color_logic'
-    summary       = Column(String(500))
+    summary       = Column(Text)
     reasoning     = Column(Text)
     
     # Bitácora de Auditoría (v4.0)

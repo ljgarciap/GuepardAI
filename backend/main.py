@@ -13,7 +13,7 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 import models
 from database import SessionLocal, engine, Base
-from services.ingestion_orchestrator import (
+from services.ingestion.ingestion_orchestrator import (
     task_extract_visual_dna,
     task_extract_artistic_essence,
     task_extract_full_brand_style,
@@ -21,23 +21,27 @@ from services.ingestion_orchestrator import (
     task_extract_pure_assets,
     task_generate_presentation
 )
-from services.brand_service import create_brand_logic, update_brand_logic
+from services.core.brand_service import create_brand_logic, update_brand_logic
 import uuid
 from datetime import datetime
 from sqlalchemy import JSON
 
 # ── PIPELINE SERVICES ──
-from services.content_engine import synthesize_strategic_content
-from services.asset_engine import orchestrate_assets
-from services.layout_engine import apply_design_policy
-from services.pptx_renderer import render_pptx_manifest
+from services.generation.content_engine import synthesize_strategic_content
+from services.assets.asset_engine import orchestrate_assets
+from services.rendering.layout_engine import apply_design_policy
+from services.rendering.pptx_renderer import render_pptx_manifest
 
 # ── INGESTION SERVICES (nuevos) ──
-from services.visual_dna_service import extract_visual_dna
-from services.artistic_essence_service import extract_artistic_essence
+from services.ingestion.visual_dna_service import extract_visual_dna
+from services.ingestion.artistic_essence_service import extract_artistic_essence
 
 # ── INGESTION SERVICES (legacy RAG — sin cambios) ──
-from ingest_knowledge import ingest_document as ingest_rag
+from services.ingestion.ingest_knowledge import ingest_document as ingest_rag
+
+# Actualizar caché de fuentes por si se subieron fuentes personalizadas
+print("[System] Updating font cache for LibreOffice...", flush=True)
+os.system("fc-cache -f")
 
 print("[System] PowerAI Engine v11.0 (Clean Architecture) IS LIVE.", flush=True)
 
@@ -105,6 +109,7 @@ class PresentationRequest(BaseModel):
     brand_id: Optional[int] = None
     allow_ai_images: bool = False
     output_format: str = "pptx" # 'pptx' or 'pdf_artistic'
+    tier: str = "free"         # 'free' | 'premium' (Fix/Roadmap 1)
 
 
 # ──────────────────────────────────────────────
@@ -311,7 +316,15 @@ async def upload_asset(
     elif ingestion_type == "knowledge":
         background_tasks.add_task(task_ingest_knowledge, job_key, file_path, job_key, brand_id, visibility_scope, document_type)
     elif ingestion_type == "pure_assets":
-        background_tasks.add_task(task_extract_pure_assets, job_key, file_path, job_key, visibility_scope, brand_id, safe_tags)
+        # Hack: The frontend only sends pure_assets, but the user expects it to ALWAYS extract the full brand style too!
+        # So we dispatch the full brand style extraction, AND we also dispatch the pure_assets extraction.
+        # But wait, full_brand_style internally extracts assets too (visual_dna). 
+        # To not duplicate, we can just run full_brand_style and then update pure_assets status!
+        def wrapped_full_style():
+            task_extract_full_brand_style(job_key, file_path, job_key, visibility_scope, brand_id, safe_tags)
+            update_job_step(job_key, "pure_assets", "Asset harvest and DNA complete.", 100)
+            set_job_status(job_key, "pure_assets", "completed")
+        background_tasks.add_task(wrapped_full_style)
 
     return {"status": "processing", "job_key": job_key}
 
@@ -452,7 +465,8 @@ async def generate_presentation(
         "prompt": request.prompt,
         "region": request.region,
         "allow_ai_images": request.allow_ai_images,
-        "output_format": request.output_format
+        "output_format": request.output_format,
+        "tier": request.tier
     }
     
     background_tasks.add_task(
@@ -463,6 +477,33 @@ async def generate_presentation(
 
     return {"job_id": job.id, "status": "pending"}
 
+@app.delete("/api/admin/reset-db", tags=["Admin"])
+def reset_database(admin_token: str = None, db: Session = Depends(get_db)):
+    """HARD RESET: Limpia toda la base de datos y vuelve a sembrar las configuraciones."""
+    from fastapi import HTTPException
+    import os
+    
+    expected_token = os.getenv("ADMIN_TOKEN")
+    if not expected_token or admin_token != expected_token:
+        raise HTTPException(status_code=403, detail="Forbidden: Invalid or missing admin token")
+        
+    from database import engine, Base
+    import subprocess
+    import sys
+    
+    try:
+        # Drop and recreate all tables
+        Base.metadata.drop_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
+        
+        # Run seed.py to re-populate configs
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        seed_path = os.path.join(script_dir, "seed.py")
+        subprocess.run([sys.executable, seed_path], check=True)
+        
+        return {"status": "success", "message": "Database reset and seeded successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

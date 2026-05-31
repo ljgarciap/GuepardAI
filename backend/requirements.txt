@@ -14,8 +14,6 @@ mistralai==1.7.0
 openai
 google-generativeai
 
-# Embeddings & ML
-sentence-transformers
 
 # File Processing
 python-pptx
@@ -25,7 +23,9 @@ Pillow
 # Utilities
 python-dotenv
 numpy
-pydantic
-# PDF Artistic Rendering
+loguru
+weasyprint
 playwright
+pydantic
+# Templating
 jinja2

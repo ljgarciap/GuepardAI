@@ -1,10 +1,10 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from services.font_service import install_font, ensure_brand_fonts
+from services.rendering.font_service import install_font, ensure_brand_fonts
 
 def test_install_font_already_exists(tmp_path):
     # Mockear el directorio de fuentes para usar uno temporal
-    with patch("services.font_service.FONT_DIR", str(tmp_path)):
+    with patch("services.rendering.font_service.FONT_DIR", str(tmp_path)):
         # Crear un archivo de fuente ficticio
         font_file = tmp_path / "Inter.ttf"
         font_file.write_text("dummy font content")
@@ -25,7 +25,7 @@ def test_ensure_brand_fonts_updates_db():
     brand_id = 1
     
     # Simular que install_font devuelve un nombre diferente (sincronizado)
-    with patch("services.font_service.install_font") as mock_install:
+    with patch("services.rendering.font_service.install_font") as mock_install:
         mock_install.side_effect = ["Inter", "Roboto Slab"]
         
         ensure_brand_fonts(db, brand_id, visual_dna)

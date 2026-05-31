@@ -2,20 +2,24 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies for document processing
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
     libreoffice-draw \
     libreoffice-impress \
+    fontconfig \
+    fonts-liberation \
+    fonts-crosextra-carlito \
+    fonts-crosextra-caladea \
+    fontforge \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m playwright install --with-deps chromium
 
-# Install Playwright browsers AND their system dependencies
-RUN playwright install chromium --with-deps
 
 # Copy application code
 COPY . .

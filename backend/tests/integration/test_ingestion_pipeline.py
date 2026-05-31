@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from services.ingestion_orchestrator import task_extract_full_brand_style
+from services.ingestion.ingestion_orchestrator import task_extract_full_brand_style
 import models
 
 def test_full_ingestion_flow_no_leaks(tmp_path):
@@ -8,10 +8,10 @@ def test_full_ingestion_flow_no_leaks(tmp_path):
     db_mock = MagicMock()
     
     # Mockear las funciones pesadas de IA
-    with patch("services.ingestion_orchestrator.task_extract_artistic_essence") as mock_essence:
-        with patch("services.ingestion_orchestrator.task_extract_visual_dna") as mock_dna:
-            with patch("services.ingestion_orchestrator.update_job_step") as mock_step:
-                with patch("services.ingestion_orchestrator.set_job_status") as mock_status:
+    with patch("services.ingestion.ingestion_orchestrator.task_extract_artistic_essence") as mock_essence:
+        with patch("services.ingestion.ingestion_orchestrator.task_extract_visual_dna") as mock_dna:
+            with patch("services.ingestion.ingestion_orchestrator.update_job_step") as mock_step:
+                with patch("services.ingestion.ingestion_orchestrator.set_job_status") as mock_status:
                     
                     # Ejecutar el orquestador
                     task_extract_full_brand_style(
@@ -31,8 +31,8 @@ def test_full_ingestion_flow_no_leaks(tmp_path):
 
 def test_ingestion_error_handling():
     # Validar que si algo falla, el status sea 'error'
-    with patch("services.ingestion_orchestrator.task_extract_artistic_essence", side_effect=Exception("IA Down")):
-        with patch("services.ingestion_orchestrator.set_job_status") as mock_status:
+    with patch("services.ingestion.ingestion_orchestrator.task_extract_artistic_essence", side_effect=Exception("IA Down")):
+        with patch("services.ingestion.ingestion_orchestrator.set_job_status") as mock_status:
             # No debería explotar, debería atrapar el error
             task_extract_full_brand_style("job_err", "fail.pdf", "fail.pdf", brand_id=1)
             

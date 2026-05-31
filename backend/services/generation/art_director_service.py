@@ -212,16 +212,16 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
 
         prompt = prompt_tpl.value \
             .replace("{visual_strategy}", json.dumps(strategy)) \
-            .replace("{primary_color}", str(p_color or "#0052A3")) \
-            .replace("{secondary_color}", str(s_color or "#EE1C2E")) \
-            .replace("{primary_font}", str(dna_record.primary_font if dna_record and dna_record.primary_font else "Arial")) \
-            .replace("{slide_title}", str(slide.title or "Slide")) \
+            .replace("{primary_color}", p_color) \
+            .replace("{secondary_color}", s_color) \
+            .replace("{primary_font}", dna_record.primary_font if dna_record else "Arial") \
+            .replace("{slide_title}", slide.title) \
             .replace("{bullets}", str(slide.content_json.get("bullets", []))) \
             .replace("{found_assets}", json.dumps(filtered_assets)) \
             .replace("{visual_history}", json.dumps(visual_history)) \
-            .replace("{art_direction_note}", str(art_direction_note or "")) \
-            .replace("{vision_dna_json}", str(vision_dna_json or "{}")) \
-            .replace("{premium_patterns_json}", str(premium_patterns_json_str or "[]"))
+            .replace("{art_direction_note}", art_direction_note) \
+            .replace("{vision_dna_json}", vision_dna_json) \
+            .replace("{premium_patterns_json}", premium_patterns_json_str)
         
         if is_premium:
             from providers.llm_provider import generate_premium_json

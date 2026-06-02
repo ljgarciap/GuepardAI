@@ -30,3 +30,9 @@ pydantic
 # Templating
 jinja2
 json-repair
+
+# Testing
+pytest
+pytest-asyncio
+pytest-cov
+httpx

@@ -319,24 +319,26 @@ def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str,
 
 def task_generate_presentation(job_id: int, req_data: dict):
     """
-    Background task for generation (v23.0 - Modular).
+    Background task for generation (v24.0 - Agent Orchestrator).
+    Enruta el job al AgentOrchestrator MCP.
     """
-    logger.info(f"[Orchestrator] Generation started for Job: {job_id}")
-    from services.rendering.layout_engine import generate_presentation_flow
+    logger.info(f"[Orchestrator] Generation started for Job: {job_id} via AgentOrchestrator")
+    from agents.orchestrator import AgentOrchestrator
     
     try:
-        db = SessionLocal()
-        # El motor espera db, job_id, y los datos.
-        # Asumimos que la ruta del PPTX se define dentro de generate_presentation_flow o se pasa aquí.
-        generate_presentation_flow(db, job_id, req_data)
-        db.close()
+        # Instanciar el orquestador inteligente
+        orchestrator = AgentOrchestrator()
+        orchestrator.run_generation_pipeline(job_id, req_data)
+        
     except Exception as e:
         err_msg = f"Generation error: {str(e)}"
         logger.error(f"[Orchestrator] {err_msg}")
         db = SessionLocal()
-        job = db.query(models.GenerationJob).get(job_id)
-        if job:
-            job.status = "error"
-            job.current_step = err_msg
-            db.commit()
-        db.close()
+        try:
+            job = db.query(models.GenerationJob).get(job_id)
+            if job:
+                job.status = "error"
+                job.current_step = err_msg
+                db.commit()
+        finally:
+            db.close()

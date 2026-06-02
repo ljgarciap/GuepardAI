@@ -80,207 +80,22 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
         "visual_strategy":       getattr(brand_essence, "visual_strategy", ""),
     }
 
-    policy = parse_essence_to_policy(
-        brand_id=getattr(brand_dna, "brand_id", 0),
-        brand_name=getattr(brand_dna, "brand_name", ""),
-        artistic_essence=artistic_essence_dict,
-        visual_dna=visual_dna_dict,
-        force_width=getattr(brand_dna, "slide_width_inches", 21.99),
-        force_height=getattr(brand_dna, "slide_height_inches", 12.37)
-    )
-
-    # 2. Obtener Biblioteca de Imágenes Disponibles
-    # Esto es CRUCIAL para dejar de usar solo 2 imágenes.
-    available_assets = []
-    if hasattr(brand_dna, "extracted_assets") and brand_dna.extracted_assets:
-        for cat in ["photos", "logos", "icons"]:
-            for asset in brand_dna.extracted_assets.get(cat, []):
-                available_assets.append({
-                    "id": asset.get("id"),
-                    "tags": asset.get("tags", []),
-                    "description": asset.get("description", "")
-                })
-
-    # 3. LLM ART DIRECTOR: Planificación Maestra
-    # Le pedimos al LLM que analice TODO el contenido y asigne los mejores recursos.
-    model_name = get_system_config("art_director_model", "gpt-4o-mini")
-
-    # 3. Director de Arte Senior - Slide by Slide Analysis (v18.7)
-    # Buscamos slides de referencia del manual original para máxima fidelidad
-    from services.assets.asset_library_service import find_best_assets
-    
-    # Intentamos encontrar las "slides maestras" del manual original
-    reference_slides = find_best_assets(
-        db, 
-        getattr(brand_dna, "brand_id", brand_dna.id),
-        keywords=["slide", "layout", "presentation"],
-        category="reference",
-        limit=20
-    )
-    
-    art_director_prompt = f"""
-    You are a Senior Art Director for {getattr(brand_dna, 'brand_name', 'Tesco')}.
-    
-    BRAND DNA (STRICT ADHERENCE):
-    - Primary Color: {visual_dna_dict['primary_color']}
-    - Secondary Color: {visual_dna_dict['secondary_color']}
-    - Main Font: {visual_dna_dict['primary_font']}
-    
-    VISUAL STRATEGY: {artistic_essence_dict['visual_strategy']}
-    DESIGN GESTURES: {json.dumps(artistic_essence_dict['design_gestures'])}
-    PATTERNS: {artistic_essence_dict['visual_patterns']}
-    
-    TASK: Assign the best images and layout archetypes for each slide to maximize BRAND FIDELITY.
-    AVAILABLE IMAGES: {json.dumps(available_assets[:50])}
-    REFERENCE SLIDES FROM MANUAL: {json.dumps([{'id': r.id, 'desc': r.description} for r in reference_slides])}
-    
-    CONTENT TO RE-LAYOUT:
-    {json.dumps([{ 'i': i, 'title': s.get('title'), 'bullets': s.get('bullets', []) } for i, s in enumerate(all_slides)])}
-    
-    ART DIRECTION RULES:
-    1. BRAND COLORS: Use {visual_dna_dict['primary_color']} for headers and important shapes.
-    2. IMAGE SELECTION (CRITICAL): Prioritize 'Tesco' branded photos or logos from the AVAILABLE IMAGES. 
-    3. NO GENERIC: Avoid using non-branded lifestyle photos if a Tesco-specific asset exists.
-    4. FIDELITY: If a 'REFERENCE SLIDE' from the manual matches the content type, use its structure.
-    
-    OUTPUT ONLY JSON:
-    {{
-      "assignments": [
-        {{ 
-          "i": 0, 
-          "layout": "full-bleed | split-right | accent-box | title-hero", 
-          "image_id": "filename from AVAILABLE IMAGES", 
-          "font_scale": 0.9,
-          "reference_id": "optional_id_from_manual" 
-        }}
-      ]
-    }}
-    """
-    
-    try:
-        from providers.llm_provider import generate_premium_json
-        planning = generate_premium_json(art_director_prompt)
-        assignments = { item['i']: item for item in planning.get("assignments", []) }
-    except:
-        assignments = {}
-
-    # 4. Construcción Final con Persistencia Granular (v18.5)
-    from database import SessionLocal
-    from models import PresentationSlide
-    db = SessionLocal()
-    
-    # Limpiamos slides previas si es un re-intento
-    db.query(PresentationSlide).filter(PresentationSlide.job_id == job_id).delete()
-
-    full_bleed_budget = {"used": 0, "max": int(total_slides * 0.3)}
-    final_manifest = {
-        "theme": { "primary": visual_dna_dict["primary_color"], "background": visual_dna_dict["background_color"], "font_main": visual_dna_dict["primary_font"] },
-        "canvas": { "width_inches": policy.canvas.width_inches, "height_inches": policy.canvas.height_inches },
-        "slides": []
-    }
-
-    for i, slide in enumerate(all_slides):
-        plan = assignments.get(i, {})
-        # Usamos el plan del director de arte o inferimos si falló
-        stype = plan.get("layout", _infer_slide_type(slide))
-        
-        # Override de imagen semántica
-        if plan.get("image_id"):
-            from models import BrandAsset
-            asset_rec = db.query(BrandAsset).get(plan["image_id"])
-            if asset_rec:
-                slide["assigned_image"] = os.path.basename(asset_rec.local_path)
-        
-        elements, layout = build_slide_elements(
-            slide=slide,
-            slide_type=stype,
-            slide_index=i,
-            total_slides=total_slides,
-            policy=policy,
-            visual_dna=visual_dna_dict,
-            full_bleed_budget=full_bleed_budget,
-            font_scale_override=plan.get("font_scale", 1.0)
-        )
-
-        # PERSISTENCIA EN DB (v18.5)
-        new_slide = PresentationSlide(
-            job_id=job_id,
-            slide_number=i + 1,
-            title=slide.get("title") or "Untitled",
-            content_json=slide,
-            layout_slug=layout,
-            assigned_image=slide.get("assigned_image"),
-            reference_id=plan.get("reference_id"),
-            font_scale=plan.get("font_scale", 1.0),
-            render_elements=elements,
-            planning_json={
-                "layout_reasoning": f"Chose {layout} based on {stype} strategy",
-                "grammar_logic": elements.get("grammar_type", "standard") if isinstance(elements, dict) else "standard"
-            }
-        )
-        db.add(new_slide)
-
-        final_manifest["slides"].append({
-            "slide_number": i + 1,
-            "elements": elements,
-            "layout": layout,
-            "title": slide.get("title")
-        })
-
-    db.commit()
-    db.close()
-    return final_manifest
-
-def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
-    """
-    ORQUESTADOR MAESTRO V11 (Decoupled Architecture).
-    Coordina: Content -> Art Director (Base/Premium) -> RenderManifest -> GammaPainter
-    """
-    from services.generation.content_service import synthesize_presentation_outline
-    from services.generation.decoupled_art_director import BaseArtDirector, PremiumArtDirector
-    from services.rendering.painter import GammaPainter
-    from schemas.presentation import RenderManifest, PainterSlideData, PainterAgencyBranding
-    from services.rendering.painter_bridge import GRAMMAR_TO_PAINTER
-from services.ingestion.brand_composition_dna import (
-    parse_essence_to_policy,
-    build_slide_elements,
-    BrandCompositionPolicy,
-)
-
-def orchestrate_visual_coherence(content_manifest: dict, brand_dna, brand_essence=None) -> dict:
-    return content_manifest
-
-def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, job_id=None, db=None) -> dict:
-    """
-    DESIGN ARCHITECT v18.0 — SENIOR ART DIRECTOR DRIVEN.
-    Analiza slide por slide para evitar colisiones y elegir las mejores imágenes.
-    """
-    all_slides = content_manifest.get("slides", [])
-    total_slides = len(all_slides)
-
-    # 1. Preparar Contexto de Marca
-    visual_dna_dict = {
-        "primary_color":    getattr(brand_dna, "primary_color", "#0052A3"),
-        "secondary_color":  getattr(brand_dna, "secondary_color", "#EE1C2E"),
-        "background_color": getattr(brand_dna, "background_color", "#FFFFFF"),
-        "primary_font":     getattr(brand_dna, "primary_font", "Arial"),
-    }
-    
-    artistic_essence_dict = {
-        "structural_archetypes": getattr(brand_essence, "structural_archetypes", {}),
-        "slide_archetypes":      getattr(brand_essence, "slide_archetypes", {}),
-        "design_gestures":       getattr(brand_essence, "design_gestures", {}),
-        "visual_patterns":       getattr(brand_essence, "visual_patterns", []),
-        "visual_strategy":       getattr(brand_essence, "visual_strategy", ""),
-    }
+    # Resolver path real del PPTX fuente
+    pptx_source_path = None
+    source_fn = getattr(brand_dna, "source_filename", None)
+    if source_fn:
+        candidate = os.path.join("uploads", source_fn)
+        if os.path.exists(candidate):
+            pptx_source_path = candidate
 
     policy = parse_essence_to_policy(
         brand_id=getattr(brand_dna, "brand_id", 0),
         brand_name=getattr(brand_dna, "brand_name", ""),
         artistic_essence=artistic_essence_dict,
         visual_dna=visual_dna_dict,
-        force_width=getattr(brand_dna, "slide_width_inches", 21.99),
-        force_height=getattr(brand_dna, "slide_height_inches", 12.37)
+        source_pptx_path=pptx_source_path,
+        force_width=getattr(brand_dna, "slide_width_inches", None) or None,
+        force_height=getattr(brand_dna, "slide_height_inches", None) or None
     )
 
     # 2. Obtener Biblioteca de Imágenes Disponibles
@@ -496,14 +311,35 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
         if not os.path.exists(uploads_dir):
             uploads_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "uploads"))
 
-        art_director = PremiumArtDirector(db, job_id, uploads_dir) if is_premium else BaseArtDirector(db, job_id)
-        
-        base_design = art_director.plan(content_manifest)
-        if is_premium:
-            final_design = art_director.enrich_design(base_design, content_manifest, design_system)
+        if req_data.get("skip_design"):
+            print("  [Flow] Skipping Art Direction, building final design from DB...")
+            from schemas.presentation import DesignManifest, DesignManifestSlide
+            d_slides = []
+            saved_slides = db.query(models.PresentationSlide).filter(models.PresentationSlide.job_id == job_id).order_by(models.PresentationSlide.slide_number.asc()).all()
+            for s in saved_slides:
+                primary_path = None
+                img_val = s.assigned_image
+                if img_val:
+                    if str(img_val).isdigit():
+                        asset_rec = db.query(models.BrandAsset).get(int(img_val))
+                        if asset_rec and asset_rec.local_path:
+                            primary_path = asset_rec.local_path
+                    else:
+                        primary_path = str(img_val)
+
+                d_slides.append(DesignManifestSlide(
+                    slide_number=s.slide_number,
+                    layout_type=s.layout_slug or s.content_json.get("layout_type", "strategic_split"),
+                    primary_asset_path=primary_path
+                ))
+            final_design = DesignManifest(job_id=job_id, slides=d_slides, theme={})
         else:
-            # Here we would normally extract assets from DB for Base mode, but skipping for brevity
-            final_design = base_design
+            art_director = PremiumArtDirector(db, job_id, uploads_dir) if is_premium else BaseArtDirector(db, job_id)
+            base_design = art_director.plan(content_manifest)
+            if is_premium:
+                final_design = art_director.enrich_design(base_design, content_manifest, design_system)
+            else:
+                final_design = base_design
 
         job.current_step = "Phase 3/3: Assembling native decoupled presentation..."
         job.progress = 80

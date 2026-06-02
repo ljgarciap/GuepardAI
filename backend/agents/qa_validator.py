@@ -52,7 +52,20 @@ class ValidateBrandTool(BaseAgentTool):
                 # Puedes agregar más reglas deterministas aquí
                 # Ejemplo: Slide text demasiado largo para un impact_number, etc.
 
-            return {"status": "passed" if not violations else "failed", "violations": violations}
+            result_status = "passed" if not violations else "failed"
+
+            # GAP 1: Trazar decisión determinística en ArtDirectorDecision
+            self.log_decision(
+                db=db,
+                job_id=job_id,
+                decision_type="brand_violation",
+                summary=f"Deterministic QA: {result_status.upper()} — {len(violations)} violation(s) found.",
+                reasoning="",
+                metadata={"violations": violations, "total_slides_checked": len(slides)},
+            )
+            db.commit()
+
+            return {"status": result_status, "violations": violations}
         finally:
             db.close()
 
@@ -124,6 +137,7 @@ class ScoreFidelityTool(BaseAgentTool):
             result = generate_json(prompt, specialization="general")
             score = float(result.get("score", 1.0))
             needs_rework = bool(result.get("needs_rework", score < threshold))
+            reasoning = result.get("reasoning", "")
 
             if needs_rework:
                 job.status = "qa_failed"
@@ -131,12 +145,24 @@ class ScoreFidelityTool(BaseAgentTool):
             else:
                 job.status = "qa_passed"
                 job.current_step = "QA Validator approved the layout plan."
+
+            # GAP 1: Trazar veredicto del LLM Juez en ArtDirectorDecision
+            self.log_decision(
+                db=db,
+                job_id=job_id,
+                decision_type="qa_score",
+                summary=f"LLM QA Judge: score={score:.2f}, needs_rework={needs_rework}",
+                reasoning=reasoning,
+                prompt_used=prompt,
+                response_raw=result,
+                metadata={"score": score, "threshold": threshold, "needs_rework": needs_rework},
+            )
             db.commit()
 
             return {
                 "score": score,
                 "needs_rework": needs_rework,
-                "reasoning": result.get("reasoning", "")
+                "reasoning": reasoning
             }
         finally:
             db.close()

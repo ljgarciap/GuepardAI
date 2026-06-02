@@ -57,6 +57,31 @@ class ComposeLayoutTool(BaseAgentTool):
                 job.current_step = "Layout and images successfully assigned."
                 db.commit()
 
+            # GAP 1: Trazar decisión de layout por slide en ArtDirectorDecision
+            if success:
+                planned_slides = db.query(models.PresentationSlide).filter(
+                    models.PresentationSlide.job_id == job_id,
+                    models.PresentationSlide.status == "planned"
+                ).all()
+                for slide in planned_slides:
+                    art_reasoning = ""
+                    if slide.planning_json:
+                        art_reasoning = slide.planning_json.get("art_director", {}).get("reasoning", "")
+                    self.log_decision(
+                        db=db,
+                        job_id=job_id,
+                        decision_type="layout",
+                        summary=f"Slide {slide.slide_number}: layout='{slide.layout_slug}', image='{slide.assigned_image}'",
+                        reasoning=art_reasoning,
+                        slide_number=slide.slide_number,
+                        metadata={
+                            "layout_slug": slide.layout_slug,
+                            "assigned_image": slide.assigned_image,
+                            "is_premium": is_premium,
+                        },
+                    )
+                db.commit()
+
             return {"success": success, "job_id": job_id}
         finally:
             db.close()

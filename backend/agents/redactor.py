@@ -66,6 +66,24 @@ class GenerateTextTool(BaseAgentTool):
             # Llama a la lógica original de síntesis de contenido (que ya guarda en BD)
             content_manifest = synthesize_presentation_outline(db, job_id, req_data)
 
+            slide_count = len(content_manifest.get("slides", [])) if isinstance(content_manifest, dict) else 0
+
+            # GAP 1: Trazar síntesis de contenido en ArtDirectorDecision
+            self.log_decision(
+                db=db,
+                job_id=job_id,
+                decision_type="content_synthesis",
+                summary=f"Redactor generated {slide_count} slide(s) from prompt.",
+                reasoning=f"Prompt: {prompt[:300]}...",
+                metadata={
+                    "slide_count": slide_count,
+                    "region": region,
+                    "style_filename": style_filename,
+                    "knowledge_filename": knowledge_filename,
+                    "allow_ai_images": allow_ai_images,
+                },
+            )
+
             if job:
                 job.status = "content_ready"
                 job.current_step = "Content structure ready for review or layout."

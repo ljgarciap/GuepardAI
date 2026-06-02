@@ -230,29 +230,40 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
         set_job_status(job_key, "artistic", "error", message=err_msg)
 
 def task_extract_full_brand_style(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
-    """Decoupled brand identity orchestration (Context-Aware v22.0)."""
-    cb = lambda msg, p=0: update_job_step(job_key, "brand_style", msg, p)
-    
-    # 1. Esencia (Aislada) - USAR PDF SI ES POSIBLE (v34.0)
-    # Se extrae PRIMERO para generar el Contexto de Marca (Brand Rulebook)
-    try:
-        cb("Analyzing Artistic Essence (Vision High-Fidelity)...", 10)
-        essence_file = file_path
-        # The artistic_essence_service already handles PPTX directly via _pptx_to_images without LibreOffice
-        task_extract_artistic_essence(job_key, essence_file, source_filename, visibility_scope, brand_id, manual_tags)
-    except Exception as e:
-        logger.error(f"  [Orchestrator] Failed Artistic Essence: {e}")
+    """
+    Orquestación de identidad de marca — GAP 2: Enruta al AgentOrchestrator (v25.0).
 
-    # 2. DNA (Aislado) - Context-Aware
-    # Se ejecuta DESPUÉS para que el modelo de Visión tenga acceso al Brand Rulebook al clasificar imágenes
-    try:
-        cb("Extracting Visual DNA (Atomic & Context-Aware)...", 50)
-        task_extract_visual_dna(job_key, file_path, source_filename, visibility_scope, brand_id, manual_tags)
-    except Exception as e:
-        logger.error(f"  [Orchestrator] Failed Visual DNA: {e}")
+    El Brand Analyst Agent (ReadPPTXTool + ExtractPaletteTool) ahora corre bajo
+    el mismo Orquestador Central que el pipeline de generación, cerrando el ciclo MCP.
+    """
+    logger.info(f"[Orchestrator] task_extract_full_brand_style → AgentOrchestrator for brand_id={brand_id}")
+    from agents.orchestrator import AgentOrchestrator
 
-    update_job_step(job_key, "brand_style", "Process finished.", 100)
-    set_job_status(job_key, "brand_style", "completed")
+    upload_dir = os.path.dirname(file_path)
+
+    # Obtener el ID del IngestionJob para que los BrandAnalyst Tools puedan actualizar su estado
+    ingestion_job_id = -1  # Valor centinela: si no hay job en BD, las Tools actuarán sin actualizar estado
+    db = SessionLocal()
+    try:
+        job_record = db.query(models.IngestionJob).filter(
+            models.IngestionJob.client_name == job_key,
+            models.IngestionJob.ingestion_type == "brand_style"
+        ).first()
+        if job_record:
+            ingestion_job_id = job_record.id
+    finally:
+        db.close()
+
+    # Delegar al AgentOrchestrator (cierra el GAP 2)
+    orchestrator = AgentOrchestrator()
+    orchestrator.run_ingestion_pipeline(
+        ingestion_job_id=ingestion_job_id,
+        file_path=file_path,
+        source_filename=source_filename,
+        brand_id=brand_id,
+        upload_dir=upload_dir,
+        job_key=job_key,
+    )
 
 def task_ingest_knowledge(job_key: str, file_path: str, source_filename: str, brand_id: int = None, visibility_scope: str = "exclusive", document_type: str = "company_knowledge"):
     """Ingesta RAG con Soberanía (v21.0)."""

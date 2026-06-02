@@ -174,6 +174,21 @@ class RenderPPTXTool(BaseAgentTool):
             job.status = "completed"
             job.current_step = "Portfolio ready."
             job.progress = 100
+
+            # GAP 1: Trazar render final en ArtDirectorDecision
+            self.log_decision(
+                db=db,
+                job_id=job_id,
+                decision_type="render",
+                summary=f"Render completed: {len(render_slides)} slide(s) → {output_format.upper()}",
+                reasoning=f"Output saved at: {output_path}",
+                metadata={
+                    "output_format": output_format,
+                    "output_path": output_path,
+                    "slide_count": len(render_slides),
+                    "is_premium": is_premium,
+                },
+            )
             db.commit()
 
             return {"success": True, "path": output_path}

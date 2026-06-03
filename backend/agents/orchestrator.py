@@ -40,6 +40,8 @@ class AgentOrchestrator:
         brand_id: int,
         upload_dir: str,
         job_key: str,
+        visibility_scope: str = "exclusive",
+        manual_tags: list = None,
     ):
         """
         Pipeline de Ingesta orquestado por el Brand Analyst.
@@ -58,6 +60,8 @@ class AgentOrchestrator:
             brand_id:         ID de la marca destino.
             upload_dir:       Directorio donde guardar los assets extraídos.
             job_key:          Clave del job para actualizar el estado en la UI.
+            visibility_scope: Scope de visibilidad ('exclusive' o 'public').
+            manual_tags:      Tags manuales opcionales para los activos.
         """
         logger.info(f"[Orchestrator] Starting Ingestion Pipeline for brand_id={brand_id}, file={source_filename}")
         import time
@@ -96,17 +100,57 @@ class AgentOrchestrator:
 
         # ── PASO 1: Esencia Artística (Vision LLM) ──────────────────────────
         # Se extrae PRIMERO para generar el Brand Rulebook que usará el DNA
+        essence = {}
         try:
             _update_step("Agent: Brand Analyst extracting artistic essence (Vision)...", 10)
             logger.info("[Orchestrator] Brand Analyst → ExtractPaletteTool (Artistic Essence)")
-            self.extract_palette(
+            essence = self.extract_palette(
                 job_id=ingestion_job_id,
                 file_path=file_path,
                 upload_dir=upload_dir,
                 brand_id=brand_id,
             )
-            _update_step("Artistic essence extracted.", 45)
-            logger.info("[Orchestrator] ExtractPaletteTool completed.")
+            _update_step("Artistic essence extracted. Storing in database...", 40)
+            logger.info("[Orchestrator] ExtractPaletteTool completed. Saving to DB...")
+            
+            # Guardar esencia artística en Base de Datos
+            db = SessionLocal()
+            try:
+                record = db.query(models.BrandArtisticEssence).filter(
+                    models.BrandArtisticEssence.brand_id == brand_id
+                ).first()
+                if not record:
+                    record = models.BrandArtisticEssence(brand_id=brand_id, source_filename=source_filename)
+                    db.add(record)
+                
+                record.source_filename       = source_filename
+                record.visual_strategy       = essence.get("visual_strategy", "")
+                record.art_direction_note    = essence.get("branding_rulebook", "")
+                record.structural_archetypes = essence.get("structural_archetypes", {})
+                record.design_gestures       = essence.get("design_gestures", {})
+                record.composition_rules     = essence.get("composition_rules", {})
+                record.art_direction_note    = essence.get("art_direction_note", "") or essence.get("branding_rulebook", "")
+                record.raw_vision_response   = essence.get("raw_vision_response", {})
+
+                from services.ingestion.visual_pattern_service import (
+                    normalize_executable_patterns,
+                    upsert_brand_patterns,
+                )
+                executable_patterns = essence.get("executable_visual_patterns") or normalize_executable_patterns(essence)
+                upsert_brand_patterns(
+                    db,
+                    brand_id=brand_id,
+                    source_filename=source_filename,
+                    patterns=executable_patterns,
+                )
+                db.commit()
+            except Exception as db_err:
+                logger.error(f"[Orchestrator] Failed to save BrandArtisticEssence to DB: {db_err}")
+                db.rollback()
+            finally:
+                db.close()
+                
+            _update_step("Artistic essence database records updated.", 45)
         except Exception as e:
             logger.error(f"[Orchestrator] ExtractPaletteTool failed (non-fatal): {e}")
             _update_step(f"Warning: Artistic essence failed — {str(e)[:100]}. Continuing...", 45)
@@ -116,13 +160,116 @@ class AgentOrchestrator:
         try:
             _update_step("Agent: Brand Analyst reading visual DNA (programmatic)...", 50)
             logger.info("[Orchestrator] Brand Analyst → ReadPPTXTool (Visual DNA)")
-            self.read_pptx(
+            raw_dna = self.read_pptx(
                 job_id=ingestion_job_id,
                 file_path=file_path,
                 upload_dir=upload_dir,
             )
-            _update_step("Visual DNA extracted.", 90)
-            logger.info("[Orchestrator] ReadPPTXTool completed.")
+            _update_step("Visual DNA extracted. Indexing assets...", 85)
+            logger.info("[Orchestrator] ReadPPTXTool completed. Registering assets...")
+            
+            # Guardar ADN visual y registrar activos en Base de Datos
+            db = SessionLocal()
+            try:
+                record = db.query(models.BrandVisualDna).filter(
+                    models.BrandVisualDna.brand_id == brand_id
+                ).first()
+                if not record:
+                    record = models.BrandVisualDna(brand_id=brand_id, source_filename=source_filename)
+                    db.add(record)
+                
+                record.primary_color    = raw_dna.get("primary_color", "#000000")
+                record.secondary_color  = raw_dna.get("secondary_color", "#404040")
+                record.background_color = raw_dna.get("background_color", "#FFFFFF")
+                record.text_main_color  = raw_dna.get("text_main_color", "#111111")
+                record.primary_font     = raw_dna.get("primary_font", "Arial")
+                record.raw_extraction   = raw_dna
+
+                record.slide_width_inches  = raw_dna.get("slide_width_inches", 13.33)
+                record.slide_height_inches = raw_dna.get("slide_height_inches", 7.5)
+                record.is_public = 1 if visibility_scope == "public" else 0
+
+                # REGISTRO ATÓMICO DE ACTIVOS (Soversanía e Ingesta RAG)
+                from services.assets.asset_library_service import register_asset
+                import os
+                import concurrent.futures
+                
+                final_library_assets = {}
+                raw_assets = raw_dna.get("extracted_assets", {})
+                
+                flat_items = []
+                for cat, items in raw_assets.items():
+                    for item in items:
+                        flat_items.append((cat, item))
+                        
+                total_items = len(flat_items)
+                processed_count = 0
+                is_public_bool = (visibility_scope == "public")
+                
+                if total_items > 0:
+                    def process_asset_worker(cat, item):
+                        from database import SessionLocal
+                        local_db = SessionLocal()
+                        try:
+                            raw_path = os.path.join(upload_dir, item["path"])
+                            if os.path.exists(raw_path):
+                                cat_val = item.get("category", cat)
+                                if not isinstance(cat_val, str):
+                                    cat_val = str(cat_val)
+                                final_category = cat_val.lower()
+                                
+                                asset_record = register_asset(
+                                    local_db, brand_id, raw_path, category=final_category,
+                                    is_public=is_public_bool, source_doc=source_filename,
+                                    manual_tags=manual_tags,
+                                    width=item.get("width"), height=item.get("height")
+                                )
+                                asset_record.local_path = os.path.basename(asset_record.local_path)
+                                local_db.commit()
+                                
+                                real_cat = asset_record.category
+                                return {
+                                    "success": True,
+                                    "real_cat": real_cat,
+                                    "id": asset_record.id,
+                                    "path": os.path.basename(asset_record.local_path)
+                                }
+                            return {"success": False, "error": "File not found"}
+                        except Exception as asset_err:
+                            local_db.rollback()
+                            logger.warning(f"  [Orchestrator] Skip asset {item.get('path')}: {asset_err}")
+                            return {"success": False, "error": str(asset_err)}
+                        finally:
+                            local_db.close()
+                    
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                        future_to_item = {executor.submit(process_asset_worker, cat, item): item for cat, item in flat_items}
+                        for future in concurrent.futures.as_completed(future_to_item):
+                            processed_count += 1
+                            prog_percent = 50 + int((processed_count / total_items) * 40)
+                            _update_step(f"Analyzing images with Vision LLM ({processed_count}/{total_items})...", prog_percent)
+                            
+                            res = future.result()
+                            if res and res.get("success"):
+                                real_cat = res["real_cat"]
+                                if real_cat != "noise":
+                                    if real_cat not in final_library_assets: final_library_assets[real_cat] = []
+                                    final_library_assets[real_cat].append({
+                                        "id": res["id"],
+                                        "path": res["path"],
+                                        "category": real_cat
+                                    })
+                
+                record.extracted_assets = final_library_assets
+                db.commit()
+            except Exception as db_err:
+                logger.error(f"[Orchestrator] Failed to save BrandVisualDna to DB: {db_err}")
+                logger.error(traceback.format_exc())
+                db.rollback()
+            finally:
+                db.close()
+            
+            _update_step("Visual DNA extracted and library assets registered.", 90)
         except Exception as e:
             logger.error(f"[Orchestrator] ReadPPTXTool failed (non-fatal): {e}")
             logger.error(traceback.format_exc())

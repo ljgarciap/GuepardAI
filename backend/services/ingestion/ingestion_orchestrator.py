@@ -263,6 +263,8 @@ def task_extract_full_brand_style(job_key: str, file_path: str, source_filename:
         brand_id=brand_id,
         upload_dir=upload_dir,
         job_key=job_key,
+        visibility_scope=visibility_scope,
+        manual_tags=manual_tags,
     )
 
 def task_ingest_knowledge(job_key: str, file_path: str, source_filename: str, brand_id: int = None, visibility_scope: str = "exclusive", document_type: str = "company_knowledge"):

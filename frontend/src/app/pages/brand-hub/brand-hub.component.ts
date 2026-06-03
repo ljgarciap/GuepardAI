@@ -151,7 +151,7 @@ export class BrandHubComponent implements OnInit, OnDestroy {
     state.pollingSub = interval(2000)
       .pipe(
         switchMap(() => this.brandService.getIngestionStatus(filename, type)),
-        takeWhile((res) => res.status === 'processing' || res.status === 'pending' || res.status === 'none', true)
+        takeWhile((res) => res.status !== 'completed' && res.status !== 'error', true)
       )
       .subscribe({
         next: (res) => {
@@ -186,6 +186,7 @@ export class BrandHubComponent implements OnInit, OnDestroy {
   }
 
   private mapRole(step: string, type: string): string {
+    if (!step) return type === 'brand_style' ? 'Designer' : 'Analyst';
     if (step.includes('Parsing')) return 'Analyst';
     if (step.includes('Indexing')) return 'Architect';
     if (step.includes('Harvest')) return 'Technician';
@@ -193,6 +194,7 @@ export class BrandHubComponent implements OnInit, OnDestroy {
   }
 
   private mapStatus(step: string): string {
+    if (!step) return '';
     return step.replace(/Gemini|Claude|OpenAI/gi, 'The Intelligence')
                .replace('Extracting', 'Mapping')
                .replace('Architected', 'Planned')

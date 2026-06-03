@@ -134,3 +134,14 @@
   color: var(--text-muted);
   font-weight: 600;
 }
+
+.reset-button-elite {
+  color: #ef4444 !important;
+  font-weight: 600;
+}
+
+.reset-button-elite:hover {
+  background: #fef2f2 !important;
+  color: #dc2626 !important;
+}
+

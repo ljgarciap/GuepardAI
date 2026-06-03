@@ -570,28 +570,51 @@ def get_performance_metrics(limit: int = 100, db: Session = Depends(get_db)):
 
 @app.delete("/api/admin/reset-db", tags=["Admin"])
 def reset_database(admin_token: str = None, db: Session = Depends(get_db)):
-    """HARD RESET: Limpia toda la base de datos y vuelve a sembrar las configuraciones."""
+    """HARD RESET: Limpia toda la base de datos, borra archivos temporales y vuelve a sembrar las configuraciones."""
     from fastapi import HTTPException
     import os
+    import shutil
     
     expected_token = os.getenv("ADMIN_TOKEN")
-    if not expected_token or admin_token != expected_token:
+    if expected_token and admin_token != expected_token:
         raise HTTPException(status_code=403, detail="Forbidden: Invalid or missing admin token")
         
     from database import engine, Base
-    import subprocess
-    import sys
     
     try:
         # Drop and recreate all tables
         Base.metadata.drop_all(bind=engine)
         Base.metadata.create_all(bind=engine)
         
+        # Clean uploads directory
+        if os.path.exists(UPLOAD_DIR):
+            for filename in os.listdir(UPLOAD_DIR):
+                file_path = os.path.join(UPLOAD_DIR, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete upload file {file_path}: {e}")
+
+        # Clean outputs directory
+        if os.path.exists(OUTPUT_DIR):
+            for filename in os.listdir(OUTPUT_DIR):
+                file_path = os.path.join(OUTPUT_DIR, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete output file {file_path}: {e}")
+        
         # Run seed.py to re-populate configs
         from utils.seed import seed_data
         seed_data()
         
-        return {"status": "success", "message": "Database reset and seeded successfully."}
+        return {"status": "success", "message": "Database and temporary files reset and seeded successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

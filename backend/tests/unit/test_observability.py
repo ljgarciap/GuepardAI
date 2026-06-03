@@ -8,8 +8,8 @@ from main import app
 import models
 
 def test_log_performance_metric_writes_to_db(db_session):
-    # Parchar SessionLocal para usar db_session de test
-    with patch("utils.observability.SessionLocal", return_value=db_session):
+    # Patch database.SessionLocal to use test db_session
+    with patch("database.SessionLocal", return_value=db_session):
         log_performance_metric("test_event", 1.23, {"foo": "bar"})
     
     # Query database to assert
@@ -24,7 +24,7 @@ def test_get_metrics_endpoint(db_session):
     db_session.query(models.PerformanceMetric).delete()
     db_session.commit()
     
-    with patch("utils.observability.SessionLocal", return_value=db_session):
+    with patch("database.SessionLocal", return_value=db_session):
         log_performance_metric("event_1", 0.5, {"id": 1})
         log_performance_metric("event_2", 1.5, {"id": 2})
     
@@ -51,10 +51,8 @@ def test_tool_execution_logs_metrics(db_session, sample_job):
     
     tool = GetSlideTypesTool()
     
-    # We patch SessionLocal of the tool and observability utils to use our test db_session
-    with patch("agents.arquitecto.SessionLocal", return_value=db_session):
-        with patch("utils.observability.SessionLocal", return_value=db_session):
-            result = tool()
+    with patch("database.SessionLocal", return_value=db_session):
+        result = tool()
             
     # Check that a metric was logged in DB
     metrics = db_session.query(models.PerformanceMetric).filter(models.PerformanceMetric.event_name == "agent_tool.get_slide_types").all()

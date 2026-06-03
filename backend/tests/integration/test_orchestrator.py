@@ -194,12 +194,13 @@ class TestAgentOrchestratorPipeline:
                     "region": "Global", "allow_ai_images": False, "output_format": "pptx", "tier": "standard"}
 
         # El pipeline NO debe lanzar una excepción al caller
-        with patch("agents.orchestrator.SessionLocal", return_value=db_session):
+        with patch("agents.orchestrator.SessionLocal", return_value=db_session), \
+             patch.object(db_session, "close"):
             orchestrator.run_generation_pipeline(job_id=sample_job.id, req_data=req_data)
 
         # El Job debe estar marcado como 'error' en la BD
         db_session.refresh(sample_job)
-        assert sample_job.status == "error", \
+        assert sample_job.status == models.GenerationJobStatus.ERROR, \
             f"Expected job status 'error', got '{sample_job.status}'"
         assert "Pipeline Error" in sample_job.current_step
 
@@ -226,3 +227,62 @@ class TestAgentOrchestratorPipeline:
         call_kwargs = orchestrator.render_pptx.call_args.kwargs
         assert call_kwargs.get("is_premium") is True
         assert call_kwargs.get("output_format") == "pdf"
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Test 7: Pipeline en modo interactivo se pausa en CONTENT_READY
+    # ─────────────────────────────────────────────────────────────────────────
+    def test_pipeline_interactive_mode_pauses_at_content_ready(self, db_session, sample_job):
+        """
+        GIVEN: una solicitud con interactive_mode=True
+        WHEN: se ejecuta run_generation_pipeline
+        THEN: se genera el texto (Redactor), pero se detiene antes del diseño (Arquitecto)
+        """
+        orchestrator = self._make_orchestrator_with_mock_tools()
+
+        req_data = {
+            "prompt": "Interactive test",
+            "style_filename": "s.pptx",
+            "knowledge_filename": "k.pdf",
+            "region": "Global",
+            "allow_ai_images": False,
+            "output_format": "pptx",
+            "tier": "standard",
+            "interactive_mode": True
+        }
+
+        with patch("agents.orchestrator.SessionLocal", return_value=db_session):
+            orchestrator.run_generation_pipeline(job_id=sample_job.id, req_data=req_data)
+
+        # Se debió llamar al Redactor
+        orchestrator.generate_text.assert_called_once()
+        # NO se debió llamar al Arquitecto ni al Render
+        orchestrator.compose_layout.assert_not_called()
+        orchestrator.render_pptx.assert_not_called()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Test 8: Reanudación del pipeline ejecuta diseño y renderizado
+    # ─────────────────────────────────────────────────────────────────────────
+    def test_pipeline_resume_completes_design_and_render(self, db_session, sample_job):
+        """
+        GIVEN: un job previamente pausado en revisión humana
+        WHEN: se ejecuta resume_generation_pipeline
+        THEN: se ejecutan compose_layout y render_pptx
+        """
+        orchestrator = self._make_orchestrator_with_mock_tools()
+
+        req_data = {
+            "style_filename": "s.pptx",
+            "knowledge_filename": "k.pdf",
+            "region": "Global",
+            "allow_ai_images": False,
+            "output_format": "pptx",
+            "tier": "standard"
+        }
+
+        with patch("agents.orchestrator.SessionLocal", return_value=db_session):
+            orchestrator.resume_generation_pipeline(job_id=sample_job.id, req_data=req_data)
+
+        # compose_layout y render_pptx deben llamarse
+        orchestrator.compose_layout.assert_called_once()
+        orchestrator.render_pptx.assert_called_once()
+

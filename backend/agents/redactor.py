@@ -50,7 +50,7 @@ class GenerateTextTool(BaseAgentTool):
         try:
             job = db.query(models.GenerationJob).get(job_id)
             if job:
-                job.status = "synthesizing_content"
+                job.status = models.GenerationJobStatus.SYNTHESIZING_CONTENT
                 job.current_step = "Agent: Redactor is writing the slides..."
                 db.commit()
 
@@ -85,7 +85,7 @@ class GenerateTextTool(BaseAgentTool):
             )
 
             if job:
-                job.status = "content_ready"
+                job.status = models.GenerationJobStatus.CONTENT_READY
                 job.current_step = "Content structure ready for review or layout."
                 db.commit()
 

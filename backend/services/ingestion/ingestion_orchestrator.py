@@ -177,11 +177,11 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
             db.commit()
         finally:
             db.close()
-        set_job_status(job_key, "visual_dna", "completed")
+        set_job_status(job_key, "visual_dna", models.IngestionJobStatus.COMPLETED)
     except Exception as e:
         err_msg = f"Visual DNA error: {str(e)}"
         logger.error(f"[Orchestrator] {err_msg}")
-        set_job_status(job_key, "visual_dna", "error", message=err_msg)
+        set_job_status(job_key, "visual_dna", models.IngestionJobStatus.ERROR, message=err_msg)
 
 def task_extract_artistic_essence(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
     """Extracts Artistic Essence (v21.0) in isolation."""
@@ -223,11 +223,11 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
             db.commit()
         finally:
             db.close()
-        set_job_status(job_key, "artistic", "completed")
+        set_job_status(job_key, "artistic", models.IngestionJobStatus.COMPLETED)
     except Exception as e:
         err_msg = f"Artistic Essence error: {str(e)}"
         logger.error(f"[Orchestrator] {err_msg}")
-        set_job_status(job_key, "artistic", "error", message=err_msg)
+        set_job_status(job_key, "artistic", models.IngestionJobStatus.ERROR, message=err_msg)
 
 def task_extract_full_brand_style(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
     """
@@ -273,11 +273,11 @@ def task_ingest_knowledge(job_key: str, file_path: str, source_filename: str, br
         from services.ingestion.ingest_knowledge import ingest_document as ingest_rag
         is_public = (visibility_scope == "public")
         ingest_rag(file_path, client_name=source_filename, update_callback=cb, brand_id=brand_id, is_public=is_public)
-        set_job_status(job_key, "knowledge", "completed")
+        set_job_status(job_key, "knowledge", models.IngestionJobStatus.COMPLETED)
     except Exception as e:
         err_msg = f"Knowledge error: {str(e)}"
         logger.error(f"[Orchestrator] {err_msg}")
-        set_job_status(job_key, "knowledge", "error", message=err_msg)
+        set_job_status(job_key, "knowledge", models.IngestionJobStatus.ERROR, message=err_msg)
 
 def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
     """Pure asset harvest (v21.0). Supports individual images and documents."""
@@ -321,12 +321,12 @@ def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str,
         finally:
             db.close()
             
-        set_job_status(job_key, "pure_assets", "completed")
+        set_job_status(job_key, "pure_assets", models.IngestionJobStatus.COMPLETED)
         update_job_step(job_key, "pure_assets", "Asset harvest complete.", 100)
     except Exception as e:
         err_msg = f"Pure Assets error: {str(e)}"
         logger.error(f"[Orchestrator] {err_msg}")
-        set_job_status(job_key, "pure_assets", "error", message=err_msg)
+        set_job_status(job_key, "pure_assets", models.IngestionJobStatus.ERROR, message=err_msg)
 
 def task_generate_presentation(job_id: int, req_data: dict):
     """
@@ -348,7 +348,7 @@ def task_generate_presentation(job_id: int, req_data: dict):
         try:
             job = db.query(models.GenerationJob).get(job_id)
             if job:
-                job.status = "error"
+                job.status = models.GenerationJobStatus.ERROR
                 job.current_step = err_msg
                 db.commit()
         finally:

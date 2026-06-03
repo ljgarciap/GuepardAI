@@ -33,9 +33,41 @@ class BaseAgentTool(abc.ABC):
         pass
 
     def __call__(self, *args, **kwargs):
+        import time
+        from utils.observability import log_performance_metric
+
         # Valida los inputs usando el schema de Pydantic antes de correr la herramienta
         validated_args = self.args_schema(**kwargs)
-        return self.run(**validated_args.dict())
+        self._last_start_time = time.perf_counter()
+        
+        job_id = kwargs.get("job_id") or getattr(validated_args, "job_id", None)
+        
+        try:
+            result = self.run(**validated_args.dict())
+            duration = time.perf_counter() - self._last_start_time
+            
+            metadata = {}
+            if job_id is not None:
+                metadata["job_id"] = job_id
+            
+            log_performance_metric(
+                event_name=f"agent_tool.{self.name}",
+                duration=duration,
+                metadata=metadata
+            )
+            return result
+        except Exception as e:
+            duration = time.perf_counter() - self._last_start_time
+            metadata = {"error": str(e)}
+            if job_id is not None:
+                metadata["job_id"] = job_id
+            
+            log_performance_metric(
+                event_name=f"agent_tool.{self.name}",
+                duration=duration,
+                metadata=metadata
+            )
+            raise e
 
     def log_decision(
         self,
@@ -73,6 +105,12 @@ class BaseAgentTool(abc.ABC):
         """
         try:
             import models  # Import local para evitar circular imports
+            import time
+            
+            metadata_dict = dict(metadata) if metadata is not None else {}
+            if hasattr(self, "_last_start_time"):
+                metadata_dict["duration_seconds"] = time.perf_counter() - self._last_start_time
+
             decision = models.ArtDirectorDecision(
                 job_id=job_id,
                 slide_number=slide_number,
@@ -81,7 +119,7 @@ class BaseAgentTool(abc.ABC):
                 reasoning=reasoning,
                 prompt_used=prompt_used,
                 response_raw=json.dumps(response_raw, default=str) if response_raw is not None else None,
-                metadata_json=metadata or {},
+                metadata_json=metadata_dict,
             )
             db.add(decision)
             db.flush()  # flush sin commit: respeta la transacción del Tool que llama

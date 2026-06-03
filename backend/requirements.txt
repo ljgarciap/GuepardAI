@@ -2,6 +2,8 @@
 fastapi
 uvicorn[standard]
 python-multipart
+celery
+redis
 
 # Database
 sqlalchemy

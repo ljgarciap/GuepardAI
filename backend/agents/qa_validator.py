@@ -21,7 +21,7 @@ class ValidateBrandTool(BaseAgentTool):
         try:
             slides = db.query(models.PresentationSlide).filter(
                 models.PresentationSlide.job_id == job_id,
-                models.PresentationSlide.status == "planned"
+                models.PresentationSlide.status == models.PresentationSlideStatus.PLANNED
             ).all()
 
             for slide in slides:
@@ -91,7 +91,7 @@ class ScoreFidelityTool(BaseAgentTool):
 
             slides = db.query(models.PresentationSlide).filter(
                 models.PresentationSlide.job_id == job_id,
-                models.PresentationSlide.status == "planned"
+                models.PresentationSlide.status == models.PresentationSlideStatus.PLANNED
             ).all()
 
             dna = db.query(models.BrandVisualDna).filter(models.BrandVisualDna.brand_id == job.brand_id).first()
@@ -140,10 +140,10 @@ class ScoreFidelityTool(BaseAgentTool):
             reasoning = result.get("reasoning", "")
 
             if needs_rework:
-                job.status = "qa_failed"
+                job.status = models.GenerationJobStatus.QA_FAILED
                 job.current_step = "QA Validator rejected the layout plan. Needs rework."
             else:
-                job.status = "qa_passed"
+                job.status = models.GenerationJobStatus.QA_PASSED
                 job.current_step = "QA Validator approved the layout plan."
 
             # GAP 1: Trazar veredicto del LLM Juez en ArtDirectorDecision

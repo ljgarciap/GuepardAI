@@ -30,6 +30,9 @@ def test_safe_int_id_handling():
             brand = MagicMock(name="Tesco")
             db.query.return_value.get.return_value = brand
             
+            # Evitar error de serialización JSON con mocks
+            db.query.return_value.filter.return_value.first.return_value.raw_vision_response = None
+            
             # Debería ejecutar sin explotar
             try:
                 plan_presentation_design(db, 1)

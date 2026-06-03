@@ -135,7 +135,7 @@ def mock_llm_calls():
     }
 
     with patch("providers.llm_provider.generate_json", return_value=default_qa_response) as mock_json, \
-         patch("providers.llm_provider.generate_text", return_value="Mock text content") as mock_text:
+         patch("providers.llm_provider.generate_text", return_value="Mock text content", create=True) as mock_text:
         yield {
             "generate_json": mock_json,
             "generate_text": mock_text,
@@ -177,14 +177,9 @@ def sample_job(db_session, sample_brand):
     import models
     job = models.GenerationJob(
         brand_id=sample_brand.id,
-        status="pending",
+        status=models.GenerationJobStatus.PENDING,
         current_step="Test job initialized by pytest",
-        prompt="Create a presentation about innovation",
-        style_filename="test_style.pptx",
-        knowledge_filename="test_knowledge.pdf",
-        region="Global",
-        output_format="pptx",
-        tier="standard"
+        prompt="Create a presentation about innovation"
     )
     db_session.add(job)
     db_session.flush()
@@ -207,7 +202,6 @@ def sample_slides(db_session, sample_job, sample_brand):
     for data in slide_data:
         slide = models.PresentationSlide(
             job_id=sample_job.id,
-            brand_id=sample_brand.id,
             slide_number=data["number"],
             title=data["title"],
             layout_slug=data["layout"],

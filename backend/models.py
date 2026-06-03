@@ -1,9 +1,42 @@
 import datetime
+from enum import Enum
 from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Float, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from pgvector.sqlalchemy import Vector
 from database import Base
+
+
+class IngestionJobStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    PROCESSING_VISUAL_DNA = "processing_visual_dna"
+    VISUAL_DNA_EXTRACTED = "visual_dna_extracted"
+    PROCESSING_ARTISTIC_ESSENCE = "processing_artistic_essence"
+    ARTISTIC_ESSENCE_EXTRACTED = "artistic_essence_extracted"
+    COMPLETED = "completed"
+    ERROR = "error"
+
+
+class GenerationJobStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    SYNTHESIZING_CONTENT = "synthesizing_content"
+    CONTENT_READY = "content_ready"
+    PLANNING_DESIGN = "planning_design"
+    DESIGN_PLANNED = "design_planned"
+    QA_FAILED = "qa_failed"
+    QA_PASSED = "qa_passed"
+    COMPLETED = "completed"
+    ERROR = "error"
+
+
+class PresentationSlideStatus(str, Enum):
+    PENDING = "pending"
+    CONTENT_READY = "content_ready"
+    PLANNED = "planned"
+    RENDERED = "rendered"
+
 
 
 class Brand(Base):
@@ -332,3 +365,17 @@ class SystemConfig(Base):
     value = Column(Text, nullable=False)
     description = Column(String(255), nullable=True)
     updated_at  = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+class PerformanceMetric(Base):
+    """
+    REGISTRO DE MÉTRICAS DE RENDIMIENTO (observabilidad).
+    Guarda los tiempos de ejecución de herramientas, llamadas a LLM, y pipelines.
+    """
+    __tablename__ = "performance_metrics"
+
+    id               = Column(Integer, primary_key=True, index=True)
+    event_name       = Column(String(100), index=True, nullable=False)
+    duration_seconds = Column(Float, nullable=False)
+    metadata_json    = Column(JSONB, nullable=True)
+    
+    timestamp        = Column(DateTime, default=datetime.datetime.utcnow, index=True)

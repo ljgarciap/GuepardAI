@@ -256,7 +256,7 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
 
     try:
         # FASE 1: SÍNTESIS DE CONTENIDO
-        job.status = "processing"
+        job.status = models.GenerationJobStatus.PROCESSING
         job.current_step = "Phase 1/3: Synthesizing strategic content..."
         job.progress = 10
         db.commit()
@@ -370,7 +370,7 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
                 job.current_step = "Portfolio ready (Free PDF)."
             
             job.pptx_path = output_path
-            job.status = "completed"
+            job.status = models.GenerationJobStatus.COMPLETED
             job.progress = 100
             db.commit()
             return
@@ -431,7 +431,7 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
         painter.save(output_path)
         
         job.pptx_path = output_path
-        job.status = "completed"
+        job.status = models.GenerationJobStatus.COMPLETED
         job.current_step = "Portfolio ready."
         job.progress = 100
         db.commit()
@@ -439,6 +439,6 @@ def generate_presentation_flow(db: Session, job_id: int, req_data: dict):
     except Exception as e:
         import traceback
         print(f"  [Flow v8.0] CRITICAL: {traceback.format_exc()}")
-        job.status = "error"
+        job.status = models.GenerationJobStatus.ERROR
         job.current_step = f"Error: {str(e)}"
         db.commit()

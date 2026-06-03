@@ -13,13 +13,12 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 import models
 from database import SessionLocal, engine, Base
-from services.ingestion.ingestion_orchestrator import (
-    task_extract_visual_dna,
-    task_extract_artistic_essence,
-    task_extract_full_brand_style,
-    task_ingest_knowledge,
-    task_extract_pure_assets,
-    task_generate_presentation
+from tasks import (
+    celery_extract_full_brand_style,
+    celery_ingest_knowledge,
+    celery_extract_pure_assets,
+    celery_generate_presentation,
+    celery_resume_generation_pipeline
 )
 from services.core.brand_service import create_brand_logic, update_brand_logic
 import uuid
@@ -110,6 +109,7 @@ class PresentationRequest(BaseModel):
     allow_ai_images: bool = False
     output_format: str = "pptx" # 'pptx' or 'pdf_artistic'
     tier: str = "free"         # 'free' | 'premium' (Fix/Roadmap 1)
+    interactive_mode: bool = False
 
 
 # ──────────────────────────────────────────────
@@ -253,13 +253,13 @@ def get_generation_status(job_id: int, db: Session = Depends(get_db)):
     return {
         "id": job.id, "status": job.status, "progress": job.progress,
         "current_step": job.current_step,
-        "download_url": f"/api/generation/download/{job.id}" if job.status == "completed" else None
+        "download_url": f"/api/generation/download/{job.id}" if job.status == models.GenerationJobStatus.COMPLETED else None
     }
 
 @app.get("/api/generation/download/{job_id}", tags=["Generation"])
 def download_presentation(job_id: int, db: Session = Depends(get_db)):
     job = db.query(models.GenerationJob).get(job_id)
-    if not job or job.status != "completed": raise HTTPException(status_code=404, detail="File not ready.")
+    if not job or job.status != models.GenerationJobStatus.COMPLETED: raise HTTPException(status_code=404, detail="File not ready.")
     return FileResponse(job.pptx_path, filename=os.path.basename(job.pptx_path))
 
 
@@ -269,7 +269,6 @@ def download_presentation(job_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/brand/upload", tags=["Ingestion"])
 async def upload_asset(
-    background_tasks: BackgroundTasks,
     ingestion_type: str = Form(...),   
     visibility_scope: str = Form("exclusive"), 
     brand_id: Optional[int] = Form(None),       
@@ -297,28 +296,28 @@ async def upload_asset(
         job = models.IngestionJob(
             client_name=job_key,
             ingestion_type=ingestion_type,
-            status="processing",
+            status=models.IngestionJobStatus.PROCESSING,
             progress=0,
             visibility_scope=visibility_scope
         )
         db.add(job)
     else:
-        job.status = "processing"
+        job.status = models.IngestionJobStatus.PROCESSING
         job.progress = 0
         job.visibility_scope = visibility_scope
     
     db.commit()
     db.close()
 
-    # Disparar tarea en segundo plano (vía Orquestador)
+    # Disparar tarea en segundo plano (vía Celery/Redis)
     if ingestion_type == "brand_style":
-        background_tasks.add_task(task_extract_full_brand_style, job_key, file_path, job_key, visibility_scope, brand_id, safe_tags)
+        celery_extract_full_brand_style.delay(job_key, file_path, job_key, visibility_scope, brand_id, safe_tags)
     elif ingestion_type == "knowledge":
-        background_tasks.add_task(task_ingest_knowledge, job_key, file_path, job_key, brand_id, visibility_scope, document_type)
+        celery_ingest_knowledge.delay(job_key, file_path, job_key, brand_id, visibility_scope, document_type)
     elif ingestion_type == "pure_assets":
-        background_tasks.add_task(task_extract_pure_assets, job_key, file_path, job_key, visibility_scope, brand_id, safe_tags)
+        celery_extract_pure_assets.delay(job_key, file_path, job_key, visibility_scope, brand_id, safe_tags)
 
-    return {"status": "processing", "job_key": job_key}
+    return {"status": models.IngestionJobStatus.PROCESSING, "job_key": job_key}
 
 @app.get("/api/ingestion/status/{job_key}", tags=["Ingestion"])
 def get_ingestion_status(job_key: str, ingestion_type: str = "brand_style", db: Session = Depends(get_db)):
@@ -368,7 +367,7 @@ def list_library_knowledge(brand_id: Optional[int] = None, db: Session = Depends
 @app.get("/api/library/portfolios", tags=["Library"])
 def list_library_portfolios(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
     """Lista las presentaciones generadas en la librería."""
-    query = db.query(models.GenerationJob).filter(models.GenerationJob.status == "completed")
+    query = db.query(models.GenerationJob).filter(models.GenerationJob.status == models.GenerationJobStatus.COMPLETED)
     if brand_id:
         query = query.filter(models.GenerationJob.brand_id == brand_id)
     
@@ -429,7 +428,6 @@ def list_dialects(db: Session = Depends(get_db)):
 @app.post("/api/presentations/generate", tags=["Generation"])
 async def generate_presentation(
     request: PresentationRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """Dispara el motor de síntesis para generar una nueva presentación."""
@@ -441,7 +439,7 @@ async def generate_presentation(
     job = models.GenerationJob(
         brand_id=request.brand_id,
         style_id=style_dna.id if style_dna else None,
-        status="pending",
+        status=models.GenerationJobStatus.PENDING,
         progress=0,
         current_step="Initializing isolated synthesis engine v23.0...",
         allow_ai_images=request.allow_ai_images
@@ -458,16 +456,117 @@ async def generate_presentation(
         "region": request.region,
         "allow_ai_images": request.allow_ai_images,
         "output_format": request.output_format,
-        "tier": request.tier
+        "tier": request.tier,
+        "interactive_mode": request.interactive_mode
     }
     
-    background_tasks.add_task(
-        task_generate_presentation,
+    celery_generate_presentation.delay(
         job.id,
         req_payload
     )
 
-    return {"job_id": job.id, "status": "pending"}
+    return {"job_id": job.id, "status": models.GenerationJobStatus.PENDING}
+
+class SlideUpdate(BaseModel):
+    title: Optional[str] = None
+    content_json: Optional[dict] = None
+    layout_slug: Optional[str] = None
+    assigned_image: Optional[str] = None
+
+class ResumeRequest(BaseModel):
+    tier: Optional[str] = "standard"
+    output_format: Optional[str] = "pptx"
+
+@app.get("/api/presentations/{job_id}/slides", tags=["Generation"])
+def get_presentation_slides(job_id: int, db: Session = Depends(get_db)):
+    """Retorna los slides asociados a un job de generación."""
+    job = db.query(models.GenerationJob).get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    slides = db.query(models.PresentationSlide).filter(
+        models.PresentationSlide.job_id == job_id
+    ).order_by(models.PresentationSlide.slide_number.asc()).all()
+    return slides
+
+@app.put("/api/presentations/{job_id}/slides/{slide_id}", tags=["Generation"])
+def update_presentation_slide(job_id: int, slide_id: int, request: SlideUpdate, db: Session = Depends(get_db)):
+    """Permite a un usuario editar el contenido de un slide antes de reanudar el diseño."""
+    slide = db.query(models.PresentationSlide).filter(
+        models.PresentationSlide.job_id == job_id,
+        models.PresentationSlide.id == slide_id
+    ).first()
+    if not slide:
+        raise HTTPException(status_code=404, detail="Slide not found")
+    
+    if request.title is not None:
+        slide.title = request.title
+    if request.content_json is not None:
+        slide.content_json = request.content_json
+    if request.layout_slug is not None:
+        slide.layout_slug = request.layout_slug
+    if request.assigned_image is not None:
+        slide.assigned_image = request.assigned_image
+    
+    # Marcamos el slide de vuelta en CONTENT_READY para obligar al arquitecto a procesarlo
+    slide.status = models.PresentationSlideStatus.CONTENT_READY
+    
+    db.commit()
+    db.refresh(slide)
+    return slide
+
+@app.post("/api/presentations/{job_id}/resume", tags=["Generation"])
+def resume_presentation(job_id: int, request: ResumeRequest, db: Session = Depends(get_db)):
+    """Reanuda un job que estaba pausado en el checkpoint de revisión humana (CONTENT_READY)."""
+    job = db.query(models.GenerationJob).get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    if job.status != models.GenerationJobStatus.CONTENT_READY:
+        raise HTTPException(status_code=400, detail=f"Job cannot be resumed from status: {job.status}")
+    
+    # Obtener el style_filename a partir del style_id del job
+    style_dna = db.query(models.BrandVisualDna).get(job.style_id) if job.style_id else None
+    style_filename = style_dna.source_filename if style_dna else ""
+    
+    req_payload = {
+        "style_filename": style_filename,
+        "knowledge_filename": "",
+        "prompt": job.prompt or "",
+        "region": "Global",
+        "allow_ai_images": job.allow_ai_images or False,
+        "output_format": request.output_format,
+        "tier": request.tier
+    }
+    
+    # Disparar la tarea Celery de reanudación
+    celery_resume_generation_pipeline.delay(
+        job.id,
+        req_payload
+    )
+    
+    return {"job_id": job.id, "status": models.GenerationJobStatus.PROCESSING}
+
+@app.get("/api/admin/metrics", tags=["Admin"])
+def get_performance_metrics(limit: int = 100, db: Session = Depends(get_db)):
+    """
+    Exposes the recorded performance metrics from the database.
+    Returns the last `limit` recorded metrics.
+    """
+    try:
+        metrics = db.query(models.PerformanceMetric).order_by(models.PerformanceMetric.timestamp.desc()).limit(limit).all()
+        return [
+            {
+                "id": m.id,
+                "event_name": m.event_name,
+                "duration_seconds": m.duration_seconds,
+                "metadata": m.metadata_json or {},
+                "timestamp": m.timestamp.isoformat() + "Z"
+            }
+            for m in metrics
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to query metrics: {e}")
 
 @app.delete("/api/admin/reset-db", tags=["Admin"])
 def reset_database(admin_token: str = None, db: Session = Depends(get_db)):

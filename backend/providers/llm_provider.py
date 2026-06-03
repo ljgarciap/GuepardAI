@@ -127,8 +127,44 @@ def resolve_provider(specialization: str = "general"):
     
     raise ValueError("API_KEY missing for required provider.")
 
-@retry_with_backoff(retries=3)
 def generate_json(prompt: str, model: Optional[str] = None, specialization: str = "general") -> dict:
+    import time
+    from utils.observability import log_performance_metric
+    
+    start_time = time.perf_counter()
+    try:
+        result = _generate_json_raw(prompt, model, specialization)
+        duration = time.perf_counter() - start_time
+        resp_len = len(json.dumps(result)) if result else 0
+        log_performance_metric(
+            event_name="llm_api.generate_json",
+            duration=duration,
+            metadata={
+                "prompt_length": len(prompt),
+                "response_length": resp_len,
+                "status": "success",
+                "specialization": specialization,
+                "model": model or "default"
+            }
+        )
+        return result
+    except Exception as e:
+        duration = time.perf_counter() - start_time
+        log_performance_metric(
+            event_name="llm_api.generate_json",
+            duration=duration,
+            metadata={
+                "prompt_length": len(prompt),
+                "status": "failed",
+                "error": str(e),
+                "specialization": specialization,
+                "model": model or "default"
+            }
+        )
+        raise e
+
+@retry_with_backoff(retries=3)
+def _generate_json_raw(prompt: str, model: Optional[str] = None, specialization: str = "general") -> dict:
     """
     UNIVERSAL AI ENGINE (v18.2) - Parametric Failover.
     Soporta cadenas de modelos: 'gemini-flash-latest,mistral/mistral-large-latest'
@@ -274,8 +310,44 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
             
     raise last_error or Exception("All models and global fallback failed.")
 
-@retry_with_backoff(retries=2)
 def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[str] = None) -> dict:
+    import time
+    from utils.observability import log_performance_metric
+    
+    start_time = time.perf_counter()
+    try:
+        result = _generate_vision_json_raw(prompt, image_paths, model)
+        duration = time.perf_counter() - start_time
+        resp_len = len(json.dumps(result)) if result else 0
+        log_performance_metric(
+            event_name="llm_api.generate_vision_json",
+            duration=duration,
+            metadata={
+                "prompt_length": len(prompt),
+                "image_count": len(image_paths),
+                "response_length": resp_len,
+                "status": "success",
+                "model": model or "default"
+            }
+        )
+        return result
+    except Exception as e:
+        duration = time.perf_counter() - start_time
+        log_performance_metric(
+            event_name="llm_api.generate_vision_json",
+            duration=duration,
+            metadata={
+                "prompt_length": len(prompt),
+                "image_count": len(image_paths),
+                "status": "failed",
+                "error": str(e),
+                "model": model or "default"
+            }
+        )
+        raise e
+
+@retry_with_backoff(retries=2)
+def _generate_vision_json_raw(prompt: str, image_paths: List[str], model: Optional[str] = None) -> dict:
     """
     UNIVERSAL VISION ENGINE (v18.3).
     Obtiene la cadena de modelos desde system_configs.
@@ -489,6 +561,40 @@ def log_premium_audit(category: str, data: str):
         f.write(f"{'='*80}\n")
 
 def generate_premium_json(prompt: str) -> dict:
+    import time
+    from utils.observability import log_performance_metric
+    
+    start_time = time.perf_counter()
+    try:
+        result = _generate_premium_json_raw(prompt)
+        duration = time.perf_counter() - start_time
+        resp_len = len(json.dumps(result)) if result else 0
+        log_performance_metric(
+            event_name="llm_api.generate_premium_json",
+            duration=duration,
+            metadata={
+                "prompt_length": len(prompt),
+                "response_length": resp_len,
+                "status": "success",
+                "model": PREMIUM_MODEL
+            }
+        )
+        return result
+    except Exception as e:
+        duration = time.perf_counter() - start_time
+        log_performance_metric(
+            event_name="llm_api.generate_premium_json",
+            duration=duration,
+            metadata={
+                "prompt_length": len(prompt),
+                "status": "failed",
+                "error": str(e),
+                "model": PREMIUM_MODEL
+            }
+        )
+        raise e
+
+def _generate_premium_json_raw(prompt: str) -> dict:
     """
     PREMIUM DESIGN ENGINE — Claude Sonnet exclusivo.
     Canal dedicado para el tier premium. Sin fallbacks al sistema general.
@@ -530,6 +636,42 @@ def generate_premium_json(prompt: str) -> dict:
 
 
 def generate_premium_vision_json(prompt: str, image_paths: List[str]) -> dict:
+    import time
+    from utils.observability import log_performance_metric
+    
+    start_time = time.perf_counter()
+    try:
+        result = _generate_premium_vision_json_raw(prompt, image_paths)
+        duration = time.perf_counter() - start_time
+        resp_len = len(json.dumps(result)) if result else 0
+        log_performance_metric(
+            event_name="llm_api.generate_premium_vision_json",
+            duration=duration,
+            metadata={
+                "prompt_length": len(prompt),
+                "image_count": len(image_paths),
+                "response_length": resp_len,
+                "status": "success",
+                "model": PREMIUM_MODEL
+            }
+        )
+        return result
+    except Exception as e:
+        duration = time.perf_counter() - start_time
+        log_performance_metric(
+            event_name="llm_api.generate_premium_vision_json",
+            duration=duration,
+            metadata={
+                "prompt_length": len(prompt),
+                "image_count": len(image_paths),
+                "status": "failed",
+                "error": str(e),
+                "model": PREMIUM_MODEL
+            }
+        )
+        raise e
+
+def _generate_premium_vision_json_raw(prompt: str, image_paths: List[str]) -> dict:
     """
     PREMIUM VISION ENGINE — Claude Sonnet exclusivo con visión.
     Canal dedicado para evaluación de fidelidad visual en el tier premium.

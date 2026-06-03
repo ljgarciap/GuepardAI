@@ -63,7 +63,6 @@ class TestValidateBrandTool:
         # Crear un slide cover_hero (layout de alta resolución) con el logo asignado
         slide = models.PresentationSlide(
             job_id=sample_job.id,
-            brand_id=sample_brand.id,
             slide_number=99,
             title="Offending Cover Slide",
             layout_slug="cover_hero",   # Layout que exige foto de alta resolución
@@ -148,7 +147,8 @@ class TestScoreFidelityTool:
         }
 
         with patch("agents.qa_validator.SessionLocal", return_value=db_session), \
-             patch("providers.llm_provider.generate_json", return_value=low_score_response):
+             patch("agents.qa_validator.generate_json", return_value=low_score_response), \
+             patch.object(db_session, "close"):
             tool = ScoreFidelityTool()
             result = tool.run(job_id=sample_job.id)
 
@@ -157,7 +157,7 @@ class TestScoreFidelityTool:
 
         # Verificar que el estado del job en BD se actualizó
         db_session.refresh(sample_job)
-        assert sample_job.status == "qa_failed"
+        assert sample_job.status == models.GenerationJobStatus.QA_FAILED
 
     def test_score_fidelity_auto_passes_when_no_slides(self, db_session, sample_job):
         """
@@ -212,6 +212,6 @@ class TestGetSlideTypesTool:
         layouts = result["available_layouts"]
 
         # Verificamos que los layouts críticos existen en el catálogo
-        expected_critical_layouts = ["cover_hero", "two_column_text"]
+        expected_critical_layouts = ["cover_hero", "two_column"]
         for layout in expected_critical_layouts:
             assert layout in layouts, f"Layout '{layout}' must be in the catalog"

@@ -45,7 +45,7 @@ class ComposeLayoutTool(BaseAgentTool):
         try:
             job = db.query(models.GenerationJob).get(job_id)
             if job:
-                job.status = "planning_design"
+                job.status = models.GenerationJobStatus.PLANNING_DESIGN
                 job.current_step = "Agent: Arquitecto is assigning layouts and images..."
                 db.commit()
 
@@ -53,7 +53,7 @@ class ComposeLayoutTool(BaseAgentTool):
             success = plan_presentation_design(db, job_id, is_premium=is_premium)
 
             if job and success:
-                job.status = "design_planned"
+                job.status = models.GenerationJobStatus.DESIGN_PLANNED
                 job.current_step = "Layout and images successfully assigned."
                 db.commit()
 
@@ -61,7 +61,7 @@ class ComposeLayoutTool(BaseAgentTool):
             if success:
                 planned_slides = db.query(models.PresentationSlide).filter(
                     models.PresentationSlide.job_id == job_id,
-                    models.PresentationSlide.status == "planned"
+                    models.PresentationSlide.status == models.PresentationSlideStatus.PLANNED
                 ).all()
                 for slide in planned_slides:
                     art_reasoning = ""

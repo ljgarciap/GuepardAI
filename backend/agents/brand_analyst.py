@@ -28,14 +28,14 @@ class ReadPPTXTool(BaseAgentTool):
         try:
             job = db.query(models.IngestionJob).get(job_id)
             if job:
-                job.status = "processing_visual_dna"
+                job.status = models.IngestionJobStatus.PROCESSING_VISUAL_DNA
                 db.commit()
 
             # Llama a la lógica original de extracción programática
             raw_dna = extract_visual_dna(file_path, upload_dir)
 
             if job:
-                job.status = "visual_dna_extracted"
+                job.status = models.IngestionJobStatus.VISUAL_DNA_EXTRACTED
                 db.commit()
 
             return raw_dna
@@ -63,14 +63,14 @@ class ExtractPaletteTool(BaseAgentTool):
         try:
             job = db.query(models.IngestionJob).get(job_id)
             if job:
-                job.status = "processing_artistic_essence"
+                job.status = models.IngestionJobStatus.PROCESSING_ARTISTIC_ESSENCE
                 db.commit()
 
             # Llama a la lógica original de esencia artística
             essence = extract_artistic_essence(file_path, upload_dir, brand_id=brand_id)
 
             if job:
-                job.status = "artistic_essence_extracted"
+                job.status = models.IngestionJobStatus.ARTISTIC_ESSENCE_EXTRACTED
                 db.commit()
 
             return essence

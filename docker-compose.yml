@@ -27,12 +27,42 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./backend:/app
       - ./backend/uploads:/app/uploads
       - ./backend/custom_fonts:/usr/share/fonts/custom
     depends_on:
       - db
+      - redis
+    restart: always
+
+  redis:
+    image: redis:alpine
+    container_name: guepard-redis
+    ports:
+      - "6379:6379"
+    restart: always
+
+  celery_worker:
+    build: ./backend
+    container_name: guepard-celery-worker
+    command: celery -A celery_app.celery_app worker --loglevel=info
+    env_file:
+      - ./.env
+    environment:
+      - DATABASE_URL=postgresql+psycopg://root:root@db:5432/ai_db
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - ./backend/uploads:/app/uploads
+      - ./backend/custom_fonts:/usr/share/fonts/custom
+    depends_on:
+      - db
+      - redis
     restart: always
 
   frontend:

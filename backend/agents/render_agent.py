@@ -105,7 +105,7 @@ class RenderPPTXTool(BaseAgentTool):
                     output_path = artistic_pdf_service.generate_pdf(job_id, slides_data, dna)
 
                 job.pptx_path = output_path
-                job.status = "completed"
+                job.status = models.GenerationJobStatus.COMPLETED
                 job.current_step = "Portfolio ready."
                 job.progress = 100
                 db.commit()
@@ -171,7 +171,7 @@ class RenderPPTXTool(BaseAgentTool):
             painter.save(output_path)
             
             job.pptx_path = output_path
-            job.status = "completed"
+            job.status = models.GenerationJobStatus.COMPLETED
             job.current_step = "Portfolio ready."
             job.progress = 100
 

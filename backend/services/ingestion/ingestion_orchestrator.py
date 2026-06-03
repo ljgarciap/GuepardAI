@@ -312,14 +312,28 @@ def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str,
                 cb("Extracting assets from document...", 20)
                 dna = run_visual_dna_extraction(file_path, upload_dir, cb=cb)
                 raw_assets = dna.get("extracted_assets", {})
+                
+                flat_items = []
                 for cat, items in raw_assets.items():
                     for item in items:
-                        try:
-                            with db.begin_nested():
-                                raw_path = os.path.join(upload_dir, item["path"])
-                                register_asset(db, brand_id, raw_path, category=cat, is_public=is_public, source_doc=source_filename, manual_tags=manual_tags)
-                            db.commit()
-                        except: db.rollback()
+                        flat_items.append((cat, item))
+                        
+                total_items = len(flat_items)
+                processed_count = 0
+                
+                for cat, item in flat_items:
+                    try:
+                        processed_count += 1
+                        prog_percent = 30 + int((processed_count / total_items) * 65) if total_items > 0 else 95
+                        cb(f"Registering harvested asset ({processed_count}/{total_items})...", prog_percent)
+                        
+                        with db.begin_nested():
+                            raw_path = os.path.join(upload_dir, item["path"])
+                            register_asset(db, brand_id, raw_path, category=cat, is_public=is_public, source_doc=source_filename, manual_tags=manual_tags)
+                        db.commit()
+                    except Exception as loop_err:
+                        db.rollback()
+                        logger.warning(f"Failed to register asset in pure harvest: {loop_err}")
         finally:
             db.close()
             

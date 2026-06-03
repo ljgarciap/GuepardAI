@@ -28,6 +28,7 @@ services:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app
     volumes:
       - ./backend:/app
       - ./backend/uploads:/app/uploads
@@ -56,6 +57,7 @@ services:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app
     volumes:
       - ./backend:/app
       - ./backend/uploads:/app/uploads

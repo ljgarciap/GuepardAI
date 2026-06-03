@@ -1,6 +1,9 @@
 import os
 import sys
-sys.path.append('backend')
+# Add parent directory of utils (backend root) to path
+backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(backend_dir)
+
 import models
 from database import SessionLocal
 from services.asset_library_service import register_asset
@@ -18,12 +21,11 @@ def restore():
     print(f"Restoring assets for {tesco.name} (ID: {brand_id})...")
     
     # Buscar todos los archivos asset_*.png en uploads
-    asset_files = glob.glob("backend/uploads/asset_*.png")
+    uploads_dir = os.path.join(backend_dir, "uploads")
+    asset_files = glob.glob(os.path.join(uploads_dir, "asset_*.png"))
     print(f"Found {len(asset_files)} physical assets to restore.")
     
     for i, file_path in enumerate(asset_files):
-        # Convertir a ruta relativa para register_asset si es necesario
-        # register_asset espera la ruta al archivo
         try:
             print(f"[{i+1}/{len(asset_files)}] Restoring: {os.path.basename(file_path)}...")
             # Forzar el tagging para que se generen los embeddings nuevos

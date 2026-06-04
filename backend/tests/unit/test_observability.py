@@ -44,7 +44,7 @@ def test_get_metrics_endpoint(db_session):
         app.dependency_overrides.clear()
 
 def test_tool_execution_logs_metrics(db_session, sample_job):
-    from agents.arquitecto import GetSlideTypesTool
+    from agents.architect import GetSlideTypesTool
     
     db_session.query(models.PerformanceMetric).delete()
     db_session.commit()

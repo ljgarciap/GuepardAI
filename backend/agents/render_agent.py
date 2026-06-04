@@ -74,7 +74,7 @@ class RenderPPTXTool(BaseAgentTool):
                             slide_number=s.slide_number,
                             layout_type=s.layout_slug or cjson.get("layout_type", "strategic_split"),
                             primary_asset_path=primary_path,
-                            background_asset_path=s.background_asset_path
+                            background_asset_path=getattr(s, "background_asset_path", None) or (s.planning_json.get("background_asset_path") if getattr(s, "planning_json", None) else None)
                         ))
                     output_path = premium_agent.render_pdf(
                         ContentManifest(job_id=job_id, slides=c_slides), 
@@ -149,7 +149,7 @@ class RenderPPTXTool(BaseAgentTool):
                     label=cjson.get("label"),
                     tag=cjson.get("section_label") or "STRATEGY",
                     primary_asset_path=primary_path,
-                    background_asset_path=s.background_asset_path, # geometry JSON or path
+                    background_asset_path=getattr(s, "background_asset_path", None) or (s.planning_json.get("background_asset_path") if getattr(s, "planning_json", None) else None), # geometry JSON or path
                     is_last=(i == len(saved_slides) - 1),
                     logo_path=brand_logo_path,
                     agency_branding=agency_branding,

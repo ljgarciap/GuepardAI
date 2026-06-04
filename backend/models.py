@@ -329,6 +329,20 @@ class PresentationSlide(Base):
 
     job = relationship("GenerationJob", back_populates="slides")
 
+    @property
+    def background_asset_path(self):
+        if self.planning_json and isinstance(self.planning_json, dict):
+            return self.planning_json.get("background_asset_path")
+        return None
+
+    @background_asset_path.setter
+    def background_asset_path(self, value):
+        if not self.planning_json:
+            self.planning_json = {}
+        current = dict(self.planning_json)
+        current["background_asset_path"] = value
+        self.planning_json = current
+
 class ArtDirectorDecision(Base):
     """
     BITÁCORA DE DECISIONES (v34.0).

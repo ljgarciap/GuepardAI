@@ -190,7 +190,7 @@ class TestGetSlideTypesTool:
         WHEN: se llama a GetSlideTypesTool
         THEN: debe retornar una lista no vacía de layouts
         """
-        from agents.arquitecto import GetSlideTypesTool
+        from agents.architect import GetSlideTypesTool
 
         tool = GetSlideTypesTool()
         result = tool.run()
@@ -205,7 +205,7 @@ class TestGetSlideTypesTool:
         WHEN: se consulta la lista de tipos
         THEN: deben estar presentes los layouts esenciales (cover_hero, two_column_text)
         """
-        from agents.arquitecto import GetSlideTypesTool
+        from agents.architect import GetSlideTypesTool
 
         tool = GetSlideTypesTool()
         result = tool.run()

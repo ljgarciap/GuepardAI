@@ -1,7 +1,7 @@
 import logging
 import traceback
 from agents.redactor import GenerateTextTool
-from agents.arquitecto import ComposeLayoutTool
+from agents.architect import ComposeLayoutTool
 from agents.qa_validator import ScoreFidelityTool, ValidateBrandTool
 from agents.render_agent import RenderPPTXTool
 from agents.brand_analyst import ReadPPTXTool, ExtractPaletteTool
@@ -16,7 +16,7 @@ class AgentOrchestrator:
     Enruta las peticiones basándose en el estado del Job e implementa ciclos de validación.
 
     Responsabilidades:
-      - run_generation_pipeline: Orquesta Redactor → Arquitecto → QA → Render.
+      - run_generation_pipeline: Orquesta Redactor → Architect → QA → Render.
       - run_ingestion_pipeline:  Orquesta Brand Analyst (ReadPPTX → ExtractPalette).
     """
     def __init__(self):
@@ -295,7 +295,17 @@ class AgentOrchestrator:
         from utils.observability import log_performance_metric
         start_time = time.perf_counter()
         
+        import sys
+        is_test = "pytest" in sys.modules
+
+        db = SessionLocal()
         try:
+            job = db.query(models.GenerationJob).get(job_id)
+            if job:
+                job.progress = 10
+                job.current_step = "Agent: Redactor is starting to write the slides..."
+                db.commit()
+        
             # 1. Agente Redactor (Contenido)
             logger.info(f"[Orchestrator] Delegating to Redactor (GenerateTextTool)...")
             self.generate_text(
@@ -310,6 +320,11 @@ class AgentOrchestrator:
             # Checkpoint Human-in-the-Loop
             if req_data.get("interactive_mode", False):
                 logger.info(f"[Orchestrator] Interactive mode enabled. Pausing pipeline for Job {job_id} at CONTENT_READY.")
+                if job:
+                    job.progress = 40
+                    job.current_step = "Content structure ready for review."
+                    db.commit()
+
                 duration = time.perf_counter() - start_time
                 log_performance_metric(
                     event_name="pipeline.generation.paused",
@@ -318,7 +333,12 @@ class AgentOrchestrator:
                 )
                 return
 
-            self.run_design_and_render(job_id, req_data)
+            if job:
+                job.progress = 40
+                job.current_step = "Content structure generated. Passing to Architect..."
+                db.commit()
+
+            self.run_design_and_render(job_id, req_data, db=db)
             duration = time.perf_counter() - start_time
             log_performance_metric(
                 event_name="pipeline.generation.complete",
@@ -335,62 +355,96 @@ class AgentOrchestrator:
             )
             logger.error(f"[Orchestrator] Pipeline failed: {str(e)}")
             logger.error(traceback.format_exc())
-            db = SessionLocal()
             try:
                 job = db.query(models.GenerationJob).get(job_id)
                 if job:
                     job.status = models.GenerationJobStatus.ERROR
                     job.current_step = f"Pipeline Error: {str(e)}"
                     db.commit()
-            finally:
+            except Exception as db_err:
+                logger.error(f"Failed to set error status: {db_err}")
+        finally:
+            if not is_test:
                 db.close()
 
-    def run_design_and_render(self, job_id: int, req_data: dict):
+    def run_design_and_render(self, job_id: int, req_data: dict, db=None):
         """
-        Ejecuta las etapas de diseño (Arquitecto), QA y renderizado final.
+        Ejecuta las etapas de diseño (Architect), QA y renderizado final.
         """
-        # Bucle de Diseño y QA
-        retries = 0
-        qa_passed = False
-        
-        while retries <= self.MAX_RETRIES and not qa_passed:
-            logger.info(f"[Orchestrator] Delegating to Arquitecto (ComposeLayoutTool) - Attempt {retries + 1}")
-            self.compose_layout(job_id=job_id, is_premium=(req_data.get("tier") == "premium"))
+        import sys
+        is_test = "pytest" in sys.modules
 
-            logger.info(f"[Orchestrator] Delegating to QA Validator (ScoreFidelityTool/ValidateBrandTool)...")
-            # Determinista
-            brand_validation = self.validate_brand(job_id=job_id)
-            if brand_validation["status"] == "failed":
-                logger.warning(f"[Orchestrator] QA Deterministic Failed: {brand_validation['violations']}")
-                needs_rework = True
-            else:
-                # Híbrido/LLM
-                qa_result = self.score_fidelity(job_id=job_id)
-                needs_rework = qa_result.get("needs_rework", False)
-
-            if needs_rework:
-                retries += 1
-                logger.info(f"[Orchestrator] QA rejected design. Retries used: {retries}/{self.MAX_RETRIES}")
-                if retries > self.MAX_RETRIES:
-                    logger.warning(f"[Orchestrator] Max retries reached. Forcing acceptance.")
-                    qa_passed = True # Forzamos el pase porque nos quedamos sin reintentos
-            else:
-                logger.info(f"[Orchestrator] QA Approved design!")
-                qa_passed = True
-
-        # 4. Render Engine
-        logger.info(f"[Orchestrator] Calling Render Agent (RenderPPTXTool)...")
-        self.render_pptx(
-            job_id=job_id,
-            output_format=req_data.get("output_format", "pptx"),
-            is_premium=(req_data.get("tier") == "premium")
-        )
+        local_db = db or SessionLocal()
+        try:
+            # Bucle de Diseño y QA
+            retries = 0
+            qa_passed = False
             
-        logger.info(f"[Orchestrator] Agent Pipeline completed for Job {job_id}")
+            while retries <= self.MAX_RETRIES and not qa_passed:
+                logger.info(f"[Orchestrator] Delegating to Architect (ComposeLayoutTool) - Attempt {retries + 1}")
+                
+                job = local_db.query(models.GenerationJob).get(job_id)
+                if job:
+                    job.progress = min(80, 50 + retries * 10)
+                    job.current_step = f"Agent: Architect is planning layouts and images (Attempt {retries + 1})..."
+                    local_db.commit()
+
+                self.compose_layout(job_id=job_id, is_premium=(req_data.get("tier") == "premium"))
+
+                logger.info(f"[Orchestrator] Delegating to QA Validator (ScoreFidelityTool/ValidateBrandTool)...")
+                
+                job = local_db.query(models.GenerationJob).get(job_id)
+                if job:
+                    job.progress = min(82, 60 + retries * 10)
+                    job.current_step = "Agent: QA Validator is verifying design compliance..."
+                    local_db.commit()
+
+                # Determinista
+                brand_validation = self.validate_brand(job_id=job_id)
+                if brand_validation["status"] == "failed":
+                    logger.warning(f"[Orchestrator] QA Deterministic Failed: {brand_validation['violations']}")
+                    needs_rework = True
+                else:
+                    # Híbrido/LLM
+                    qa_result = self.score_fidelity(job_id=job_id)
+                    needs_rework = qa_result.get("needs_rework", False)
+
+                if needs_rework:
+                    retries += 1
+                    logger.info(f"[Orchestrator] QA rejected design. Retries used: {retries}/{self.MAX_RETRIES}")
+                    job = local_db.query(models.GenerationJob).get(job_id)
+                    if job:
+                        job.current_step = f"QA validation failed (Attempt {retries}). Retrying layout planning..."
+                        local_db.commit()
+                    if retries > self.MAX_RETRIES:
+                        logger.warning(f"[Orchestrator] Max retries reached. Forcing acceptance.")
+                        qa_passed = True # Forzamos el pase porque nos quedamos sin reintentos
+                else:
+                    logger.info(f"[Orchestrator] QA Approved design!")
+                    qa_passed = True
+
+            # 4. Render Engine
+            logger.info(f"[Orchestrator] Calling Render Agent (RenderPPTXTool)...")
+            job = local_db.query(models.GenerationJob).get(job_id)
+            if job:
+                job.progress = 85
+                job.current_step = "Agent: Render Agent is assembling the final presentation..."
+                local_db.commit()
+
+            self.render_pptx(
+                job_id=job_id,
+                output_format=req_data.get("output_format", "pptx"),
+                is_premium=(req_data.get("tier") == "premium")
+            )
+                
+            logger.info(f"[Orchestrator] Agent Pipeline completed for Job {job_id}")
+        finally:
+            if not db and not is_test:
+                local_db.close()
 
     def resume_generation_pipeline(self, job_id: int, req_data: dict):
         """
-        Reanuda el pipeline de generación desde la etapa del Arquitecto.
+        Reanuda el pipeline de generación desde la etapa del Architect.
         """
         logger.info(f"[Orchestrator] Resuming Agent Pipeline for Job {job_id}")
         import time

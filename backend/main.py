@@ -218,6 +218,115 @@ async def update_brand(
     }
 
 
+@app.get("/api/footers", tags=["Governance"])
+def list_footers(db: Session = Depends(get_db)):
+    """Lista todas las configuraciones de footer."""
+    is_enabled_config = db.query(models.SystemConfig).filter(models.SystemConfig.key == "is_footer_enabled").first()
+    is_enabled = (is_enabled_config.value == "true") if is_enabled_config else True
+    
+    footers = db.query(models.FooterConfig).order_by(models.FooterConfig.created_at.desc()).all()
+    return {
+        "is_footer_enabled": is_enabled,
+        "footers": footers
+    }
+
+@app.post("/api/footers", tags=["Governance"])
+async def create_footer(
+    name: str = Form(...),
+    text: Optional[str] = Form(None),
+    disclaimer: Optional[str] = Form(None),
+    logo_light: Optional[UploadFile] = File(None),
+    logo_dark: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db)
+):
+    """Crea una nueva configuración de footer y procesa logos opcionales."""
+    logo_light_path = None
+    logo_dark_path = None
+    
+    if logo_light:
+        try:
+            safe_name = f"footer_light_{int(time.time())}_{logo_light.filename}"
+            path = os.path.join(UPLOAD_DIR, safe_name)
+            content = await logo_light.read()
+            with open(path, "wb") as f:
+                f.write(content)
+            logo_light_path = f"uploads/{safe_name}"
+        except Exception as e:
+            print(f"  [FooterService] Error saving logo_light: {e}")
+            
+    if logo_dark:
+        try:
+            safe_name = f"footer_dark_{int(time.time())}_{logo_dark.filename}"
+            path = os.path.join(UPLOAD_DIR, safe_name)
+            content = await logo_dark.read()
+            with open(path, "wb") as f:
+                f.write(content)
+            logo_dark_path = f"uploads/{safe_name}"
+        except Exception as e:
+            print(f"  [FooterService] Error saving logo_dark: {e}")
+
+    # Si es el primer footer, lo dejamos seleccionado por defecto
+    first_count = db.query(models.FooterConfig).count()
+    should_select = (first_count == 0)
+
+    footer = models.FooterConfig(
+        name=name,
+        text=text,
+        disclaimer=disclaimer,
+        logo_light_path=logo_light_path,
+        logo_dark_path=logo_dark_path,
+        is_active=True,
+        is_selected=should_select
+    )
+    db.add(footer)
+    db.commit()
+    db.refresh(footer)
+    return footer
+
+@app.put("/api/footers/{footer_id}/select", tags=["Governance"])
+def select_footer(footer_id: int, db: Session = Depends(get_db)):
+    """Selecciona un footer específico (desmarcando los demás)."""
+    # Si footer_id es 0, deseleccionamos todos (sin footer)
+    if footer_id == 0:
+        db.query(models.FooterConfig).update({models.FooterConfig.is_selected: False})
+        db.commit()
+        return {"status": "success", "selected_id": None}
+        
+    footer = db.query(models.FooterConfig).get(footer_id)
+    if not footer:
+        raise HTTPException(status_code=404, detail="Footer configuration not found")
+        
+    db.query(models.FooterConfig).update({models.FooterConfig.is_selected: False})
+    footer.is_selected = True
+    db.commit()
+    db.refresh(footer)
+    return footer
+
+@app.delete("/api/footers/{footer_id}", tags=["Governance"])
+def delete_footer(footer_id: int, db: Session = Depends(get_db)):
+    """Elimina una configuración de footer."""
+    footer = db.query(models.FooterConfig).get(footer_id)
+    if not footer:
+        raise HTTPException(status_code=404, detail="Footer configuration not found")
+        
+    db.delete(footer)
+    db.commit()
+    return {"status": "success", "message": "Footer deleted"}
+
+@app.put("/api/footers/toggle", tags=["Governance"])
+def toggle_footer_global(enabled: bool, db: Session = Depends(get_db)):
+    """Habilita o deshabilita globalmente el footer."""
+    cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == "is_footer_enabled").first()
+    val_str = "true" if enabled else "false"
+    if cfg:
+        cfg.value = val_str
+    else:
+        cfg = models.SystemConfig(key="is_footer_enabled", value=val_str, description="Global footer activation toggle")
+        db.add(cfg)
+    db.commit()
+    return {"status": "success", "is_footer_enabled": enabled}
+
+
 # ──────────────────────────────────────────────
 # WORKER TASKS (background)
 # ──────────────────────────────────────────────

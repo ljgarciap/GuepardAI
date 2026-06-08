@@ -223,7 +223,7 @@ class GammaPainter:
                 img = self.resolve_image(el.get("path"))
                 if img: self.add_typo_composition(slide, el.get("text"), el.get("char"), img, x, y, size=el.get("size", 80))
         
-    def apply_branding(self, slide, slide_data, logo_path, agency):
+    def apply_branding(self, slide, slide_data, logo_path, agency, bg_color=None):
         """v10.0: Centralized branding logic (Tesco Logo + L-Founders Signature)."""
         is_title = (slide_data.get("slide_number") == 1)
         if logo_path:
@@ -231,7 +231,17 @@ class GammaPainter:
             resolved_logo = self.resolve_image(logo_path)
             if resolved_logo:
                 self.add_fitted_image(slide, resolved_logo, self.w(82), self.h(3), self.w(15), self.h(8))
-        self.add_agency_signature(slide, agency, is_title=is_title)
+        
+        # Auto-detect background color for footer contrast if not provided
+        if bg_color is None:
+            l_type = slide_data.get("layout_type")
+            is_last = slide_data.get("is_last", False)
+            if l_type in ("composition_hero", "composition_quote") or is_last:
+                bg_color = self.primary
+            else:
+                bg_color = self.bg
+                
+        self.add_agency_signature(slide, agency, is_title=is_title, bg_color=bg_color)
 
     def paint_split(self, slide_data):
         slide = self.secure_slide(slide_data)
@@ -474,15 +484,64 @@ class GammaPainter:
                 self.add_text(slide, b, x_pos + self.w(2), self.h(38), w_pos - self.w(4), self.h(44), size=16, color=get_contrast_text_color(self.primary), align=PP_ALIGN.CENTER, v_align=MSO_ANCHOR.MIDDLE)
         return slide
 
-    def add_agency_signature(self, slide, agency, is_title=False):
-        name, footer_y, footer_w = "founders of loyalty", 92.0, 100.0 - (self.MARGIN_X * 2)
-        footer_color = RGBColor(255, 255, 255) if get_luminance(self.bg) < 0.5 else self.primary
-        if is_title:
-            client_tag = f"FOR {agency.get('client_name', 'INTERNAL').upper()} USE ONLY"
-            self.add_text(slide, f"L — {name.upper()}  {client_tag}", self.w(self.MARGIN_X), self.h(footer_y), self.w(60), self.h(4), size=8, color=footer_color, bold=True)
+    def add_agency_signature(self, slide, agency, is_title=False, bg_color=None):
+        is_enabled = getattr(self, "is_footer_enabled", True)
+        if not is_enabled:
+            return
+
+        footer_cfg = getattr(self, "footer_config", None)
+        if not footer_cfg:
+            # Fallback a comportamiento por defecto si no hay config activa
+            text_val = "L - founders of loyalty"
+            disclaimer_val = "CONFIDENTIAL"
+            logo_light = None
+            logo_dark = None
         else:
+            # Si footer_cfg es un objeto (de model_dump o DB)
+            if isinstance(footer_cfg, dict):
+                text_val = footer_cfg.get("text", "") or "L - founders of loyalty"
+                disclaimer_val = footer_cfg.get("disclaimer", "")
+                logo_light = footer_cfg.get("logo_light_path")
+                logo_dark = footer_cfg.get("logo_dark_path")
+            else:
+                text_val = getattr(footer_cfg, "text", "") or "L - founders of loyalty"
+                disclaimer_val = getattr(footer_cfg, "disclaimer", "") or ""
+                logo_light = getattr(footer_cfg, "logo_light_path", None)
+                logo_dark = getattr(footer_cfg, "logo_dark_path", None)
+
+        footer_y, footer_w = 92.0, 100.0 - (self.MARGIN_X * 2)
+        
+        # Evaluar luminancia del fondo efectivo para elegir contraste
+        effective_bg = bg_color if bg_color is not None else self.bg
+        bg_lum = get_luminance(effective_bg)
+        
+        # Color del texto (blanco en fondo oscuro, primario corporativo en fondo claro)
+        footer_color = RGBColor(255, 255, 255) if bg_lum < 0.5 else self.primary
+        
+        # Elegir logo claro/oscuro
+        selected_logo = logo_light if bg_lum < 0.5 else logo_dark
+
+        # Draw a thin horizontal line on non-title slides
+        if not is_title:
             self.add_rect(slide, self.w(self.MARGIN_X), self.h(91), self.w(footer_w), Pt(0.2), footer_color, transparency=0.8)
-            self.add_text(slide, f"L — {name}  CONFIDENTIAL", self.w(self.MARGIN_X), self.h(92), self.w(40), self.h(3), size=7, color=footer_color)
+
+        # Draw Left logo & signature text
+        text_y_pct = 92.0 if not is_title else footer_y
+        logo_y_pct = 91.5 if not is_title else footer_y - 0.5
+        
+        if selected_logo:
+            resolved_logo = self.resolve_image(selected_logo)
+            if resolved_logo:
+                self.add_fitted_image(slide, resolved_logo, self.w(self.MARGIN_X), self.h(logo_y_pct), self.w(3), self.h(3))
+                self.add_text(slide, text_val, self.w(self.MARGIN_X + 4), self.h(text_y_pct), self.w(40), self.h(3), size=7, color=footer_color)
+            else:
+                self.add_text(slide, text_val, self.w(self.MARGIN_X), self.h(text_y_pct), self.w(40), self.h(3), size=7, color=footer_color)
+        else:
+            self.add_text(slide, text_val, self.w(self.MARGIN_X), self.h(text_y_pct), self.w(40), self.h(3), size=7, color=footer_color)
+
+        # Draw Right disclaimer
+        if disclaimer_val:
+            self.add_text(slide, disclaimer_val.upper(), self.w(100 - self.MARGIN_X - 45), self.h(text_y_pct), self.w(45), self.h(3), size=7, color=footer_color, align=PP_ALIGN.RIGHT)
 
     def secure_slide(self, slide_data=None):
         slide = self.prs.slides.add_slide(self.blank_layout)
@@ -506,16 +565,27 @@ class GammaPainter:
         return path
 
     def render_slides(self, manifest):
-        # Now expects a RenderManifest object
-        slides = manifest.slides
-        logo_path = manifest.logo_path
-        agency = manifest.agency_branding.model_dump() if manifest.agency_branding else {}
+        # Soporte híbrido para dict y Pydantic models
+        if isinstance(manifest, dict):
+            self.is_footer_enabled = manifest.get("is_footer_enabled", True)
+            self.footer_config = manifest.get("footer_config", None)
+            slides = manifest.get("slides", [])
+            logo_path = manifest.get("logo_path")
+            agency = manifest.get("agency_branding", {})
+        else:
+            self.is_footer_enabled = getattr(manifest, "is_footer_enabled", True)
+            self.footer_config = getattr(manifest, "footer_config", None)
+            slides = manifest.slides
+            logo_path = manifest.logo_path
+            agency = manifest.agency_branding.model_dump() if manifest.agency_branding else {}
         
         print(f"  [Painter] Rendering {len(slides)} slides...")
         for i, slide_data_obj in enumerate(slides):
-            # Converting to dict for backwards compatibility with paint_* methods temporarily
-            # A full refactor of paint_* methods would take much more time, so we dump to dict
-            slide_data = slide_data_obj.model_dump()
+            # Convertir a dict si es un objeto Pydantic
+            if hasattr(slide_data_obj, "model_dump"):
+                slide_data = slide_data_obj.model_dump()
+            else:
+                slide_data = slide_data_obj
             
             l_type = slide_data.get("layout_type", "composition_split")
             print(f"    - Slide {i+1}: {l_type}")
@@ -528,7 +598,17 @@ class GammaPainter:
             elif l_type == "data_grid_cards" or l_type == "paint_data_grid_cards": slide = self.paint_data_grid_cards(slide_data)
             elif l_type == "custom_canvas": slide = self.paint_custom_canvas(slide_data)
             else: slide = self.paint_split(slide_data)
-            if slide: self.apply_branding(slide, slide_data, logo_path, agency)
+            
+            # Pasar bg_color opcional para que se dibuje el footer con contraste correcto
+            bg_color = None
+            if l_type == "composition_hero":
+                bg_color = self.primary
+            elif l_type == "composition_quote" and not slide_data.get("background_asset_path"):
+                bg_color = self.primary
+            elif slide_data.get("is_last"):
+                bg_color = self.primary
+
+            if slide: self.apply_branding(slide, slide_data, logo_path, agency, bg_color=bg_color)
 
 def blend_colors(c1_rgb, c2_rgb, ratio):
     return RGBColor(int(c1_rgb[0] * ratio + c2_rgb[0] * (1 - ratio)), int(c1_rgb[1] * ratio + c2_rgb[1] * (1 - ratio)), int(c1_rgb[2] * ratio + c2_rgb[2] * (1 - ratio)))

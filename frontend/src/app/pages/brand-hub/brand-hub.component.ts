@@ -38,15 +38,32 @@ export class BrandHubComponent implements OnInit, OnDestroy {
 
   resetLoading: boolean = false;
 
+  // Footer Management Properties
+  footers: any[] = [];
+  isFooterEnabled: boolean = true;
+  newFooter: any = { name: '', text: '', disclaimer: '' };
+  logoLightFile: File | null = null;
+  logoDarkFile: File | null = null;
+  logoLightPreview: string = '';
+  logoDarkPreview: string = '';
+  isSavingFooter: boolean = false;
+  showFooterCreator: boolean = false;
+
   ngOnInit() {
     this.loadBrands();
+    this.loadFooters();
   }
 
   loadBrands() {
     this.brandService.getBrands().subscribe(res => {
-      // Excluimos la "Public Library" (-1) de aquí porque el usuario 
-      // ya tiene un botón dedicado para definir el scope como PUBLIC.
       this.officialBrands = res.filter((b: any) => b.id !== -1);
+    });
+  }
+
+  loadFooters() {
+    this.brandService.getFooters().subscribe(res => {
+      this.isFooterEnabled = res.is_footer_enabled;
+      this.footers = res.footers;
     });
   }
 
@@ -220,6 +237,74 @@ export class BrandHubComponent implements OnInit, OnDestroy {
         this.loadBrands();
       },
       error: () => { this.resetLoading = false; }
+    });
+  }
+
+  onFooterLogoSelected(event: any, type: 'light' | 'dark') {
+    if (event.target.files.length > 0) {
+      const file = event.target.files[0];
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (type === 'light') {
+          this.logoLightFile = file;
+          this.logoLightPreview = reader.result as string;
+        } else {
+          this.logoDarkFile = file;
+          this.logoDarkPreview = reader.result as string;
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
+  saveFooter() {
+    if (!this.newFooter.name) return;
+    this.isSavingFooter = true;
+    this.brandService.createFooter(
+      this.newFooter.name,
+      this.newFooter.text,
+      this.newFooter.disclaimer,
+      this.logoLightFile || undefined,
+      this.logoDarkFile || undefined
+    ).subscribe({
+      next: (res) => {
+        this.isSavingFooter = false;
+        this.newFooter = { name: '', text: '', disclaimer: '' };
+        this.logoLightFile = null;
+        this.logoDarkFile = null;
+        this.logoLightPreview = '';
+        this.logoDarkPreview = '';
+        this.showFooterCreator = false;
+        this.loadFooters();
+      },
+      error: (err) => {
+        this.isSavingFooter = false;
+        alert(err.error?.detail || 'Error saving footer config');
+      }
+    });
+  }
+
+  selectFooter(id: number) {
+    this.brandService.selectFooter(id).subscribe({
+      next: () => this.loadFooters(),
+      error: (err) => alert(err.error?.detail || 'Error selecting footer')
+    });
+  }
+
+  deleteFooter(id: number) {
+    if (!confirm('Are you sure you want to delete this footer template?')) return;
+    this.brandService.deleteFooter(id).subscribe({
+      next: () => this.loadFooters(),
+      error: (err) => alert(err.error?.detail || 'Error deleting footer')
+    });
+  }
+
+  toggleFooterGlobal(enabled: boolean) {
+    this.brandService.toggleFooterGlobal(enabled).subscribe({
+      next: () => {
+        this.isFooterEnabled = enabled;
+      },
+      error: (err) => alert(err.error?.detail || 'Error toggling footer')
     });
   }
 

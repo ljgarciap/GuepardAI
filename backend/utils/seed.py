@@ -230,6 +230,11 @@ Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
 - 'description': TECHNICAL INSTRUCTION: Provide a VISUAL and COMPOSITIONAL description (Max 3 sentences). Focus strictly on the Subject, Composition (e.g., 'Centered', 'Negative space on left'), Dominant Colors, and Design Potential (e.g., 'Suitable for typographic substitution'). AVOID corporate fluff like 'strategic value', 'approachable' or 'professional'.
 - 'tags': 5 technical keywords for designer search.""",
                 "description": "Asset Classifier v3.0 — Technical Designer Focus (Replit-Grade)."
+            },
+            {
+                "key": "is_footer_enabled",
+                "value": "true",
+                "description": "Determina si el footer/firma está habilitado de forma global."
             }
         ]
 
@@ -290,8 +295,31 @@ Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
             else:
                 print(f"  [Seed] Skipped Survey Question (already exists): {q['key']}")
 
+        # ─────────────────────────────────────────────────────
+        # DEFAULT FOOTER CONFIGURATIONS
+        # ─────────────────────────────────────────────────────
+        default_footers = [
+            {
+                "name": "Default Founders of Loyalty & Tesco Footer",
+                "text": "L - founders of loyalty",
+                "disclaimer": "CONFIDENTIAL FOR {brand} USE ONLY",
+                "is_active": True,
+                "is_selected": True
+            }
+        ]
+
+        for f in default_footers:
+            existing_f = db.query(models.FooterConfig).filter(
+                models.FooterConfig.name == f["name"]
+            ).first()
+            if not existing_f:
+                db.add(models.FooterConfig(**f))
+                print(f"  [Seed] Inserted Default Footer Config: {f['name']}")
+            else:
+                print(f"  [Seed] Skipped Default Footer Config (already exists): {f['name']}")
+
         db.commit()
-        print("\n  [Seed] ✓ All system configs, languages, and survey questions seeded successfully.")
+        print("\n  [Seed] ✓ All system configs, languages, survey questions, and footers seeded successfully.")
 
     except Exception as e:
         db.rollback()

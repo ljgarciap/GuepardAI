@@ -6,7 +6,7 @@ from agents.base import BaseAgentTool
 
 from database import SessionLocal
 import models
-from schemas.presentation import RenderManifest, PainterSlideData, PainterAgencyBranding
+from schemas.presentation import RenderManifest, PainterSlideData, PainterAgencyBranding, PainterFooterConfig
 from services.rendering.painter import GammaPainter
 from services.rendering.painter_bridge import GRAMMAR_TO_PAINTER
 
@@ -125,6 +125,37 @@ class RenderPPTXTool(BaseAgentTool):
                 name=agency_name, logo_path=brand_logo_path,
                 client_name="Client", email="partners@l-founders.com"
             )
+
+            brand_name = "TESCO"
+            if job.brand_id:
+                brand_obj = db.query(models.Brand).get(job.brand_id)
+                if brand_obj:
+                    brand_name = brand_obj.name
+
+            # Obtener configuración de footer activa
+            is_enabled_config = db.query(models.SystemConfig).filter(models.SystemConfig.key == "is_footer_enabled").first()
+            is_footer_enabled = (is_enabled_config.value == "true") if is_enabled_config else True
+
+            active_footer = db.query(models.FooterConfig).filter(
+                models.FooterConfig.is_selected == True,
+                models.FooterConfig.is_active == True
+            ).first()
+
+            footer_dto = None
+            if active_footer:
+                disclaimer_val = active_footer.disclaimer or ""
+                if "{brand}" in disclaimer_val:
+                    disclaimer_val = disclaimer_val.replace("{brand}", brand_name.upper())
+                
+                footer_dto = PainterFooterConfig(
+                    name=active_footer.name,
+                    logo_light_path=active_footer.logo_light_path,
+                    logo_dark_path=active_footer.logo_dark_path,
+                    text=active_footer.text,
+                    disclaimer=disclaimer_val,
+                    is_active=active_footer.is_active,
+                    is_selected=active_footer.is_selected
+                )
             
             render_slides = []
             for i, s in enumerate(saved_slides):
@@ -160,7 +191,9 @@ class RenderPPTXTool(BaseAgentTool):
             render_manifest = RenderManifest(
                 slides=render_slides,
                 logo_path=brand_logo_path,
-                agency_branding=agency_branding
+                agency_branding=agency_branding,
+                is_footer_enabled=is_footer_enabled,
+                footer_config=footer_dto
             )
             
             output_filename = f"Portfolio_Agent_{'Premium' if is_premium else 'Free'}_{job_id}_{int(time.time())}.pptx"

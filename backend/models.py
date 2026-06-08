@@ -421,3 +421,17 @@ class GenerationJobFeedback(Base):
 
     job = relationship("GenerationJob")
     question = relationship("SurveyQuestion")
+
+
+class FooterConfig(Base):
+    __tablename__ = "footer_configs"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    name            = Column(String(100), nullable=False)
+    logo_light_path = Column(String(255), nullable=True) # Logo for dark backgrounds
+    logo_dark_path  = Column(String(255), nullable=True) # Logo for light backgrounds
+    text            = Column(Text, nullable=True)        # Text of the footer
+    disclaimer      = Column(String(255), nullable=True) # Disclaimer text (e.g. CONFIDENTIAL FOR {brand} USE ONLY)
+    is_active       = Column(Boolean, default=True)
+    is_selected     = Column(Boolean, default=False)
+    created_at      = Column(DateTime, default=datetime.datetime.utcnow)

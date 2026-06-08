@@ -119,4 +119,31 @@ export class BrandService {
   getFeedback(jobId: number): Observable<any[]> {
     return this.http.get<any[]>(`${this.apiUrl}/presentations/${jobId}/feedback`);
   }
+
+  getFooters(): Observable<any> {
+    return this.http.get(`${this.apiUrl}/footers`);
+  }
+
+  createFooter(name: string, text?: string, disclaimer?: string, logoLight?: File, logoDark?: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('name', name);
+    if (text) formData.append('text', text);
+    if (disclaimer) formData.append('disclaimer', disclaimer);
+    if (logoLight) formData.append('logo_light', logoLight);
+    if (logoDark) formData.append('logo_dark', logoDark);
+    
+    return this.http.post(`${this.apiUrl}/footers`, formData);
+  }
+
+  selectFooter(footerId: number): Observable<any> {
+    return this.http.put(`${this.apiUrl}/footers/${footerId}/select`, {});
+  }
+
+  deleteFooter(footerId: number): Observable<any> {
+    return this.http.delete(`${this.apiUrl}/footers/${footerId}`);
+  }
+
+  toggleFooterGlobal(enabled: boolean): Observable<any> {
+    return this.http.put(`${this.apiUrl}/footers/toggle?enabled=${enabled}`, {});
+  }
 }

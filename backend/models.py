@@ -1,6 +1,6 @@
 import datetime
 from enum import Enum
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Float, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Float, ForeignKey, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from pgvector.sqlalchemy import Vector
@@ -393,3 +393,31 @@ class PerformanceMetric(Base):
     metadata_json    = Column(JSONB, nullable=True)
     
     timestamp        = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+
+
+class SurveyQuestion(Base):
+    __tablename__ = "survey_questions"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    key           = Column(String(100), unique=True, index=True, nullable=False)
+    question_text = Column(Text, nullable=False)
+    question_type = Column(String(50), default="stars") # 'stars', 'text', 'boolean'
+    is_active     = Column(Boolean, default=True)
+    created_at    = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class GenerationJobFeedback(Base):
+    __tablename__ = "generation_job_feedback"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    job_id        = Column(Integer, ForeignKey("generation_jobs.id"), nullable=False)
+    question_id   = Column(Integer, ForeignKey("survey_questions.id"), nullable=False)
+    
+    rating        = Column(Integer, nullable=True) # 1-5 stars
+    comment       = Column(Text, nullable=True)     # Optional comments/observations
+    created_at    = Column(DateTime, default=datetime.datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint('job_id', 'question_id', name='uq_job_question_feedback'),)
+
+    job = relationship("GenerationJob")
+    question = relationship("SurveyQuestion")

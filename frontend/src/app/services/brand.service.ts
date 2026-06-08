@@ -107,4 +107,16 @@ export class BrandService {
   resetDatabase(): Observable<any> {
     return this.http.delete(`${this.apiUrl}/admin/reset-db`);
   }
+
+  submitFeedback(jobId: number, rating: number, comment?: string, questionKey: string = 'presentation_satisfaction'): Observable<any> {
+    return this.http.post(`${this.apiUrl}/presentations/${jobId}/feedback`, {
+      question_key: questionKey,
+      rating,
+      comment
+    });
+  }
+
+  getFeedback(jobId: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/presentations/${jobId}/feedback`);
+  }
 }

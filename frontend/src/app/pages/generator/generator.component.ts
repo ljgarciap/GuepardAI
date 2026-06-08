@@ -23,9 +23,16 @@ export class GeneratorComponent implements OnInit {
   selectedKnowledge: string = '';
   prompt: string = '';
   selectedRegion: string = '';
-  allowAiImages: boolean = true;
+  allowAiImages: boolean = false;
   selectedFormat: string = 'pptx'; // 'pptx' or 'pdf_artistic'
   selectedTier: string = 'free'; // 'free' or 'premium' (Fix/Roadmap 1)
+  
+  // --- REVIEW SYSTEM ---
+  currentJobId: number | null = null;
+  showFeedbackModal: boolean = false;
+  selectedRating: number = 0;
+  feedbackComment: string = '';
+  feedbackSubmitted: boolean = false;
   
   // --- OPTIONS ---
   brands: any[] = [];
@@ -130,6 +137,10 @@ export class GeneratorComponent implements OnInit {
       tier: this.selectedTier
     }).subscribe({
         next: (res: any) => {
+          this.currentJobId = res.job_id;
+          this.feedbackSubmitted = false;
+          this.selectedRating = 0;
+          this.feedbackComment = '';
           this.addLog('Analyst', 'Strategic command received and validated.');
           this.startPolling(res.job_id);
         },
@@ -201,6 +212,37 @@ export class GeneratorComponent implements OnInit {
     this.errorMessage = '';
     this.prompt = '';
     this.synthesisLogs = [];
+    this.currentJobId = null;
+    this.showFeedbackModal = false;
+    this.selectedRating = 0;
+    this.feedbackComment = '';
+    this.feedbackSubmitted = false;
     this.loadMetadata();
+  }
+
+  onDownloadClick() {
+    if (this.currentJobId && !this.feedbackSubmitted) {
+      this.showFeedbackModal = true;
+    }
+  }
+
+  selectRating(rating: number) {
+    this.selectedRating = rating;
+  }
+
+  submitFeedback() {
+    if (!this.currentJobId || this.selectedRating === 0) return;
+
+    this.brandService.submitFeedback(this.currentJobId, this.selectedRating, this.feedbackComment).subscribe({
+      next: (res) => {
+        console.log("[SynthesisStudio] Feedback submitted successfully:", res);
+        this.feedbackSubmitted = true;
+        this.showFeedbackModal = false;
+      },
+      error: (err) => {
+        console.error("[SynthesisStudio] Error submitting feedback:", err);
+        this.showFeedbackModal = false;
+      }
+    });
   }
 }

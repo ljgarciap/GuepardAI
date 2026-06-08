@@ -268,8 +268,30 @@ Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
             else:
                 print(f"  [Seed] Skipped Language (already exists): {lang['name']}")
 
+        # ─────────────────────────────────────────────────────
+        # SURVEY QUESTIONS (SISTEMA DE CALIFICACIÓN PARAMÉTRICO)
+        # ─────────────────────────────────────────────────────
+        questions = [
+            {
+                "key": "presentation_satisfaction",
+                "question_text": "How satisfied are you with the generated presentation?",
+                "question_type": "stars",
+                "is_active": True
+            }
+        ]
+
+        for q in questions:
+            existing_q = db.query(models.SurveyQuestion).filter(
+                models.SurveyQuestion.key == q["key"]
+            ).first()
+            if not existing_q:
+                db.add(models.SurveyQuestion(**q))
+                print(f"  [Seed] Inserted Survey Question: {q['key']}")
+            else:
+                print(f"  [Seed] Skipped Survey Question (already exists): {q['key']}")
+
         db.commit()
-        print("\n  [Seed] ✓ All system configs and languages v8.5 seeded successfully.")
+        print("\n  [Seed] ✓ All system configs, languages, and survey questions seeded successfully.")
 
     except Exception as e:
         db.rollback()

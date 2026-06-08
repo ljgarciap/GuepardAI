@@ -372,11 +372,25 @@ def list_library_portfolios(brand_id: Optional[int] = None, db: Session = Depend
         query = query.filter(models.GenerationJob.brand_id == brand_id)
     
     jobs = query.all()
+    
+    # Pre-fetch satisfaction feedback to avoid N+1 queries
+    satisfaction_q = db.query(models.SurveyQuestion).filter(models.SurveyQuestion.key == "presentation_satisfaction").first()
+    satisfaction_q_id = satisfaction_q.id if satisfaction_q else None
+    
+    feedbacks_dict = {}
+    if satisfaction_q_id:
+        feedbacks = db.query(models.GenerationJobFeedback).filter(
+            models.GenerationJobFeedback.question_id == satisfaction_q_id
+        ).all()
+        feedbacks_dict = {f.job_id: {"rating": f.rating, "comment": f.comment} for f in feedbacks}
+        
     return [{
         "id": j.id, 
         "filename": os.path.basename(j.pptx_path) if j.pptx_path else f"Presentation_{j.id}.pptx",
         "created_at": j.created_at,
-        "brand_id": j.brand_id
+        "brand_id": j.brand_id,
+        "rating": feedbacks_dict.get(j.id, {}).get("rating"),
+        "comment": feedbacks_dict.get(j.id, {}).get("comment")
     } for j in jobs]
 
 # ──────────────────────────────────────────────
@@ -546,6 +560,74 @@ def resume_presentation(job_id: int, request: ResumeRequest, db: Session = Depen
     )
     
     return {"job_id": job.id, "status": models.GenerationJobStatus.PROCESSING}
+
+
+class FeedbackSubmitRequest(BaseModel):
+    question_key: str = "presentation_satisfaction"
+    rating: int
+    comment: Optional[str] = None
+
+
+@app.post("/api/presentations/{job_id}/feedback", tags=["Generation"])
+def submit_presentation_feedback(job_id: int, request: FeedbackSubmitRequest, db: Session = Depends(get_db)):
+    """Guarda o actualiza la calificación y observaciones del usuario para una diapositiva/job."""
+    job = db.query(models.GenerationJob).get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if request.rating < 1 or request.rating > 5:
+        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+
+    # Obtener o crear la pregunta
+    question = db.query(models.SurveyQuestion).filter(models.SurveyQuestion.key == request.question_key).first()
+    if not question:
+        question = models.SurveyQuestion(
+            key=request.question_key,
+            question_text=request.question_key.replace("_", " ").capitalize() + "?",
+            question_type="stars"
+        )
+        db.add(question)
+        db.flush()
+
+    # Buscar feedback existente para este job y pregunta
+    feedback = db.query(models.GenerationJobFeedback).filter(
+        models.GenerationJobFeedback.job_id == job_id,
+        models.GenerationJobFeedback.question_id == question.id
+    ).first()
+
+    if feedback:
+        feedback.rating = request.rating
+        feedback.comment = request.comment
+    else:
+        feedback = models.GenerationJobFeedback(
+            job_id=job_id,
+            question_id=question.id,
+            rating=request.rating,
+            comment=request.comment
+        )
+        db.add(feedback)
+
+    db.commit()
+    return {"status": "success", "job_id": job_id, "rating": request.rating, "comment": request.comment}
+
+
+@app.get("/api/presentations/{job_id}/feedback", tags=["Generation"])
+def get_presentation_feedback(job_id: int, db: Session = Depends(get_db)):
+    """Retorna todas las calificaciones y comentarios asociados a un job."""
+    feedbacks = db.query(models.GenerationJobFeedback).filter(
+        models.GenerationJobFeedback.job_id == job_id
+    ).all()
+    
+    return [
+        {
+            "question_key": f.question.key,
+            "question_text": f.question.question_text,
+            "rating": f.rating,
+            "comment": f.comment,
+            "created_at": f.created_at
+        }
+        for f in feedbacks
+    ]
 
 @app.get("/api/admin/metrics", tags=["Admin"])
 def get_performance_metrics(limit: int = 100, db: Session = Depends(get_db)):

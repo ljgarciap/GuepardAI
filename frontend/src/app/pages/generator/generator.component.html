@@ -191,7 +191,7 @@
 
       <div class="stars-container">
         <span 
-          *ngFor="let star of [1, 2, 3, 4, 5]" 
+          *ngFor="let star of [5, 4, 3, 2, 1]" 
           class="star" 
           [class.active]="selectedRating >= star"
           (click)="selectRating(star)">

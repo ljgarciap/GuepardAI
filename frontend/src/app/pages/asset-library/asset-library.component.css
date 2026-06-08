@@ -578,6 +578,7 @@
 
 .stars-container {
   display: flex;
+  flex-direction: row-reverse;
   justify-content: center;
   gap: 12px;
   margin-bottom: 24px;
@@ -592,7 +593,9 @@
 }
 
 .star:hover,
-.star.active {
+.star:hover ~ .star,
+.star.active,
+.star.active ~ .star {
   color: #f59e0b;
   transform: scale(1.15);
 }

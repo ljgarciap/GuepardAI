@@ -659,6 +659,7 @@ input:checked + .slider:before {
 
 .stars-container {
   display: flex;
+  flex-direction: row-reverse;
   justify-content: center;
   gap: 12px;
   margin-bottom: 24px;
@@ -673,7 +674,9 @@ input:checked + .slider:before {
 }
 
 .star:hover,
-.star.active {
+.star:hover ~ .star,
+.star.active,
+.star.active ~ .star {
   color: #f59e0b; /* Golden Yellow */
   transform: scale(1.15);
 }

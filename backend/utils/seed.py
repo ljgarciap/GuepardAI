@@ -316,7 +316,11 @@ Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
                 db.add(models.FooterConfig(**f))
                 print(f"  [Seed] Inserted Default Footer Config: {f['name']}")
             else:
-                print(f"  [Seed] Skipped Default Footer Config (already exists): {f['name']}")
+                existing_f.text = f["text"]
+                existing_f.disclaimer = f["disclaimer"]
+                existing_f.is_active = f["is_active"]
+                existing_f.is_selected = f["is_selected"]
+                print(f"  [Seed] Updated Default Footer Config (applied new text & disclaimer): {f['name']}")
 
         db.commit()
         print("\n  [Seed] ✓ All system configs, languages, survey questions, and footers seeded successfully.")

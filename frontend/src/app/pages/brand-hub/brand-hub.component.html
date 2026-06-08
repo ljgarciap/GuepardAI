@@ -380,17 +380,17 @@
           <div class="logos-upload-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
             <div class="logo-upload-box">
               <label class="visibility-label">LIGHT LOGO (For Dark Bg)</label>
-              <div class="mini-drop-zone" (click)="lightLogoInput.click()" style="border: 1px dashed rgba(255,255,255,0.15); padding: 10px; text-align: center; cursor: pointer; border-radius: 6px; background: rgba(0,0,0,0.2); min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+              <div class="mini-drop-zone" (click)="lightLogoInput.click()" style="border: 1px dashed rgba(255,255,255,0.25); padding: 10px; text-align: center; cursor: pointer; border-radius: 6px; background: #1e293b; min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
                 <img *ngIf="logoLightPreview" [src]="logoLightPreview" style="max-height: 30px; max-width: 100%; object-fit: contain;">
-                <span *ngIf="!logoLightPreview" style="font-size: 10px; color: rgba(255,255,255,0.5);">Select Light Logo</span>
+                <span *ngIf="!logoLightPreview" style="font-size: 10px; color: #ffffff;">Select Light Logo</span>
                 <input #lightLogoInput type="file" (change)="onFooterLogoSelected($event, 'light')" style="display: none" accept="image/*">
               </div>
             </div>
             <div class="logo-upload-box">
               <label class="visibility-label">DARK LOGO (For Light Bg)</label>
-              <div class="mini-drop-zone" (click)="darkLogoInput.click()" style="border: 1px dashed rgba(255,255,255,0.15); padding: 10px; text-align: center; cursor: pointer; border-radius: 6px; background: rgba(255,255,255,0.05); min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+              <div class="mini-drop-zone" (click)="darkLogoInput.click()" style="border: 1px dashed rgba(0,0,0,0.15); padding: 10px; text-align: center; cursor: pointer; border-radius: 6px; background: #f8fafc; min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: inset 0 1px 3px rgba(0,0,0,0.02);">
                 <img *ngIf="logoDarkPreview" [src]="logoDarkPreview" style="max-height: 30px; max-width: 100%; object-fit: contain;">
-                <span *ngIf="!logoDarkPreview" style="font-size: 10px; color: rgba(255,255,255,0.5);">Select Dark Logo</span>
+                <span *ngIf="!logoDarkPreview" style="font-size: 10px; color: #1e293b;">Select Dark Logo</span>
                 <input #darkLogoInput type="file" (change)="onFooterLogoSelected($event, 'dark')" style="display: none" accept="image/*">
               </div>
             </div>

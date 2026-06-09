@@ -348,6 +348,7 @@
               
               <div class="template-actions" style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 5px;">
                 <button class="btn-mini" (click)="selectFooter(f.id); $event.stopPropagation();" *ngIf="!f.is_selected" style="font-size: 9px; padding: 3px 8px;">SELECT</button>
+                <button class="btn-mini btn-warning" (click)="selectFooter(0); $event.stopPropagation();" *ngIf="f.is_selected" style="font-size: 9px; padding: 3px 8px; background: rgba(238, 28, 46, 0.1); color: #EE1C2E; border: 1px solid rgba(238, 28, 46, 0.25);">DEACTIVATE</button>
                 <button class="btn-mini btn-danger" (click)="deleteFooter(f.id); $event.stopPropagation();" style="font-size: 9px; padding: 3px 8px; background: rgba(255,0,0,0.1); color: #FF4D4D; border: 1px solid rgba(255,0,0,0.2);">DELETE</button>
               </div>
             </div>

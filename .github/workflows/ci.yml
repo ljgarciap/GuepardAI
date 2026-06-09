@@ -7,8 +7,6 @@ name: CI - Tests (Backend + Frontend)
 on:
   push:
     branches: [master, develop]
-  pull_request:
-    branches: [master, develop]
 
 jobs:
   # ───────────────────────────────────────────────────────────────────────────

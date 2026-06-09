@@ -124,8 +124,11 @@ export class BrandService {
     return this.http.get(`${this.apiUrl}/footers`);
   }
 
-  createFooter(name: string, text?: string, disclaimer?: string, logoLight?: File, logoDark?: File): Observable<any> {
+  createFooter(name: string, text?: string, disclaimer?: string, logoLight?: File, logoDark?: File, id?: number): Observable<any> {
     const formData = new FormData();
+    if (id !== undefined && id !== null) {
+      formData.append('id', id.toString());
+    }
     formData.append('name', name);
     if (text) formData.append('text', text);
     if (disclaimer) formData.append('disclaimer', disclaimer);

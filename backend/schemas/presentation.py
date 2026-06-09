@@ -74,6 +74,8 @@ class PainterFooterConfig(BaseModel):
 class RenderManifest(BaseModel):
     slides: List[PainterSlideData]
     logo_path: Optional[str] = None
+    logo_light_path: Optional[str] = None
+    logo_dark_path: Optional[str] = None
     agency_branding: Optional[PainterAgencyBranding] = None
     is_footer_enabled: bool = True
     footer_config: Optional[PainterFooterConfig] = None

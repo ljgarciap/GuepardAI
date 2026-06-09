@@ -18,6 +18,22 @@ from services.rendering.artistic_pdf_service import artistic_pdf_service
 from sqlalchemy.orm import Session
 
 
+def hex_is_dark(hex_color: str) -> bool:
+    if not hex_color:
+        return False
+    hex_color = hex_color.lstrip('#')
+    try:
+        if len(hex_color) == 3:
+            hex_color = "".join(c * 2 for c in hex_color)
+        r = int(hex_color[0:2], 16)
+        g = int(hex_color[2:4], 16)
+        b = int(hex_color[4:6], 16)
+        luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+        return luminance < 0.5
+    except Exception:
+        return False
+
+
 class PremiumVisualAgent:
     def __init__(self, db: Session, job_id: int, uploads_dir: str):
         self.db = db
@@ -152,6 +168,71 @@ class PremiumVisualAgent:
         return assets_by_category
 
     def _build_slides(self, content_manifest, design_manifest, brand_dna, patterns, brand_assets) -> List[Dict[str, Any]]:
+        # Get footer configuration
+        is_enabled_config = self.db.query(models.SystemConfig).filter(models.SystemConfig.key == "is_footer_enabled").first()
+        is_footer_enabled = (is_enabled_config.value == "true") if is_enabled_config else True
+        
+        active_footer = self.db.query(models.FooterConfig).filter(
+            models.FooterConfig.is_selected == True,
+            models.FooterConfig.is_active == True
+        ).first()
+
+        footer_text = ""
+        footer_disclaimer = ""
+        footer_logo_light = None
+        footer_logo_dark = None
+        
+        brand = self.db.query(models.Brand).get(getattr(brand_dna, "brand_id", 0)) if brand_dna else None
+        brand_name = brand.name if brand else "TESCO"
+
+        if is_footer_enabled:
+            if active_footer:
+                footer_text = active_footer.text or "L - founders of loyalty"
+                disclaimer_val = active_footer.disclaimer or ""
+                disclaimer_val = disclaimer_val.replace("{brand}", brand_name.upper()).replace("{Brand}", brand_name.upper()).replace("{BRAND}", brand_name.upper())
+                footer_disclaimer = disclaimer_val
+                footer_logo_light = active_footer.logo_light_path
+                footer_logo_dark = active_footer.logo_dark_path
+            else:
+                footer_text = "L - founders of loyalty"
+                footer_disclaimer = f"CONFIDENTIAL FOR {brand_name.upper()} USE ONLY"
+
+        # Dossier logo (official logo)
+        brand_logo_dossier = self._asset_path(models.BrandAsset(local_path=brand.logo_path)) if brand and brand.logo_path else None
+        
+        # Fetch brand logos for fallback
+        brand_logos = self.db.query(models.BrandAsset).filter(
+            models.BrandAsset.brand_id == getattr(brand_dna, "brand_id", 0),
+            models.BrandAsset.category == "logos"
+        ).all()
+        
+        # Filter logos to only contain the brand name to avoid picking other brands or agency logos
+        brand_name_lower = brand_name.lower()
+        matching_logos = [
+            asset for asset in brand_logos
+            if brand_name_lower in asset.local_path.lower() or brand_name_lower in (asset.description or "").lower()
+        ]
+        logo_candidates = matching_logos if matching_logos else brand_logos
+        
+        brand_logo_light_path = None
+        brand_logo_dark_path = brand_logo_dossier
+        
+        for asset in logo_candidates:
+            path_lower = asset.local_path.lower()
+            desc_lower = (asset.description or "").lower()
+            if any(x in path_lower or x in desc_lower for x in ["light", "white", "inverse", "negativo", "blanco"]):
+                brand_logo_light_path = self._asset_path(asset)
+            elif not brand_logo_dark_path:
+                brand_logo_dark_path = self._asset_path(asset)
+        
+        # Fallbacks for brand logos
+        if not brand_logo_dark_path and logo_candidates:
+            brand_logo_dark_path = self._asset_path(logo_candidates[0])
+        if brand_logo_dark_path and not brand_logo_light_path:
+            brand_logo_light_path = brand_logo_dark_path
+        if brand_logo_light_path and not brand_logo_dark_path:
+            brand_logo_dark_path = brand_logo_light_path
+
         logo_asset = self._first_asset(brand_assets, ["logos"])
         photo_asset = self._first_asset(brand_assets, ["lifestyle_photos", "photos", "backgrounds"])
 
@@ -160,6 +241,7 @@ class PremiumVisualAgent:
             design_slide = design_manifest.slides[index] if index < len(design_manifest.slides) else None
             layout_type = getattr(content_slide, "layout_type", "") or ""
             pattern = self._choose_pattern(index, layout_type, patterns)
+            pattern_type = pattern.get("pattern_type", "editorial_split")
 
             planning = getattr(content_slide, "planning_json", {}) or {}
             ad_plan = planning.get("art_director", {})
@@ -181,11 +263,42 @@ class PremiumVisualAgent:
                 or self._asset_path(photo_asset)
             )
 
-            brand = self.db.query(models.Brand).get(getattr(brand_dna, "brand_id", 0)) if brand_dna else None
-            logo_path = brand.logo_path if brand and brand.logo_path else self._asset_path(logo_asset)
+            # Determine background luminance at left and right positions
+            is_dark_left = False
+            is_dark_right = False
             
-            client_name = getattr(self.job, "client_name", None)
-            footer_label = f"L - founders of loyalty CONFIDENTIAL FOR {client_name.upper()} USE ONLY" if client_name else "L - founders of loyalty CONFIDENTIAL"
+            primary_is_dark = hex_is_dark(getattr(brand_dna, "primary_color", "#002D62"))
+            
+            if pattern_type == "full_bleed_hero":
+                is_dark_left = True
+                is_dark_right = True
+            elif pattern_type == "data_cards_brand_grid":
+                is_dark_left = False
+                is_dark_right = False
+            else: # Any split layout (editorial_split, strategic_split, composition_split, etc.)
+                is_dark_left = True
+                is_dark_right = False
+                
+            bg_asset = getattr(design_slide, "background_asset_path", None)
+            if bg_asset and isinstance(bg_asset, str):
+                bg_lower = bg_asset.lower()
+                if any(x in bg_lower for x in ("dark", "black", "blue", "navy", "negativo", "dark_bg")):
+                    is_dark_left = True
+                    is_dark_right = True
+            
+            # Select logo light/dark for footer
+            selected_footer_logo = footer_logo_light if is_dark_left else footer_logo_dark
+            if not selected_footer_logo:
+                selected_footer_logo = brand_logo_light_path if is_dark_left else brand_logo_dark_path
+                
+            # Select logo for header: prioritize dossier logo for brand consistency
+            selected_header_logo = brand_logo_dossier
+            if not selected_header_logo:
+                selected_header_logo = brand_logo_light_path if is_dark_right else brand_logo_dark_path
+            if not selected_header_logo:
+                # Use default logo path as final fallback
+                default_logo = brand.logo_path if brand and brand.logo_path else self._asset_path(logo_asset)
+                selected_header_logo = default_logo
 
             slides_data.append({
                 "slide_number": content_slide.slide_number,
@@ -196,13 +309,18 @@ class PremiumVisualAgent:
                 "metadata": content_slide.metadata or {},
                 "section_label": content_slide.section_label,
                 "layout_intent": layout_type,
-                "pattern_type": pattern.get("pattern_type", "editorial_split"),
+                "pattern_type": pattern_type,
                 "pattern_id": pattern.get("id"),
                 "pattern_hint": pattern.get("execution_hint", ""),
                 "hero_image": hero_image,
                 "accent_image": accent_image_path,
-                "logo_image": logo_path,
-                "footer_label": footer_label,
+                "logo_image": selected_header_logo,
+                "is_footer_enabled": is_footer_enabled,
+                "footer_text": footer_text,
+                "footer_disclaimer": footer_disclaimer,
+                "footer_logo": selected_footer_logo,
+                "is_dark_left": is_dark_left,
+                "is_dark_right": is_dark_right,
                 "canvas_elements": canvas_elements,
             })
 

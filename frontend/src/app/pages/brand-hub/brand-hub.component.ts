@@ -241,8 +241,8 @@ export class BrandHubComponent implements OnInit, OnDestroy {
   }
 
   onFooterLogoSelected(event: any, type: 'light' | 'dark') {
-    if (event.target.files.length > 0) {
-      const file = event.target.files[0];
+    const file = event.target.files[0];
+    if (file) {
       const reader = new FileReader();
       reader.onload = () => {
         if (type === 'light') {
@@ -257,6 +257,28 @@ export class BrandHubComponent implements OnInit, OnDestroy {
     }
   }
 
+  editFooter(f: any) {
+    this.newFooter = {
+      id: f.id,
+      name: f.name,
+      text: f.text,
+      disclaimer: f.disclaimer
+    };
+    this.logoLightPreview = f.logo_light_path ? '/' + f.logo_light_path : '';
+    this.logoDarkPreview = f.logo_dark_path ? '/' + f.logo_dark_path : '';
+    this.logoLightFile = null;
+    this.logoDarkFile = null;
+    this.showFooterCreator = true;
+  }
+
+  clearFooterForm() {
+    this.newFooter = { id: undefined, name: '', text: '', disclaimer: '' };
+    this.logoLightFile = null;
+    this.logoDarkFile = null;
+    this.logoLightPreview = '';
+    this.logoDarkPreview = '';
+  }
+
   saveFooter() {
     if (!this.newFooter.name) return;
     this.isSavingFooter = true;
@@ -265,15 +287,12 @@ export class BrandHubComponent implements OnInit, OnDestroy {
       this.newFooter.text,
       this.newFooter.disclaimer,
       this.logoLightFile || undefined,
-      this.logoDarkFile || undefined
+      this.logoDarkFile || undefined,
+      this.newFooter.id
     ).subscribe({
       next: (res) => {
         this.isSavingFooter = false;
-        this.newFooter = { name: '', text: '', disclaimer: '' };
-        this.logoLightFile = null;
-        this.logoDarkFile = null;
-        this.logoLightPreview = '';
-        this.logoDarkPreview = '';
+        this.clearFooterForm();
         this.showFooterCreator = false;
         this.loadFooters();
       },
@@ -286,7 +305,10 @@ export class BrandHubComponent implements OnInit, OnDestroy {
 
   selectFooter(id: number) {
     this.brandService.selectFooter(id).subscribe({
-      next: () => this.loadFooters(),
+      next: () => {
+        this.newFooter = { id: undefined, name: '', text: '', disclaimer: '' }; // reset id so it reloads the active one
+        this.loadFooters();
+      },
       error: (err) => alert(err.error?.detail || 'Error selecting footer')
     });
   }
@@ -294,16 +316,19 @@ export class BrandHubComponent implements OnInit, OnDestroy {
   deleteFooter(id: number) {
     if (!confirm('Are you sure you want to delete this footer template?')) return;
     this.brandService.deleteFooter(id).subscribe({
-      next: () => this.loadFooters(),
+      next: () => {
+        if (this.newFooter.id === id) {
+          this.clearFooterForm();
+        }
+        this.loadFooters();
+      },
       error: (err) => alert(err.error?.detail || 'Error deleting footer')
     });
   }
 
   toggleFooterGlobal(enabled: boolean) {
     this.brandService.toggleFooterGlobal(enabled).subscribe({
-      next: () => {
-        this.isFooterEnabled = enabled;
-      },
+      next: () => this.isFooterEnabled = enabled,
       error: (err) => alert(err.error?.detail || 'Error toggling footer')
     });
   }

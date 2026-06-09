@@ -15,7 +15,7 @@
         }
         body {
             margin: 0;
-            background: #111;
+            background: var(--brand-bg);
             font-family: var(--brand-font);
             color: var(--brand-text);
         }
@@ -32,7 +32,9 @@
         .slide:last-child { page-break-after: auto; }
         .brand-band {
             position: absolute;
-            inset: 0 auto 0 0;
+            top: 0;
+            left: 0;
+            bottom: 0;
             width: 18px;
             background: var(--brand-secondary);
             z-index: 4;
@@ -40,24 +42,67 @@
         .footer-lockup {
             position: absolute;
             left: 56px;
-            bottom: 32px;
+            right: 56px;
+            bottom: 20px;
             height: 34px;
             display: flex;
             align-items: center;
-            justify-content: flex-start;
-            gap: 12px;
-            color: inherit;
+            justify-content: space-between;
             font-size: 10px;
             font-weight: 700;
             letter-spacing: 0.12em;
             text-transform: uppercase;
             z-index: 15;
-            opacity: 0.6;
+            opacity: 0.8;
+        }
+        .footer-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-top: 1px solid transparent;
+            padding-top: 10px;
+            flex: 0 0 46%;
+        }
+        .footer-right {
+            border-top: 1px solid transparent;
+            padding-top: 10px;
+            text-align: right;
+            flex: 0 0 54%;
+        }
+        .footer-left.dark-theme {
+            border-top-color: rgba(255,255,255,0.15);
+            color: rgba(255,255,255,0.85);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+        }
+        .footer-left.dark-theme img {
+            filter: brightness(0) invert(1) drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+        }
+        .footer-left.light-theme {
+            border-top-color: rgba(17,17,17,0.1);
+            color: rgba(17,17,17,0.55);
+        }
+        .footer-right.dark-theme {
+            border-top-color: rgba(255,255,255,0.15);
+            color: rgba(255,255,255,0.85);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+        }
+        .footer-right.dark-theme img {
+            filter: brightness(0) invert(1) drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+        }
+        .footer-right.light-theme {
+            border-top-color: rgba(17,17,17,0.1);
+            color: rgba(17,17,17,0.55);
         }
         .footer-lockup img {
             max-height: 22px;
             max-width: 110px;
             object-fit: contain;
+        }
+        .header-logo {
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.12));
+        }
+        .full-bleed .header-logo {
+            filter: drop-shadow(0 2px 6px rgba(0,0,0,0.35));
         }
         .kicker {
             color: var(--brand-secondary);
@@ -105,7 +150,10 @@
         .editorial-image::after {
             content: "";
             position: absolute;
-            inset: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
             background: linear-gradient(135deg, rgba(0,0,0,0.18), transparent 62%);
         }
         .editorial-copy {
@@ -145,14 +193,20 @@
         }
         .full-bleed .hero-image {
             position: absolute;
-            inset: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
             opacity: 0.78;
             filter: saturate(1.04) contrast(1.04);
         }
         .full-bleed::after {
             content: "";
             position: absolute;
-            inset: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
             background: linear-gradient(90deg, rgba(0,0,0,0.76), rgba(0,0,0,0.22) 50%, rgba(0,0,0,0.08));
             z-index: 2;
         }
@@ -235,17 +289,30 @@
         {% if slide.hero_image %}<img class="hero-image" src="{{ slide.hero_image }}">{% endif %}
         <div class="brand-band"></div>
         {% if slide.logo_image %}
-            <img src="{{ slide.logo_image }}" style="position: absolute; top: 72px; right: 72px; max-width: 140px; max-height: 60px; object-fit: contain; z-index: 20;">
+            <img src="{{ slide.logo_image }}" class="header-logo" style="position: absolute; top: 25px; right: 56px; max-width: 140px; max-height: 50px; object-fit: contain; z-index: 20;">
         {% endif %}
         <div class="hero-copy">
-            <div class="kicker">{{ slide.section_label|default('Executive Perspective') }}</div>
+            {% if slide.section_label and slide.section_label|lower != 'none' and slide.section_label|trim != '' %}
+                <div class="kicker">{{ slide.section_label }}</div>
+            {% endif %}
             <h1 class="title">{{ slide.title }}</h1>
             {% if slide.subtitle %}<p class="subtitle">{{ slide.subtitle }}</p>{% endif %}
         </div>
+        {% if slide.is_footer_enabled %}
         <div class="footer-lockup">
-            {% if agency_logo %}<img src="{{ agency_logo }}">{% endif %}
-            <span>{{ slide.footer_label|default('Premium Visual Agent') }}</span>
+            <div class="footer-left {% if slide.is_dark_left %}dark-theme{% else %}light-theme{% endif %}">
+                {% if slide.footer_logo %}
+                    <img src="{{ slide.footer_logo }}">
+                {% endif %}
+                <span>{{ slide.footer_text }}</span>
+            </div>
+            {% if slide.footer_disclaimer %}
+                <div class="footer-right {% if slide.is_dark_right %}dark-theme{% else %}light-theme{% endif %}">
+                    {{ slide.footer_disclaimer }}
+                </div>
+            {% endif %}
         </div>
+        {% endif %}
         {% if slide.canvas_elements %}
             {% for el in slide.canvas_elements %}
                 {% if el.type == 'typo_substitution' or el.type == 'image' %}
@@ -263,10 +330,12 @@
         <div class="brand-band"></div>
         <div class="grid-header">
             <div>
-                <div class="kicker">{{ slide.section_label|default('Performance Logic') }}</div>
+                {% if slide.section_label and slide.section_label|lower != 'none' and slide.section_label|trim != '' %}
+                    <div class="kicker">{{ slide.section_label }}</div>
+                {% endif %}
                 <h1 class="title">{{ slide.title }}</h1>
             </div>
-            {% if slide.logo_image %}<img src="{{ slide.logo_image }}" style="max-width: 120px; max-height: 56px; object-fit: contain;">{% endif %}
+            {% if slide.logo_image %}<img src="{{ slide.logo_image }}" class="header-logo" style="max-width: 120px; max-height: 56px; object-fit: contain;">{% endif %}
         </div>
         <div class="metric-grid">
             {% set metrics_list = slide.metrics or [] %}
@@ -286,10 +355,21 @@
                 {% endfor %}
             {% endif %}
         </div>
+        {% if slide.is_footer_enabled %}
         <div class="footer-lockup">
-            {% if agency_logo %}<img src="{{ agency_logo }}">{% endif %}
-            <span>{{ slide.footer_label|default('Premium Visual Agent') }}</span>
+            <div class="footer-left {% if slide.is_dark_left %}dark-theme{% else %}light-theme{% endif %}">
+                {% if slide.footer_logo %}
+                    <img src="{{ slide.footer_logo }}">
+                {% endif %}
+                <span>{{ slide.footer_text }}</span>
+            </div>
+            {% if slide.footer_disclaimer %}
+                <div class="footer-right {% if slide.is_dark_right %}dark-theme{% else %}light-theme{% endif %}">
+                    {{ slide.footer_disclaimer }}
+                </div>
+            {% endif %}
         </div>
+        {% endif %}
         {% if slide.canvas_elements %}
             {% for el in slide.canvas_elements %}
                 {% if el.type == 'typo_substitution' or el.type == 'image' %}
@@ -313,9 +393,11 @@
         {% endif %}
         <div class="editorial-copy">
             {% if slide.logo_image %}
-                <img src="{{ slide.logo_image }}" style="position: absolute; top: 72px; right: 72px; max-width: 140px; max-height: 60px; object-fit: contain; z-index: 20;">
+                <img src="{{ slide.logo_image }}" class="header-logo" style="position: absolute; top: 25px; right: 56px; max-width: 140px; max-height: 50px; object-fit: contain; z-index: 20;">
             {% endif %}
-            <div class="kicker">{{ slide.section_label|default('Strategic Narrative') }}</div>
+            {% if slide.section_label and slide.section_label|lower != 'none' and slide.section_label|trim != '' %}
+                <div class="kicker">{{ slide.section_label }}</div>
+            {% endif %}
             <h1 class="title">{{ slide.title }}</h1>
             {% if slide.subtitle %}<p class="subtitle">{{ slide.subtitle }}</p>{% endif %}
             <ul class="bullets">
@@ -324,10 +406,21 @@
                 {% endfor %}
             </ul>
         </div>
+        {% if slide.is_footer_enabled %}
         <div class="footer-lockup">
-            {% if agency_logo %}<img src="{{ agency_logo }}">{% endif %}
-            <span>{{ slide.footer_label|default('Premium Visual Agent') }}</span>
+            <div class="footer-left {% if slide.is_dark_left %}dark-theme{% else %}light-theme{% endif %}">
+                {% if slide.footer_logo %}
+                    <img src="{{ slide.footer_logo }}">
+                {% endif %}
+                <span>{{ slide.footer_text }}</span>
+            </div>
+            {% if slide.footer_disclaimer %}
+                <div class="footer-right {% if slide.is_dark_right %}dark-theme{% else %}light-theme{% endif %}">
+                    {{ slide.footer_disclaimer }}
+                </div>
+            {% endif %}
         </div>
+        {% endif %}
         {% if slide.canvas_elements %}
             {% for el in slide.canvas_elements %}
                 {% if el.type == 'typo_substitution' or el.type == 'image' %}

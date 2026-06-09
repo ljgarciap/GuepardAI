@@ -232,6 +232,7 @@ def list_footers(db: Session = Depends(get_db)):
 
 @app.post("/api/footers", tags=["Governance"])
 async def create_footer(
+    id: Optional[int] = Form(None),
     name: str = Form(...),
     text: Optional[str] = Form(None),
     disclaimer: Optional[str] = Form(None),
@@ -239,7 +240,7 @@ async def create_footer(
     logo_dark: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db)
 ):
-    """Crea una nueva configuración de footer y procesa logos opcionales."""
+    """Crea o actualiza una configuración de footer y procesa logos opcionales."""
     logo_light_path = None
     logo_dark_path = None
     
@@ -264,6 +265,21 @@ async def create_footer(
             logo_dark_path = f"uploads/{safe_name}"
         except Exception as e:
             print(f"  [FooterService] Error saving logo_dark: {e}")
+
+    if id is not None:
+        footer = db.query(models.FooterConfig).filter(models.FooterConfig.id == id).first()
+        if not footer:
+            raise HTTPException(status_code=404, detail="Footer configuration not found")
+        footer.name = name
+        footer.text = text
+        footer.disclaimer = disclaimer
+        if logo_light_path:
+            footer.logo_light_path = logo_light_path
+        if logo_dark_path:
+            footer.logo_dark_path = logo_dark_path
+        db.commit()
+        db.refresh(footer)
+        return footer
 
     # Si es el primer footer, lo dejamos seleccionado por defecto
     first_count = db.query(models.FooterConfig).count()

@@ -131,7 +131,7 @@ class GammaPainter:
             with Image.open(img_path) as img:
                 orig_w, orig_h = img.size
                 # v16.9: Intelligent Scaling (Fixed Logo Visibility)
-                is_logo = "logo" in img_path
+                is_logo = "logo" in img_path.lower()
                 is_design_element = "design_element" in img_path
                 
                 if is_logo:
@@ -149,7 +149,7 @@ class GammaPainter:
                 new_h = orig_h * ratio
                 # Centering within the max box
                 x_offset = max(0, (max_w - new_w) / 2)
-                y_offset = max(0, (max_h - new_h) / 2)
+                y_offset = 0 if is_logo else max(0, (max_h - new_h) / 2)
                 pic = slide.shapes.add_picture(img_path, x + x_offset, y + y_offset, new_w, new_h)
                 
                 # If transparent flag or circle_crop is needed, we'd apply it here, but python-pptx has limits.
@@ -230,7 +230,7 @@ class GammaPainter:
             # Fix: Ensure logo_path is resolved properly
             resolved_logo = self.resolve_image(logo_path)
             if resolved_logo:
-                self.add_fitted_image(slide, resolved_logo, self.w(82), self.h(3), self.w(15), self.h(8))
+                self.add_fitted_image(slide, resolved_logo, self.w(82), self.h(1.2), self.w(15), self.h(4))
         
         # Auto-detect background color for footer contrast if not provided
         if bg_color is None:
@@ -241,7 +241,7 @@ class GammaPainter:
             else:
                 bg_color = self.bg
                 
-        self.add_agency_signature(slide, agency, is_title=is_title, bg_color=bg_color)
+        self.add_agency_signature(slide, agency, is_title=is_title, bg_color=bg_color, slide_data=slide_data)
 
     def paint_split(self, slide_data):
         slide = self.secure_slide(slide_data)
@@ -484,16 +484,18 @@ class GammaPainter:
                 self.add_text(slide, b, x_pos + self.w(2), self.h(38), w_pos - self.w(4), self.h(44), size=16, color=get_contrast_text_color(self.primary), align=PP_ALIGN.CENTER, v_align=MSO_ANCHOR.MIDDLE)
         return slide
 
-    def add_agency_signature(self, slide, agency, is_title=False, bg_color=None):
+    def add_agency_signature(self, slide, agency, is_title=False, bg_color=None, slide_data=None):
         is_enabled = getattr(self, "is_footer_enabled", True)
         if not is_enabled:
             return
 
         footer_cfg = getattr(self, "footer_config", None)
+        client_name = agency.get("client_name", "TESCO") if isinstance(agency, dict) else getattr(agency, "client_name", "TESCO")
+        
         if not footer_cfg:
             # Fallback a comportamiento por defecto si no hay config activa
             text_val = "L - founders of loyalty"
-            disclaimer_val = "CONFIDENTIAL"
+            disclaimer_val = f"CONFIDENTIAL FOR {client_name.upper()} USE ONLY"
             logo_light = None
             logo_dark = None
         else:
@@ -509,39 +511,66 @@ class GammaPainter:
                 logo_light = getattr(footer_cfg, "logo_light_path", None)
                 logo_dark = getattr(footer_cfg, "logo_dark_path", None)
 
-        footer_y, footer_w = 92.0, 100.0 - (self.MARGIN_X * 2)
+        if disclaimer_val:
+            disclaimer_val = disclaimer_val.replace("{brand}", client_name.upper()).replace("{Brand}", client_name.upper()).replace("{BRAND}", client_name.upper())
+
+        footer_y, footer_w = 96.2, 100.0 - (self.MARGIN_X * 2)
+        line_y = 95.6
+        logo_y_pct = 95.8
         
-        # Evaluar luminancia del fondo efectivo para elegir contraste
-        effective_bg = bg_color if bg_color is not None else self.bg
-        bg_lum = get_luminance(effective_bg)
+        # Determine background luminance at left and right positions
+        l_type = slide_data.get("layout_type") if slide_data else None
+        is_split = (l_type in ("composition_split", "data_grid_cards") and not is_title)
         
-        # Color del texto (blanco en fondo oscuro, primario corporativo en fondo claro)
-        footer_color = RGBColor(255, 255, 255) if bg_lum < 0.5 else self.primary
+        # Check if slide overall has a dark background asset
+        overall_dark = False
+        bg_asset = slide_data.get("background_asset_path") if slide_data else None
+        if bg_asset and isinstance(bg_asset, str):
+            bg_lower = bg_asset.lower()
+            if any(x in bg_lower for x in ("dark", "black", "blue", "navy", "negativo", "dark_bg")):
+                overall_dark = True
+        
+        if is_split and not overall_dark:
+            left_bg = self.primary
+            right_bg = self.bg
+        else:
+            left_bg = bg_color if bg_color is not None else self.bg
+            if overall_dark:
+                left_bg = self.primary
+            right_bg = left_bg
+
+        left_lum = get_luminance(left_bg)
+        right_lum = get_luminance(right_bg)
+
+        left_color = RGBColor(255, 255, 255) if left_lum < 0.5 else self.primary
+        right_color = RGBColor(255, 255, 255) if right_lum < 0.5 else self.primary
         
         # Elegir logo claro/oscuro
-        selected_logo = logo_light if bg_lum < 0.5 else logo_dark
+        selected_logo = logo_light if left_lum < 0.5 else logo_dark
+        if not selected_logo:
+            # Fallback al logo de la marca
+            selected_logo = getattr(self, "logo_light_path", None) if left_lum < 0.5 else getattr(self, "logo_dark_path", None)
 
         # Draw a thin horizontal line on non-title slides
         if not is_title:
-            self.add_rect(slide, self.w(self.MARGIN_X), self.h(91), self.w(footer_w), Pt(0.2), footer_color, transparency=0.8)
+            self.add_rect(slide, self.w(self.MARGIN_X), self.h(line_y), self.w(footer_w), Pt(0.2), left_color, transparency=0.8)
 
         # Draw Left logo & signature text
-        text_y_pct = 92.0 if not is_title else footer_y
-        logo_y_pct = 91.5 if not is_title else footer_y - 0.5
+        text_y_pct = footer_y
         
         if selected_logo:
             resolved_logo = self.resolve_image(selected_logo)
             if resolved_logo:
                 self.add_fitted_image(slide, resolved_logo, self.w(self.MARGIN_X), self.h(logo_y_pct), self.w(3), self.h(3))
-                self.add_text(slide, text_val, self.w(self.MARGIN_X + 4), self.h(text_y_pct), self.w(40), self.h(3), size=7, color=footer_color)
+                self.add_text(slide, text_val, self.w(self.MARGIN_X + 4), self.h(text_y_pct), self.w(40), self.h(3), size=7, color=left_color)
             else:
-                self.add_text(slide, text_val, self.w(self.MARGIN_X), self.h(text_y_pct), self.w(40), self.h(3), size=7, color=footer_color)
+                self.add_text(slide, text_val, self.w(self.MARGIN_X), self.h(text_y_pct), self.w(40), self.h(3), size=7, color=left_color)
         else:
-            self.add_text(slide, text_val, self.w(self.MARGIN_X), self.h(text_y_pct), self.w(40), self.h(3), size=7, color=footer_color)
+            self.add_text(slide, text_val, self.w(self.MARGIN_X), self.h(text_y_pct), self.w(40), self.h(3), size=7, color=left_color)
 
         # Draw Right disclaimer
         if disclaimer_val:
-            self.add_text(slide, disclaimer_val.upper(), self.w(100 - self.MARGIN_X - 45), self.h(text_y_pct), self.w(45), self.h(3), size=7, color=footer_color, align=PP_ALIGN.RIGHT)
+            self.add_text(slide, disclaimer_val.upper(), self.w(100 - self.MARGIN_X - 45), self.h(text_y_pct), self.w(45), self.h(3), size=7, color=right_color, align=PP_ALIGN.RIGHT)
 
     def secure_slide(self, slide_data=None):
         slide = self.prs.slides.add_slide(self.blank_layout)
@@ -569,12 +598,16 @@ class GammaPainter:
         if isinstance(manifest, dict):
             self.is_footer_enabled = manifest.get("is_footer_enabled", True)
             self.footer_config = manifest.get("footer_config", None)
+            self.logo_light_path = manifest.get("logo_light_path")
+            self.logo_dark_path = manifest.get("logo_dark_path")
             slides = manifest.get("slides", [])
             logo_path = manifest.get("logo_path")
             agency = manifest.get("agency_branding", {})
         else:
             self.is_footer_enabled = getattr(manifest, "is_footer_enabled", True)
             self.footer_config = getattr(manifest, "footer_config", None)
+            self.logo_light_path = getattr(manifest, "logo_light_path", None)
+            self.logo_dark_path = getattr(manifest, "logo_dark_path", None)
             slides = manifest.slides
             logo_path = manifest.logo_path
             agency = manifest.agency_branding.model_dump() if manifest.agency_branding else {}
@@ -607,8 +640,29 @@ class GammaPainter:
                 bg_color = self.primary
             elif slide_data.get("is_last"):
                 bg_color = self.primary
+                
+            # Detect overall dark background asset
+            bg_asset = slide_data.get("background_asset_path")
+            overall_dark = False
+            if bg_asset and isinstance(bg_asset, str):
+                bg_lower = bg_asset.lower()
+                if any(x in bg_lower for x in ("dark", "black", "blue", "navy", "negativo", "dark_bg")):
+                    overall_dark = True
 
-            if slide: self.apply_branding(slide, slide_data, logo_path, agency, bg_color=bg_color)
+            effective_bg = bg_color if bg_color is not None else self.bg
+            if overall_dark:
+                effective_bg = self.primary
+                
+            bg_lum = get_luminance(effective_bg)
+            
+            # Seleccionar marca de logo correspondiente por slide y luminancia
+            slide_logo = logo_path
+            if bg_lum < 0.5:
+                slide_logo = getattr(self, "logo_light_path", None) or logo_path
+            else:
+                slide_logo = getattr(self, "logo_dark_path", None) or logo_path
+            
+            if slide: self.apply_branding(slide, slide_data, slide_logo, agency, bg_color=bg_color)
 
 def blend_colors(c1_rgb, c2_rgb, ratio):
     return RGBColor(int(c1_rgb[0] * ratio + c2_rgb[0] * (1 - ratio)), int(c1_rgb[1] * ratio + c2_rgb[1] * (1 - ratio)), int(c1_rgb[2] * ratio + c2_rgb[2] * (1 - ratio)))

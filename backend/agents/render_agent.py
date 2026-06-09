@@ -10,6 +10,20 @@ from schemas.presentation import RenderManifest, PainterSlideData, PainterAgency
 from services.rendering.painter import GammaPainter
 from services.rendering.painter_bridge import GRAMMAR_TO_PAINTER
 
+
+def normalize_bullets(bullets_list) -> list[str]:
+    if not bullets_list:
+        return []
+    normalized = []
+    for b in bullets_list:
+        if isinstance(b, dict):
+            val = " - ".join(str(v) for v in b.values() if v)
+            normalized.append(val)
+        else:
+            normalized.append(str(b))
+    return normalized
+
+
 class RenderPPTXArgs(BaseModel):
     job_id: int = Field(..., description="ID del trabajo a renderizar")
     output_format: str = Field("pptx", description="Formato de salida (pptx o pdf_artistic)")
@@ -60,7 +74,7 @@ class RenderPPTXTool(BaseAgentTool):
                         c_slides.append(ContentManifestSlide(
                             slide_number=s.slide_number,
                             title=s.title,
-                            bullets=cjson.get("bullets", []),
+                            bullets=normalize_bullets(cjson.get("bullets", [])),
                             layout_type=cjson.get("layout_type", "strategic_split"),
                             metadata=cjson.get("metadata", {})
                         ))
@@ -115,22 +129,54 @@ class RenderPPTXTool(BaseAgentTool):
             agency_name_cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == "agency_name").first()
             agency_name = agency_name_cfg.value if agency_name_cfg else "L-Founders"
             
-            brand_logo = db.query(models.BrandAsset).filter(
-                models.BrandAsset.brand_id == job.brand_id,
-                models.BrandAsset.category == "logos"
-            ).first()
-            brand_logo_path = os.path.basename(brand_logo.local_path) if brand_logo else None
-            
-            agency_branding = PainterAgencyBranding(
-                name=agency_name, logo_path=brand_logo_path,
-                client_name="Client", email="partners@l-founders.com"
-            )
-
             brand_name = "TESCO"
             if job.brand_id:
                 brand_obj = db.query(models.Brand).get(job.brand_id)
                 if brand_obj:
                     brand_name = brand_obj.name
+
+            # Query all logos for the brand to classify light/dark versions
+            brand_logos = db.query(models.BrandAsset).filter(
+                models.BrandAsset.brand_id == job.brand_id,
+                models.BrandAsset.category == "logos"
+            ).all()
+            
+            brand_logo_dossier = os.path.basename(brand_obj.logo_path) if brand_obj and brand_obj.logo_path else None
+            
+            brand_logo_path = None
+            brand_logo_light_path = None
+            brand_logo_dark_path = brand_logo_dossier
+            
+            # Filter logos to only contain the brand name to avoid picking other brands or agency logos
+            brand_name_lower = brand_name.lower()
+            matching_logos = [
+                asset for asset in brand_logos
+                if brand_name_lower in asset.local_path.lower() or brand_name_lower in (asset.description or "").lower()
+            ]
+            logo_candidates = matching_logos if matching_logos else brand_logos
+            
+            for asset in logo_candidates:
+                path_lower = asset.local_path.lower()
+                desc_lower = (asset.description or "").lower()
+                if any(x in path_lower or x in desc_lower for x in ["light", "white", "inverse", "negativo", "blanco"]):
+                    brand_logo_light_path = os.path.basename(asset.local_path)
+                elif not brand_logo_dark_path:
+                    brand_logo_dark_path = os.path.basename(asset.local_path)
+            
+            # Fallbacks
+            if not brand_logo_dark_path and logo_candidates:
+                brand_logo_dark_path = os.path.basename(logo_candidates[0].local_path)
+            if brand_logo_dark_path and not brand_logo_light_path:
+                brand_logo_light_path = brand_logo_dark_path
+            if brand_logo_light_path and not brand_logo_dark_path:
+                brand_logo_dark_path = brand_logo_light_path
+            
+            brand_logo_path = brand_logo_dark_path
+            
+            agency_branding = PainterAgencyBranding(
+                name=agency_name, logo_path=brand_logo_path,
+                client_name=brand_name, email="partners@l-founders.com"
+            )
 
             # Obtener configuración de footer activa
             is_enabled_config = db.query(models.SystemConfig).filter(models.SystemConfig.key == "is_footer_enabled").first()
@@ -174,7 +220,7 @@ class RenderPPTXTool(BaseAgentTool):
                     slide_number=s.slide_number,
                     layout_type=p_layout,
                     title=s.title,
-                    bullets=cjson.get("bullets", []),
+                    bullets=normalize_bullets(cjson.get("bullets", [])),
                     metrics=cjson.get("metrics", []),
                     metric=cjson.get("metric"),
                     label=cjson.get("label"),
@@ -191,6 +237,8 @@ class RenderPPTXTool(BaseAgentTool):
             render_manifest = RenderManifest(
                 slides=render_slides,
                 logo_path=brand_logo_path,
+                logo_light_path=brand_logo_light_path,
+                logo_dark_path=brand_logo_dark_path,
                 agency_branding=agency_branding,
                 is_footer_enabled=is_footer_enabled,
                 footer_config=footer_dto

@@ -129,8 +129,8 @@ jobs:
             git fetch --all
             git reset --hard origin/master
             echo "🧹 Cleaning up pre-build Docker cache to free up space..."
-            sudo docker system prune -f
-            sudo docker builder prune -f
+            sudo docker system prune -a -f
+            sudo docker builder prune -a -f
             echo "🔨 Building and restarting production containers..."
             sudo docker compose up -d --build
             echo "🧹 Cleaning up post-build Docker resources and BuildKit cache..."

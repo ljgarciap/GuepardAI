@@ -17,6 +17,7 @@ services:
 
   backend:
     build: ./backend
+    image: guepardai-backend:latest
     container_name: guepard-backend
     ports:
       - "8000:8000"
@@ -46,7 +47,7 @@ services:
     restart: always
 
   celery_worker:
-    build: ./backend
+    image: guepardai-backend:latest
     container_name: guepard-celery-worker
     command: celery -A celery_app.celery_app worker --loglevel=info
     env_file:
@@ -65,6 +66,7 @@ services:
     depends_on:
       - db
       - redis
+      - backend
     restart: always
 
   frontend:

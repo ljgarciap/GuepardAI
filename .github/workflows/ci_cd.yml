@@ -118,6 +118,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          script_stop: true
           script: |
             echo "═══════════════════════════════════════════"
             echo "  GuepardAI Deploy — $(date '+%Y-%m-%d %H:%M:%S')"
@@ -127,9 +128,12 @@ jobs:
             git stash
             git fetch --all
             git reset --hard origin/master
+            echo "🧹 Cleaning up pre-build Docker cache to free up space..."
+            sudo docker system prune -f
+            sudo docker builder prune -f
             echo "🔨 Building and restarting production containers..."
             sudo docker compose up -d --build
-            echo "🧹 Cleaning up Docker resources and BuildKit cache..."
+            echo "🧹 Cleaning up post-build Docker resources and BuildKit cache..."
             sudo docker system prune -f
             sudo docker builder prune -a -f
             echo "✅ Deployment completed successfully!"

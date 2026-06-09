@@ -16,6 +16,7 @@ try:
     from google.genai import types as genai_types
 except ImportError:
     google_genai = None
+    genai_types = None
 
 from database import SessionLocal
 import models
@@ -127,8 +128,44 @@ def resolve_provider(specialization: str = "general"):
     
     raise ValueError("API_KEY missing for required provider.")
 
-@retry_with_backoff(retries=3)
 def generate_json(prompt: str, model: Optional[str] = None, specialization: str = "general") -> dict:
+    import time
+    from utils.observability import log_performance_metric
+    
+    start_time = time.perf_counter()
+    try:
+        result = _generate_json_raw(prompt, model, specialization)
+        duration = time.perf_counter() - start_time
+        resp_len = len(json.dumps(result)) if result else 0
+        log_performance_metric(
+            event_name="llm_api.generate_json",
+            duration=duration,
+            metadata={
+                "prompt_length": len(prompt),
+                "response_length": resp_len,
+                "status": "success",
+                "specialization": specialization,
+                "model": model or "default"
+            }
+        )
+        return result
+    except Exception as e:
+        duration = time.perf_counter() - start_time
+        log_performance_metric(
+            event_name="llm_api.generate_json",
+            duration=duration,
+            metadata={
+                "prompt_length": len(prompt),
+                "status": "failed",
+                "error": str(e),
+                "specialization": specialization,
+                "model": model or "default"
+            }
+        )
+        raise e
+
+@retry_with_backoff(retries=3)
+def _generate_json_raw(prompt: str, model: Optional[str] = None, specialization: str = "general") -> dict:
     """
     UNIVERSAL AI ENGINE (v18.2) - Parametric Failover.
     Soporta cadenas de modelos: 'gemini-flash-latest,mistral/mistral-large-latest'
@@ -274,8 +311,44 @@ def generate_json(prompt: str, model: Optional[str] = None, specialization: str 
             
     raise last_error or Exception("All models and global fallback failed.")
 
-@retry_with_backoff(retries=2)
 def generate_vision_json(prompt: str, image_paths: List[str], model: Optional[str] = None) -> dict:
+    import time
+    from utils.observability import log_performance_metric
+    
+    start_time = time.perf_counter()
+    try:
+        result = _generate_vision_json_raw(prompt, image_paths, model)
+        duration = time.perf_counter() - start_time
+        resp_len = len(json.dumps(result)) if result else 0
+        log_performance_metric(
+            event_name="llm_api.generate_vision_json",
+            duration=duration,
+            metadata={
+                "prompt_length": len(prompt),
+                "image_count": len(image_paths),
+                "response_length": resp_len,
+                "status": "success",
+                "model": model or "default"
+            }
+        )
+        return result
+    except Exception as e:
+        duration = time.perf_counter() - start_time
+        log_performance_metric(
+            event_name="llm_api.generate_vision_json",
+            duration=duration,
+            metadata={
+                "prompt_length": len(prompt),
+                "image_count": len(image_paths),
+                "status": "failed",
+                "error": str(e),
+                "model": model or "default"
+            }
+        )
+        raise e
+
+@retry_with_backoff(retries=2)
+def _generate_vision_json_raw(prompt: str, image_paths: List[str], model: Optional[str] = None) -> dict:
     """
     UNIVERSAL VISION ENGINE (v18.3).
     Obtiene la cadena de modelos desde system_configs.
@@ -489,6 +562,40 @@ def log_premium_audit(category: str, data: str):
         f.write(f"{'='*80}\n")
 
 def generate_premium_json(prompt: str) -> dict:
+    import time
+    from utils.observability import log_performance_metric
+    
+    start_time = time.perf_counter()
+    try:
+        result = _generate_premium_json_raw(prompt)
+        duration = time.perf_counter() - start_time
+        resp_len = len(json.dumps(result)) if result else 0
+        log_performance_metric(
+            event_name="llm_api.generate_premium_json",
+            duration=duration,
+            metadata={
+                "prompt_length": len(prompt),
+                "response_length": resp_len,
+                "status": "success",
+                "model": PREMIUM_MODEL
+            }
+        )
+        return result
+    except Exception as e:
+        duration = time.perf_counter() - start_time
+        log_performance_metric(
+            event_name="llm_api.generate_premium_json",
+            duration=duration,
+            metadata={
+                "prompt_length": len(prompt),
+                "status": "failed",
+                "error": str(e),
+                "model": PREMIUM_MODEL
+            }
+        )
+        raise e
+
+def _generate_premium_json_raw(prompt: str) -> dict:
     """
     PREMIUM DESIGN ENGINE — Claude Sonnet exclusivo.
     Canal dedicado para el tier premium. Sin fallbacks al sistema general.
@@ -530,6 +637,42 @@ def generate_premium_json(prompt: str) -> dict:
 
 
 def generate_premium_vision_json(prompt: str, image_paths: List[str]) -> dict:
+    import time
+    from utils.observability import log_performance_metric
+    
+    start_time = time.perf_counter()
+    try:
+        result = _generate_premium_vision_json_raw(prompt, image_paths)
+        duration = time.perf_counter() - start_time
+        resp_len = len(json.dumps(result)) if result else 0
+        log_performance_metric(
+            event_name="llm_api.generate_premium_vision_json",
+            duration=duration,
+            metadata={
+                "prompt_length": len(prompt),
+                "image_count": len(image_paths),
+                "response_length": resp_len,
+                "status": "success",
+                "model": PREMIUM_MODEL
+            }
+        )
+        return result
+    except Exception as e:
+        duration = time.perf_counter() - start_time
+        log_performance_metric(
+            event_name="llm_api.generate_premium_vision_json",
+            duration=duration,
+            metadata={
+                "prompt_length": len(prompt),
+                "image_count": len(image_paths),
+                "status": "failed",
+                "error": str(e),
+                "model": PREMIUM_MODEL
+            }
+        )
+        raise e
+
+def _generate_premium_vision_json_raw(prompt: str, image_paths: List[str]) -> dict:
     """
     PREMIUM VISION ENGINE — Claude Sonnet exclusivo con visión.
     Canal dedicado para evaluación de fidelidad visual en el tier premium.
@@ -778,61 +921,103 @@ def generate_ai_image(prompt: str) -> Optional[str]:
     Genera una imagen usando Google IMAGEN 4.0 (v8.52 - Protocolo Moderno).
     """
     gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-    if not gem_key or google_genai is None:
-        print("  [ImageGen] ERROR: Modern SDK or API Key missing.")
-        return None
-
+    
+    # Pre-build path and prompt to be reused by both Imagen and DALL-E 3
     output_path = f"uploads/ai_v4_{int(time.time())}.png"
     os.makedirs("uploads", exist_ok=True)
+    
+    # v8.66: Anti-Diagram & Spelling Protection (Hardened)
+    forbidden = ["diagram", "infographic", "text", "chart", "table", "graph", "label", "writing", "logo", "brand"]
+    clean_intent = prompt.lower()
+    for x in forbidden:
+        clean_intent = clean_intent.replace(x, "executive scene")
+    
+    # v8.67: The "Board-Ready" Aesthetic Protocol (Polished to strictly avoid text/charts)
+    clean_prompt = (
+        f"High-end, professional corporate lifestyle photography of: {clean_intent}. "
+        "Clean and modern architectural composition, shallow depth of field. "
+        "STRICT NO-TEXT RULE: Absolutely no text, no letters, no words, no writing, no labels, "
+        "no screens with text, no user interfaces, no mockups, no logos, no watermarks. "
+        "STRICT NO-DIAGRAM RULE: Absolutely no charts, no graphs, no diagrams, no infographics, "
+        "no financial curves, no abstract graphics. "
+        "Focus purely on real-life photography of people, environments, or symbolic objects."
+    )
 
-    try:
-        # v8.65: Audited Imagen 4.0 Call
-        print(f"  [ImageGen] INVOKING IMAGEN 4.0: models/imagen-4.0-generate-001 (High Timeout Mode)")
-        client = google_genai.Client(api_key=gem_key, http_options={'timeout': 600})
-        
-        # v8.66: Anti-Diagram & Spelling Protection (Hardened)
-        forbidden = ["diagram", "infographic", "text", "chart", "table", "graph", "label", "writing", "logo", "brand"]
-        clean_intent = prompt.lower()
-        for x in forbidden:
-            clean_intent = clean_intent.replace(x, "executive scene")
-        
-        # v8.67: The "Board-Ready" Aesthetic Protocol
-        clean_prompt = (
-            f"Professional corporate photography: {clean_intent}. "
-            "High-end commercial aesthetic, minimal composition, shallow depth of field. "
-            "STRICTLY NO TEXT, NO DIAGRAMS, NO CHARTS, NO LOGOS, NO WRITING ON WALLS. "
-            "Clean and architectural."
-        )
-        
-        # LOG AUDIT PRE-CALL
-        log_audit("IMAGE_GEN_REQUEST", f"MODEL: imagen-4.0-generate-001\nPROMPT: {clean_prompt}")
+    # 1. PRIMARY: Google Imagen 4.0
+    if gem_key and google_genai is not None:
+        try:
+            # v8.65: Audited Imagen 4.0 Call
+            print(f"  [ImageGen] INVOKING IMAGEN 4.0: models/imagen-4.0-generate-001 (High Timeout Mode)")
+            client = google_genai.Client(api_key=gem_key, http_options={'timeout': 600})
+            
+            # LOG AUDIT PRE-CALL
+            log_audit("IMAGE_GEN_REQUEST", f"MODEL: imagen-4.0-generate-001\nPROMPT: {clean_prompt}")
 
-        response = client.models.generate_images(
-            model='imagen-4.0-generate-001',
-            prompt=clean_prompt,
-            config=genai_types.GenerateImagesConfig(
-                number_of_images=1,
-                aspect_ratio="16:9"
+            response = client.models.generate_images(
+                model='imagen-4.0-generate-001',
+                prompt=clean_prompt,
+                config=genai_types.GenerateImagesConfig(
+                    number_of_images=1,
+                    aspect_ratio="16:9"
+                )
             )
-        )
-        
-        if response and response.generated_images:
-            img_bytes = response.generated_images[0].image.image_bytes
-            with open(output_path, "wb") as f:
-                f.write(img_bytes)
             
-            # LOG AUDIT SUCCESS
-            log_audit("IMAGE_GEN_SUCCESS", f"ASSET CREATED: {output_path}")
-            print(f"  [ImageGen] SUCCESS: Created Imagen 4.0 asset: {output_path}")
-            return output_path
+            if response and response.generated_images:
+                img_bytes = response.generated_images[0].image.image_bytes
+                with open(output_path, "wb") as f:
+                    f.write(img_bytes)
+                
+                # LOG AUDIT SUCCESS
+                log_audit("IMAGE_GEN_SUCCESS", f"ASSET CREATED: {output_path}")
+                print(f"  [ImageGen] SUCCESS: Created Imagen 4.0 asset: {output_path}")
+                return output_path
+                
+            print("  [ImageGen] Imagen 4.0 failed: No images in response. Proceeding to fallback...")
             
-        log_audit("IMAGE_GEN_FAILED", "Response received but no images found.")
-        print("  [ImageGen] FAILED: No images in response.")
-        return None
-        
-    except Exception as e:
-        print(f"  [ImageGen] API ERROR: {e}")
-        return None
+        except Exception as e:
+            print(f"  [ImageGen] Imagen 4.0 API ERROR: {e}. Proceeding to fallback...")
+
+    else:
+        print("  [ImageGen] Imagen 4.0 skipped: SDK or API Key missing. Proceeding to fallback...")
+
+    # 2. FALLBACK: OpenAI DALL-E 3
+    ope_key = os.getenv("OPENAI_API_KEY")
+    if ope_key:
+        print("  [ImageGen] INVOKING FALLBACK: OpenAI DALL-E 3...")
+        try:
+            import requests
+            client_openai = openai.OpenAI(api_key=ope_key)
+            
+            # LOG AUDIT PRE-CALL
+            log_audit("IMAGE_GEN_REQUEST_FALLBACK_DALLE", f"MODEL: dall-e-3\nPROMPT: {clean_prompt}")
+            
+            response_openai = client_openai.images.generate(
+                model="dall-e-3",
+                prompt=clean_prompt,
+                size="1792x1024", # 16:9 Landscape for DALL-E 3
+                quality="standard",
+                n=1,
+            )
+            
+            if response_openai and response_openai.data:
+                image_url = response_openai.data[0].url
+                img_data = requests.get(image_url).content
+                with open(output_path, "wb") as f:
+                    f.write(img_data)
+                
+                # LOG AUDIT SUCCESS
+                log_audit("IMAGE_GEN_SUCCESS_FALLBACK_DALLE", f"ASSET CREATED VIA DALL-E 3: {output_path}")
+                print(f"  [ImageGen] SUCCESS: Created DALL-E 3 asset: {output_path}")
+                return output_path
+                
+            print("  [ImageGen] DALL-E 3 failed: No data in response.")
+        except Exception as dalle_err:
+            print(f"  [ImageGen] DALL-E 3 Fallback ERROR: {dalle_err}")
+            
+    else:
+        print("  [ImageGen] DALL-E 3 skipped: OPENAI_API_KEY missing.")
+
+    return None
 
 def _save_generated_image(data: bytes) -> Optional[str]:
     """Guarda bytes en /uploads."""

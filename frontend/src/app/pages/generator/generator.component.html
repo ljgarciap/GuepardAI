@@ -130,7 +130,7 @@
             <p>The presentation has been generated according to your brand guidelines and is ready for review.</p>
           </div>
           <div class="success-actions">
-            <a [href]="downloadUrl" class="btn-primary-enterprise" download>
+            <a [href]="downloadUrl" class="btn-primary-enterprise" (click)="onDownloadClick()" download>
               DOWNLOAD STRATEGIC PORTFOLIO
             </a>
             <button class="btn-action-outline" (click)="reset()">
@@ -165,7 +165,7 @@
             <input type="checkbox" [(ngModel)]="allowAiImages" [disabled]="isGenerating">
             <span class="slider round"></span>
           </label>
-          <span class="toggle-label">AI IMAGES ({{ allowAiImages ? 'ON' : 'OFF' }})</span>
+          <span class="toggle-label">Use ai generated images</span>
         </div>
         <div class="execution-controls">
           <span class="input-status" [class.ready]="prompt && selectedStyle && selectedKnowledge">
@@ -175,6 +175,47 @@
             SYNTHESIZE NOW
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- RATING / REVIEW MODAL -->
+  <div class="feedback-modal-overlay" *ngIf="showFeedbackModal">
+    <div class="feedback-modal-card glass-panel slideUp">
+      <button class="btn-close" (click)="showFeedbackModal = false">×</button>
+      
+      <div class="feedback-modal-header">
+        <h4>Review Your Presentation</h4>
+        <p class="question">How satisfied are you with the generated presentation?</p>
+      </div>
+
+      <div class="stars-container">
+        <span 
+          *ngFor="let star of [5, 4, 3, 2, 1]" 
+          class="star" 
+          [class.active]="selectedRating >= star"
+          (click)="selectRating(star)">
+          ★
+        </span>
+      </div>
+
+      <div class="comments-container">
+        <label>OBSERVATIONS (OPTIONAL)</label>
+        <textarea 
+          [(ngModel)]="feedbackComment" 
+          placeholder="Share your thoughts on the quality of the slides, design, or content..."
+          rows="3"
+          class="feedback-textarea">
+        </textarea>
+      </div>
+
+      <div class="feedback-modal-actions">
+        <button 
+          class="btn-primary-enterprise" 
+          [disabled]="selectedRating === 0" 
+          (click)="submitFeedback()">
+          SUBMIT REVIEW
+        </button>
       </div>
     </div>
   </div>

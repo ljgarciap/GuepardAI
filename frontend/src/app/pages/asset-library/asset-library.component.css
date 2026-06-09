@@ -441,3 +441,239 @@
     padding: 20px;
   }
 }
+
+/* Meta Row styling */
+.meta-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.meta-date {
+  font-size: 0.9rem;
+  color: #64748b;
+}
+
+.meta-divider {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+
+.portfolio-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rating-stars {
+  display: flex;
+  gap: 3px;
+}
+
+.star-static {
+  font-size: 16px;
+  color: #cbd5e1; /* Gray star */
+  user-select: none;
+}
+
+.star-static.filled {
+  color: #f59e0b; /* Gold star */
+}
+
+.btn-comment-view {
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  color: #6366f1;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 750;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.2s;
+}
+
+.btn-comment-view:hover {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: #6366f1;
+  transform: translateY(-1px);
+}
+
+.btn-rate {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+  color: white !important;
+  box-shadow: 0 4px 10px rgba(245, 158, 11, 0.2);
+}
+
+.btn-rate:hover {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%) !important;
+  transform: translateY(-2px);
+}
+
+/* Feedback / Rating Modal Layout (reused from generator component) */
+.feedback-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.feedback-modal-card {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(25px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 24px;
+  padding: 36px;
+  width: 90%;
+  max-width: 480px;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.15);
+  position: relative;
+  text-align: center;
+}
+
+.feedback-modal-card .btn-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: color 0.2s;
+  width: auto;
+  height: auto;
+}
+
+.feedback-modal-card .btn-close:hover {
+  color: #1e293b;
+}
+
+.feedback-modal-header h4 {
+  font-size: 1.35rem;
+  font-weight: 850;
+  color: #1e293b;
+  margin-bottom: 8px;
+  letter-spacing: -0.01em;
+}
+
+.feedback-modal-header .question {
+  font-size: 0.95rem;
+  color: #64748b;
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+.stars-container {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.star {
+  font-size: 36px;
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: transform 0.2s, color 0.2s;
+  user-select: none;
+}
+
+.star:hover,
+.star:hover ~ .star,
+.star.active,
+.star.active ~ .star {
+  color: #f59e0b;
+  transform: scale(1.15);
+}
+
+.star:active {
+  transform: scale(0.95);
+}
+
+.comments-container {
+  text-align: left;
+  margin-bottom: 24px;
+}
+
+.comments-container label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.feedback-textarea {
+  width: 100%;
+  border: 1.5px solid rgba(0,0,0,0.05);
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 0.85rem;
+  color: #1e293b;
+  outline: none;
+  resize: none;
+  transition: all 0.3s;
+  background: #ffffff;
+}
+
+.feedback-textarea:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.feedback-modal-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.feedback-modal-actions .btn-primary-enterprise {
+  width: 100%;
+  max-width: 240px;
+  background: #6366f1;
+  color: white;
+  border: none;
+  padding: 14px 28px;
+  border-radius: 10px;
+  text-align: center;
+  font-weight: 750;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+  transition: all 0.2s;
+}
+
+.feedback-modal-actions .btn-primary-enterprise:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.3);
+}
+
+.feedback-modal-actions .btn-primary-enterprise:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.slideUp {
+  animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}

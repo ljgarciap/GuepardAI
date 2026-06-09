@@ -1,9 +1,42 @@
 import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Float, ForeignKey, Boolean
+from enum import Enum
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Float, ForeignKey, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from pgvector.sqlalchemy import Vector
 from database import Base
+
+
+class IngestionJobStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    PROCESSING_VISUAL_DNA = "processing_visual_dna"
+    VISUAL_DNA_EXTRACTED = "visual_dna_extracted"
+    PROCESSING_ARTISTIC_ESSENCE = "processing_artistic_essence"
+    ARTISTIC_ESSENCE_EXTRACTED = "artistic_essence_extracted"
+    COMPLETED = "completed"
+    ERROR = "error"
+
+
+class GenerationJobStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    SYNTHESIZING_CONTENT = "synthesizing_content"
+    CONTENT_READY = "content_ready"
+    PLANNING_DESIGN = "planning_design"
+    DESIGN_PLANNED = "design_planned"
+    QA_FAILED = "qa_failed"
+    QA_PASSED = "qa_passed"
+    COMPLETED = "completed"
+    ERROR = "error"
+
+
+class PresentationSlideStatus(str, Enum):
+    PENDING = "pending"
+    CONTENT_READY = "content_ready"
+    PLANNED = "planned"
+    RENDERED = "rendered"
+
 
 
 class Brand(Base):
@@ -296,6 +329,20 @@ class PresentationSlide(Base):
 
     job = relationship("GenerationJob", back_populates="slides")
 
+    @property
+    def background_asset_path(self):
+        if self.planning_json and isinstance(self.planning_json, dict):
+            return self.planning_json.get("background_asset_path")
+        return None
+
+    @background_asset_path.setter
+    def background_asset_path(self, value):
+        if not self.planning_json:
+            self.planning_json = {}
+        current = dict(self.planning_json)
+        current["background_asset_path"] = value
+        self.planning_json = current
+
 class ArtDirectorDecision(Base):
     """
     BITÁCORA DE DECISIONES (v34.0).
@@ -332,3 +379,59 @@ class SystemConfig(Base):
     value = Column(Text, nullable=False)
     description = Column(String(255), nullable=True)
     updated_at  = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+class PerformanceMetric(Base):
+    """
+    REGISTRO DE MÉTRICAS DE RENDIMIENTO (observabilidad).
+    Guarda los tiempos de ejecución de herramientas, llamadas a LLM, y pipelines.
+    """
+    __tablename__ = "performance_metrics"
+
+    id               = Column(Integer, primary_key=True, index=True)
+    event_name       = Column(String(100), index=True, nullable=False)
+    duration_seconds = Column(Float, nullable=False)
+    metadata_json    = Column(JSONB, nullable=True)
+    
+    timestamp        = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+
+
+class SurveyQuestion(Base):
+    __tablename__ = "survey_questions"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    key           = Column(String(100), unique=True, index=True, nullable=False)
+    question_text = Column(Text, nullable=False)
+    question_type = Column(String(50), default="stars") # 'stars', 'text', 'boolean'
+    is_active     = Column(Boolean, default=True)
+    created_at    = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class GenerationJobFeedback(Base):
+    __tablename__ = "generation_job_feedback"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    job_id        = Column(Integer, ForeignKey("generation_jobs.id"), nullable=False)
+    question_id   = Column(Integer, ForeignKey("survey_questions.id"), nullable=False)
+    
+    rating        = Column(Integer, nullable=True) # 1-5 stars
+    comment       = Column(Text, nullable=True)     # Optional comments/observations
+    created_at    = Column(DateTime, default=datetime.datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint('job_id', 'question_id', name='uq_job_question_feedback'),)
+
+    job = relationship("GenerationJob")
+    question = relationship("SurveyQuestion")
+
+
+class FooterConfig(Base):
+    __tablename__ = "footer_configs"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    name            = Column(String(100), nullable=False)
+    logo_light_path = Column(String(255), nullable=True) # Logo for dark backgrounds
+    logo_dark_path  = Column(String(255), nullable=True) # Logo for light backgrounds
+    text            = Column(Text, nullable=True)        # Text of the footer
+    disclaimer      = Column(String(255), nullable=True) # Disclaimer text (e.g. CONFIDENTIAL FOR {brand} USE ONLY)
+    is_active       = Column(Boolean, default=True)
+    is_selected     = Column(Boolean, default=False)
+    created_at      = Column(DateTime, default=datetime.datetime.utcnow)

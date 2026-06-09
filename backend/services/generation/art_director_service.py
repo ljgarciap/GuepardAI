@@ -26,7 +26,7 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
     
     slides = db.query(models.PresentationSlide).filter(
         models.PresentationSlide.job_id == job_id,
-        models.PresentationSlide.status == "content_ready"
+        models.PresentationSlide.status == models.PresentationSlideStatus.CONTENT_READY
     ).order_by(models.PresentationSlide.slide_number.asc()).all()
     
     if not slides:
@@ -403,7 +403,7 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
             "grammar_type": grammar_type,
             "elements": render_elements
         }
-        slide.status = "planned"
+        slide.status = models.PresentationSlideStatus.PLANNED
         db.commit()
 
     return True

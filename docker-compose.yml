@@ -27,12 +27,44 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app
     volumes:
       - ./backend:/app
       - ./backend/uploads:/app/uploads
       - ./backend/custom_fonts:/usr/share/fonts/custom
     depends_on:
       - db
+      - redis
+    restart: always
+
+  redis:
+    image: redis:alpine
+    container_name: guepard-redis
+    ports:
+      - "6379:6379"
+    restart: always
+
+  celery_worker:
+    build: ./backend
+    container_name: guepard-celery-worker
+    command: celery -A celery_app.celery_app worker --loglevel=info
+    env_file:
+      - ./.env
+    environment:
+      - DATABASE_URL=postgresql+psycopg://root:root@db:5432/ai_db
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app
+    volumes:
+      - ./backend:/app
+      - ./backend/uploads:/app/uploads
+      - ./backend/custom_fonts:/usr/share/fonts/custom
+    depends_on:
+      - db
+      - redis
     restart: always
 
   frontend:
@@ -46,32 +78,5 @@ services:
       - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     restart: always
 
-  vision:
-    image: ollama/ollama:latest
-    container_name: guepard-vision
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    restart: always
-
-  init-vision:
-    image: curlimages/curl:latest
-    container_name: guepard-vision-init
-    depends_on:
-      - vision
-    restart: "no"
-    command: >
-      sh -c "
-      echo 'Waiting for Ollama to start...';
-      sleep 10;
-      echo 'Pulling Qwen2.5-VL model...';
-      curl -s -X POST http://vision:11434/api/pull -d '{\"name\": \"qwen2.5vl\"}';
-      echo 'Pulling mxbai-embed-large model...';
-      curl -s -X POST http://vision:11434/api/pull -d '{\"name\": \"mxbai-embed-large\"}';
-      echo 'Models pulled successfully!';
-      "
-
 volumes:
   pgdata:
-  ollama_data:

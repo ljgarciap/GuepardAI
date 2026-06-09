@@ -84,10 +84,22 @@
         <div class="item-icon">📽️</div>
         <div class="item-details">
           <h3>{{ p.filename }}</h3>
-          <p>Strategic Synthesis • {{ p.created_at | date:'medium' }}</p>
+          <div class="meta-row">
+            <span class="meta-date">Strategic Synthesis • {{ p.created_at | date:'medium' }}</span>
+            <span class="meta-divider" *ngIf="p.rating">•</span>
+            <div class="portfolio-rating" *ngIf="p.rating">
+              <span class="rating-stars">
+                <span *ngFor="let star of [1, 2, 3, 4, 5]" class="star-static" [class.filled]="p.rating >= star">★</span>
+              </span>
+              <button *ngIf="p.comment" class="btn-comment-view" (click)="viewComment(p.comment)" title="View Observations">
+                💬 View observations
+              </button>
+            </div>
+          </div>
         </div>
         <div class="item-actions">
-          <a [href]="baseUrl + '/api/generation/download/' + p.id" class="btn-mini" download>DOWNLOAD PPTX</a>
+          <button *ngIf="!p.rating" class="btn-mini btn-rate" (click)="openRatingModal(p.id)">★ RATE IT</button>
+          <a [href]="baseUrl + '/api/generation/download/' + p.id" class="btn-mini" download>DOWNLOAD</a>
         </div>
       </div>
       <div class="empty-state" *ngIf="portfolios.length === 0">
@@ -143,6 +155,65 @@
             <a [href]="baseUrl + '/' + selectedAsset.local_path" download class="btn-mini" style="width: 100%; text-align: center; margin-top: 1rem;">DOWNLOAD MASTER</a>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RATING MODAL (PORTFOLIOS LIST) -->
+  <div class="feedback-modal-overlay" *ngIf="showRatingModal">
+    <div class="feedback-modal-card glass-panel slideUp">
+      <button class="btn-close" (click)="showRatingModal = false">×</button>
+      
+      <div class="feedback-modal-header">
+        <h4>Rate Generated Presentation</h4>
+        <p class="question">How satisfied are you with the generated presentation?</p>
+      </div>
+
+      <div class="stars-container">
+        <span 
+          *ngFor="let star of [5, 4, 3, 2, 1]" 
+          class="star" 
+          [class.active]="selectedRating >= star"
+          (click)="selectRating(star)">
+          ★
+        </span>
+      </div>
+
+      <div class="comments-container">
+        <label>OBSERVATIONS (OPTIONAL)</label>
+        <textarea 
+          [(ngModel)]="feedbackComment" 
+          placeholder="Share your thoughts on the quality of the slides, design, or content..."
+          rows="3"
+          class="feedback-textarea">
+        </textarea>
+      </div>
+
+      <div class="feedback-modal-actions">
+        <button 
+          class="btn-primary-enterprise" 
+          [disabled]="selectedRating === 0" 
+          (click)="submitFeedback()">
+          SUBMIT REVIEW
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW COMMENTS MODAL -->
+  <div class="feedback-modal-overlay" *ngIf="showCommentModal" (click)="closeCommentModal()">
+    <div class="feedback-modal-card glass-panel slideUp" (click)="$event.stopPropagation()">
+      <button class="btn-close" (click)="closeCommentModal()">×</button>
+      
+      <div class="feedback-modal-header" style="text-align: left;">
+        <h4 style="margin-bottom: 16px;">User Observations</h4>
+        <div style="background: rgba(0,0,0,0.03); border: 1px solid var(--border-light); padding: 18px; border-radius: 12px; max-height: 250px; overflow-y: auto;">
+          <p style="font-size: 0.9rem; line-height: 1.6; color: var(--text-main); margin: 0; white-space: pre-wrap;">{{ selectedComment }}</p>
+        </div>
+      </div>
+
+      <div class="feedback-modal-actions" style="margin-top: 24px;">
+        <button class="btn-primary-enterprise" (click)="closeCommentModal()">CLOSE</button>
       </div>
     </div>
   </div>

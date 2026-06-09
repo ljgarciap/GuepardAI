@@ -1,42 +1,90 @@
 name: Deploy to EC2
 
+# ─────────────────────────────────────────────────────────────────────────────
+# IMPORTANTE: Este workflow SOLO se activa después de que el CI (ci.yml) pase.
+# NO se hace deploy directo — primero los tests deben aprobar.
+#
+# Flujo:
+#   push a master → ci.yml corre tests → si pasan → deploy.yml despliega
+# ─────────────────────────────────────────────────────────────────────────────
 on:
-  push:
+  workflow_run:
+    workflows: ["CI - Tests (Backend + Frontend)"]  # Nombre exacto del ci.yml
+    types:
+      - completed      # Se activa cuando el CI termina
     branches:
-      - master
-  pull_request:
-    branches:
-      - master
+      - master         # Solo despliega desde master
+
 jobs:
   deploy:
+    name: "🚀 Deploy to EC2 (post-CI)"
     runs-on: ubuntu-latest
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # CONDICIÓN CRÍTICA: Solo despliega si el CI Gate pasó exitosamente.
+    # Si el CI falló (tests rotos), este job NO se ejecuta.
+    # ─────────────────────────────────────────────────────────────────────────
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
     steps:
-      - name: Checkout Code
+      - name: "📥 Checkout Code"
         uses: actions/checkout@v4
 
-      - name: Deploy via SSH
+      - name: "🔒 Verify CI passed before deploying"
+        run: |
+          echo "CI workflow result: ${{ github.event.workflow_run.conclusion }}"
+          echo "Triggered by commit: ${{ github.event.workflow_run.head_sha }}"
+          echo "✅ All tests passed — proceeding with deploy."
+
+      - name: "🚀 Deploy via SSH to EC2"
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            echo "Starting Deployment..."
+            echo "═══════════════════════════════════════════"
+            echo "  GuepardAI Deploy — $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "  Triggered after: CI Tests PASSED ✅"
+            echo "═══════════════════════════════════════════"
+
             cd /home/ubuntu/GuepardAI
-            
-            # Stash any local changes to prevent conflicts
+
+            # Guardar cambios locales no rastreados (por seguridad)
             git stash
-            
-            # Fetch and reset to latest
+
+            # Traer la última versión del master
             git fetch --all
             git reset --hard origin/master
-            
-            # Rebuild and restart containers without downtime
-            echo "Building and restarting Docker containers..."
+
+            # Reconstruir y reiniciar contenedores de PRODUCCIÓN
+            # NOTA: docker-compose.test.yml NO se ejecuta aquí.
+            # La BD de test es solo para CI, no para el servidor de producción.
+            echo "🔨 Building and restarting production containers..."
             sudo docker compose up -d --build
-            
-            # Prune old images to save disk space
+
+            # Limpiar imágenes antiguas para ahorrar disco
             sudo docker image prune -f
-            
-            echo "Deployment completed successfully!"
+
+            echo "✅ Deployment completed successfully!"
+            echo "═══════════════════════════════════════════"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job de alerta cuando el CI falla (deploy bloqueado)
+  # ───────────────────────────────────────────────────────────────────────────
+  blocked:
+    name: "🚫 Deploy Blocked (CI Failed)"
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion != 'success' }}
+
+    steps:
+      - name: "❌ Deploy blocked due to CI failure"
+        run: |
+          echo "═══════════════════════════════════════════"
+          echo "  DEPLOY BLOQUEADO"
+          echo "  Razón: Los tests del CI fallaron."
+          echo "  CI resultado: ${{ github.event.workflow_run.conclusion }}"
+          echo "  Commit: ${{ github.event.workflow_run.head_sha }}"
+          echo "  Revisa el workflow de CI para ver qué falló."
+          echo "═══════════════════════════════════════════"
+          exit 1

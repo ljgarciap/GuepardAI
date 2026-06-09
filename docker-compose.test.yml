@@ -1,0 +1,44 @@
+# docker-compose.test.yml
+# ========================
+# Levanta una base de datos PostgreSQL DEDICADA EXCLUSIVAMENTE para tests.
+#
+# GARANTÍAS DE AISLAMIENTO:
+#   1. Corre en el PUERTO 5433 (producción usa 5432). No hay colisión posible.
+#   2. Tiene su propio volumen de datos (ai_db_test_data). Separado de producción.
+#   3. La base de datos se llama 'ai_db_test'. Diferente a 'ai_db' (producción).
+#   4. Los datos de este contenedor NO afectan en absoluto a producción.
+#
+# USO:
+#   Levantar el contenedor de test:
+#     docker compose -f docker-compose.test.yml up -d
+#
+#   Detener y limpiar (elimina el volumen de test también):
+#     docker compose -f docker-compose.test.yml down -v
+#
+#   Ejecutar los tests después de levantar el contenedor:
+#     pytest --cov=agents tests/
+
+version: "3.8"
+
+services:
+  db_test:
+    image: pgvector/pgvector:pg16  # Misma imagen que producción para máxima fidelidad
+    container_name: guepard_ai_db_test
+    restart: "no"                  # No reiniciar automáticamente (solo para tests)
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: ai_db_test      # Base de datos de TEST (nombre diferente a producción)
+    ports:
+      - "5433:5432"                # Puerto 5433 en el HOST → 5432 dentro del contenedor
+    volumes:
+      - ai_db_test_data:/var/lib/postgresql/data  # Volumen separado del de producción
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d ai_db_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ai_db_test_data:
+    name: guepard_ai_db_test_volume  # Nombre explícito para identificarlo fácilmente

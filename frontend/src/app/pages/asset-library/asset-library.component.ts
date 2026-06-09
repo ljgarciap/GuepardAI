@@ -27,6 +27,15 @@ export class AssetLibraryComponent implements OnInit {
   selectedAsset: any = null;
   showModal = false;
 
+  // --- REVIEW SYSTEM ---
+  showRatingModal = false;
+  ratingJobId: number | null = null;
+  selectedRating = 0;
+  feedbackComment = '';
+  
+  selectedComment = '';
+  showCommentModal = false;
+
   ngOnInit() {
     this.loadBrands();
     this.refreshLibrary();
@@ -70,5 +79,42 @@ export class AssetLibraryComponent implements OnInit {
     } else if (this.activeTab === 'portfolios') {
       this.brandService.getLibraryPortfolios(bId).subscribe(res => this.portfolios = res);
     }
+  }
+
+  openRatingModal(jobId: number) {
+    this.ratingJobId = jobId;
+    this.selectedRating = 0;
+    this.feedbackComment = '';
+    this.showRatingModal = true;
+  }
+
+  selectRating(rating: number) {
+    this.selectedRating = rating;
+  }
+
+  submitFeedback() {
+    if (!this.ratingJobId || this.selectedRating === 0) return;
+
+    this.brandService.submitFeedback(this.ratingJobId, this.selectedRating, this.feedbackComment).subscribe({
+      next: (res) => {
+        console.log("[AssetLibrary] Feedback submitted successfully:", res);
+        this.showRatingModal = false;
+        this.refreshLibrary();
+      },
+      error: (err) => {
+        console.error("[AssetLibrary] Error submitting feedback:", err);
+        this.showRatingModal = false;
+      }
+    });
+  }
+
+  viewComment(comment: string) {
+    this.selectedComment = comment;
+    this.showCommentModal = true;
+  }
+
+  closeCommentModal() {
+    this.showCommentModal = false;
+    this.selectedComment = '';
   }
 }

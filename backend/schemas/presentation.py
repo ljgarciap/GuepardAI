@@ -62,7 +62,20 @@ class PainterSlideData(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     elements: List[Dict[str, Any]] = Field(default_factory=list)
 
+class PainterFooterConfig(BaseModel):
+    name: str
+    logo_light_path: Optional[str] = None
+    logo_dark_path: Optional[str] = None
+    text: Optional[str] = None
+    disclaimer: Optional[str] = None
+    is_active: bool = True
+    is_selected: bool = False
+
 class RenderManifest(BaseModel):
     slides: List[PainterSlideData]
     logo_path: Optional[str] = None
+    logo_light_path: Optional[str] = None
+    logo_dark_path: Optional[str] = None
     agency_branding: Optional[PainterAgencyBranding] = None
+    is_footer_enabled: bool = True
+    footer_config: Optional[PainterFooterConfig] = None

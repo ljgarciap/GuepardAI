@@ -33,3 +33,9 @@ backend/chroma_db/
 # IDEs
 .vscode/
 .idea/
+*.code-workspace
+
+# Local logs & metadata
+backend_logs.txt
+memory.md
+

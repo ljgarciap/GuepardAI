@@ -13,13 +13,12 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 import models
 from database import SessionLocal, engine, Base
-from services.ingestion.ingestion_orchestrator import (
-    task_extract_visual_dna,
-    task_extract_artistic_essence,
-    task_extract_full_brand_style,
-    task_ingest_knowledge,
-    task_extract_pure_assets,
-    task_generate_presentation
+from tasks import (
+    celery_extract_full_brand_style,
+    celery_ingest_knowledge,
+    celery_extract_pure_assets,
+    celery_generate_presentation,
+    celery_resume_generation_pipeline
 )
 from services.core.brand_service import create_brand_logic, update_brand_logic
 import uuid
@@ -110,6 +109,7 @@ class PresentationRequest(BaseModel):
     allow_ai_images: bool = False
     output_format: str = "pptx" # 'pptx' or 'pdf_artistic'
     tier: str = "free"         # 'free' | 'premium' (Fix/Roadmap 1)
+    interactive_mode: bool = False
 
 
 # ──────────────────────────────────────────────
@@ -218,6 +218,131 @@ async def update_brand(
     }
 
 
+@app.get("/api/footers", tags=["Governance"])
+def list_footers(db: Session = Depends(get_db)):
+    """Lista todas las configuraciones de footer."""
+    is_enabled_config = db.query(models.SystemConfig).filter(models.SystemConfig.key == "is_footer_enabled").first()
+    is_enabled = (is_enabled_config.value == "true") if is_enabled_config else True
+    
+    footers = db.query(models.FooterConfig).order_by(models.FooterConfig.created_at.desc()).all()
+    return {
+        "is_footer_enabled": is_enabled,
+        "footers": footers
+    }
+
+@app.post("/api/footers", tags=["Governance"])
+async def create_footer(
+    id: Optional[int] = Form(None),
+    name: str = Form(...),
+    text: Optional[str] = Form(None),
+    disclaimer: Optional[str] = Form(None),
+    logo_light: Optional[UploadFile] = File(None),
+    logo_dark: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db)
+):
+    """Crea o actualiza una configuración de footer y procesa logos opcionales."""
+    logo_light_path = None
+    logo_dark_path = None
+    
+    if logo_light:
+        try:
+            safe_name = f"footer_light_{int(time.time())}_{logo_light.filename}"
+            path = os.path.join(UPLOAD_DIR, safe_name)
+            content = await logo_light.read()
+            with open(path, "wb") as f:
+                f.write(content)
+            logo_light_path = f"uploads/{safe_name}"
+        except Exception as e:
+            print(f"  [FooterService] Error saving logo_light: {e}")
+            
+    if logo_dark:
+        try:
+            safe_name = f"footer_dark_{int(time.time())}_{logo_dark.filename}"
+            path = os.path.join(UPLOAD_DIR, safe_name)
+            content = await logo_dark.read()
+            with open(path, "wb") as f:
+                f.write(content)
+            logo_dark_path = f"uploads/{safe_name}"
+        except Exception as e:
+            print(f"  [FooterService] Error saving logo_dark: {e}")
+
+    if id is not None:
+        footer = db.query(models.FooterConfig).filter(models.FooterConfig.id == id).first()
+        if not footer:
+            raise HTTPException(status_code=404, detail="Footer configuration not found")
+        footer.name = name
+        footer.text = text
+        footer.disclaimer = disclaimer
+        if logo_light_path:
+            footer.logo_light_path = logo_light_path
+        if logo_dark_path:
+            footer.logo_dark_path = logo_dark_path
+        db.commit()
+        db.refresh(footer)
+        return footer
+
+    # Si es el primer footer, lo dejamos seleccionado por defecto
+    first_count = db.query(models.FooterConfig).count()
+    should_select = (first_count == 0)
+
+    footer = models.FooterConfig(
+        name=name,
+        text=text,
+        disclaimer=disclaimer,
+        logo_light_path=logo_light_path,
+        logo_dark_path=logo_dark_path,
+        is_active=True,
+        is_selected=should_select
+    )
+    db.add(footer)
+    db.commit()
+    db.refresh(footer)
+    return footer
+
+@app.put("/api/footers/{footer_id}/select", tags=["Governance"])
+def select_footer(footer_id: int, db: Session = Depends(get_db)):
+    """Selecciona un footer específico (desmarcando los demás)."""
+    # Si footer_id es 0, deseleccionamos todos (sin footer)
+    if footer_id == 0:
+        db.query(models.FooterConfig).update({models.FooterConfig.is_selected: False})
+        db.commit()
+        return {"status": "success", "selected_id": None}
+        
+    footer = db.query(models.FooterConfig).get(footer_id)
+    if not footer:
+        raise HTTPException(status_code=404, detail="Footer configuration not found")
+        
+    db.query(models.FooterConfig).update({models.FooterConfig.is_selected: False})
+    footer.is_selected = True
+    db.commit()
+    db.refresh(footer)
+    return footer
+
+@app.delete("/api/footers/{footer_id}", tags=["Governance"])
+def delete_footer(footer_id: int, db: Session = Depends(get_db)):
+    """Elimina una configuración de footer."""
+    footer = db.query(models.FooterConfig).get(footer_id)
+    if not footer:
+        raise HTTPException(status_code=404, detail="Footer configuration not found")
+        
+    db.delete(footer)
+    db.commit()
+    return {"status": "success", "message": "Footer deleted"}
+
+@app.put("/api/footers/toggle", tags=["Governance"])
+def toggle_footer_global(enabled: bool, db: Session = Depends(get_db)):
+    """Habilita o deshabilita globalmente el footer."""
+    cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == "is_footer_enabled").first()
+    val_str = "true" if enabled else "false"
+    if cfg:
+        cfg.value = val_str
+    else:
+        cfg = models.SystemConfig(key="is_footer_enabled", value=val_str, description="Global footer activation toggle")
+        db.add(cfg)
+    db.commit()
+    return {"status": "success", "is_footer_enabled": enabled}
+
+
 # ──────────────────────────────────────────────
 # WORKER TASKS (background)
 # ──────────────────────────────────────────────
@@ -253,13 +378,13 @@ def get_generation_status(job_id: int, db: Session = Depends(get_db)):
     return {
         "id": job.id, "status": job.status, "progress": job.progress,
         "current_step": job.current_step,
-        "download_url": f"/api/generation/download/{job.id}" if job.status == "completed" else None
+        "download_url": f"/api/generation/download/{job.id}" if job.status == models.GenerationJobStatus.COMPLETED else None
     }
 
 @app.get("/api/generation/download/{job_id}", tags=["Generation"])
 def download_presentation(job_id: int, db: Session = Depends(get_db)):
     job = db.query(models.GenerationJob).get(job_id)
-    if not job or job.status != "completed": raise HTTPException(status_code=404, detail="File not ready.")
+    if not job or job.status != models.GenerationJobStatus.COMPLETED: raise HTTPException(status_code=404, detail="File not ready.")
     return FileResponse(job.pptx_path, filename=os.path.basename(job.pptx_path))
 
 
@@ -269,7 +394,6 @@ def download_presentation(job_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/brand/upload", tags=["Ingestion"])
 async def upload_asset(
-    background_tasks: BackgroundTasks,
     ingestion_type: str = Form(...),   
     visibility_scope: str = Form("exclusive"), 
     brand_id: Optional[int] = Form(None),       
@@ -297,28 +421,28 @@ async def upload_asset(
         job = models.IngestionJob(
             client_name=job_key,
             ingestion_type=ingestion_type,
-            status="processing",
+            status=models.IngestionJobStatus.PROCESSING,
             progress=0,
             visibility_scope=visibility_scope
         )
         db.add(job)
     else:
-        job.status = "processing"
+        job.status = models.IngestionJobStatus.PROCESSING
         job.progress = 0
         job.visibility_scope = visibility_scope
     
     db.commit()
     db.close()
 
-    # Disparar tarea en segundo plano (vía Orquestador)
+    # Disparar tarea en segundo plano (vía Celery/Redis)
     if ingestion_type == "brand_style":
-        background_tasks.add_task(task_extract_full_brand_style, job_key, file_path, job_key, visibility_scope, brand_id, safe_tags)
+        celery_extract_full_brand_style.delay(job_key, file_path, job_key, visibility_scope, brand_id, safe_tags)
     elif ingestion_type == "knowledge":
-        background_tasks.add_task(task_ingest_knowledge, job_key, file_path, job_key, brand_id, visibility_scope, document_type)
+        celery_ingest_knowledge.delay(job_key, file_path, job_key, brand_id, visibility_scope, document_type)
     elif ingestion_type == "pure_assets":
-        background_tasks.add_task(task_extract_pure_assets, job_key, file_path, job_key, visibility_scope, brand_id, safe_tags)
+        celery_extract_pure_assets.delay(job_key, file_path, job_key, visibility_scope, brand_id, safe_tags)
 
-    return {"status": "processing", "job_key": job_key}
+    return {"status": models.IngestionJobStatus.PROCESSING, "job_key": job_key}
 
 @app.get("/api/ingestion/status/{job_key}", tags=["Ingestion"])
 def get_ingestion_status(job_key: str, ingestion_type: str = "brand_style", db: Session = Depends(get_db)):
@@ -368,16 +492,30 @@ def list_library_knowledge(brand_id: Optional[int] = None, db: Session = Depends
 @app.get("/api/library/portfolios", tags=["Library"])
 def list_library_portfolios(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
     """Lista las presentaciones generadas en la librería."""
-    query = db.query(models.GenerationJob).filter(models.GenerationJob.status == "completed")
+    query = db.query(models.GenerationJob).filter(models.GenerationJob.status == models.GenerationJobStatus.COMPLETED)
     if brand_id:
         query = query.filter(models.GenerationJob.brand_id == brand_id)
     
     jobs = query.all()
+    
+    # Pre-fetch satisfaction feedback to avoid N+1 queries
+    satisfaction_q = db.query(models.SurveyQuestion).filter(models.SurveyQuestion.key == "presentation_satisfaction").first()
+    satisfaction_q_id = satisfaction_q.id if satisfaction_q else None
+    
+    feedbacks_dict = {}
+    if satisfaction_q_id:
+        feedbacks = db.query(models.GenerationJobFeedback).filter(
+            models.GenerationJobFeedback.question_id == satisfaction_q_id
+        ).all()
+        feedbacks_dict = {f.job_id: {"rating": f.rating, "comment": f.comment} for f in feedbacks}
+        
     return [{
         "id": j.id, 
         "filename": os.path.basename(j.pptx_path) if j.pptx_path else f"Presentation_{j.id}.pptx",
         "created_at": j.created_at,
-        "brand_id": j.brand_id
+        "brand_id": j.brand_id,
+        "rating": feedbacks_dict.get(j.id, {}).get("rating"),
+        "comment": feedbacks_dict.get(j.id, {}).get("comment")
     } for j in jobs]
 
 # ──────────────────────────────────────────────
@@ -429,7 +567,6 @@ def list_dialects(db: Session = Depends(get_db)):
 @app.post("/api/presentations/generate", tags=["Generation"])
 async def generate_presentation(
     request: PresentationRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """Dispara el motor de síntesis para generar una nueva presentación."""
@@ -441,7 +578,7 @@ async def generate_presentation(
     job = models.GenerationJob(
         brand_id=request.brand_id,
         style_id=style_dna.id if style_dna else None,
-        status="pending",
+        status=models.GenerationJobStatus.PENDING,
         progress=0,
         current_step="Initializing isolated synthesis engine v23.0...",
         allow_ai_images=request.allow_ai_images
@@ -458,41 +595,233 @@ async def generate_presentation(
         "region": request.region,
         "allow_ai_images": request.allow_ai_images,
         "output_format": request.output_format,
-        "tier": request.tier
+        "tier": request.tier,
+        "interactive_mode": request.interactive_mode
     }
     
-    background_tasks.add_task(
-        task_generate_presentation,
+    celery_generate_presentation.delay(
         job.id,
         req_payload
     )
 
-    return {"job_id": job.id, "status": "pending"}
+    return {"job_id": job.id, "status": models.GenerationJobStatus.PENDING}
+
+class SlideUpdate(BaseModel):
+    title: Optional[str] = None
+    content_json: Optional[dict] = None
+    layout_slug: Optional[str] = None
+    assigned_image: Optional[str] = None
+
+class ResumeRequest(BaseModel):
+    tier: Optional[str] = "standard"
+    output_format: Optional[str] = "pptx"
+
+@app.get("/api/presentations/{job_id}/slides", tags=["Generation"])
+def get_presentation_slides(job_id: int, db: Session = Depends(get_db)):
+    """Retorna los slides asociados a un job de generación."""
+    job = db.query(models.GenerationJob).get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    slides = db.query(models.PresentationSlide).filter(
+        models.PresentationSlide.job_id == job_id
+    ).order_by(models.PresentationSlide.slide_number.asc()).all()
+    return slides
+
+@app.put("/api/presentations/{job_id}/slides/{slide_id}", tags=["Generation"])
+def update_presentation_slide(job_id: int, slide_id: int, request: SlideUpdate, db: Session = Depends(get_db)):
+    """Permite a un usuario editar el contenido de un slide antes de reanudar el diseño."""
+    slide = db.query(models.PresentationSlide).filter(
+        models.PresentationSlide.job_id == job_id,
+        models.PresentationSlide.id == slide_id
+    ).first()
+    if not slide:
+        raise HTTPException(status_code=404, detail="Slide not found")
+    
+    if request.title is not None:
+        slide.title = request.title
+    if request.content_json is not None:
+        slide.content_json = request.content_json
+    if request.layout_slug is not None:
+        slide.layout_slug = request.layout_slug
+    if request.assigned_image is not None:
+        slide.assigned_image = request.assigned_image
+    
+    # Marcamos el slide de vuelta en CONTENT_READY para obligar al arquitecto a procesarlo
+    slide.status = models.PresentationSlideStatus.CONTENT_READY
+    
+    db.commit()
+    db.refresh(slide)
+    return slide
+
+@app.post("/api/presentations/{job_id}/resume", tags=["Generation"])
+def resume_presentation(job_id: int, request: ResumeRequest, db: Session = Depends(get_db)):
+    """Reanuda un job que estaba pausado en el checkpoint de revisión humana (CONTENT_READY)."""
+    job = db.query(models.GenerationJob).get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    if job.status != models.GenerationJobStatus.CONTENT_READY:
+        raise HTTPException(status_code=400, detail=f"Job cannot be resumed from status: {job.status}")
+    
+    # Obtener el style_filename a partir del style_id del job
+    style_dna = db.query(models.BrandVisualDna).get(job.style_id) if job.style_id else None
+    style_filename = style_dna.source_filename if style_dna else ""
+    
+    req_payload = {
+        "style_filename": style_filename,
+        "knowledge_filename": "",
+        "prompt": job.prompt or "",
+        "region": "Global",
+        "allow_ai_images": job.allow_ai_images or False,
+        "output_format": request.output_format,
+        "tier": request.tier
+    }
+    
+    # Disparar la tarea Celery de reanudación
+    celery_resume_generation_pipeline.delay(
+        job.id,
+        req_payload
+    )
+    
+    return {"job_id": job.id, "status": models.GenerationJobStatus.PROCESSING}
+
+
+class FeedbackSubmitRequest(BaseModel):
+    question_key: str = "presentation_satisfaction"
+    rating: int
+    comment: Optional[str] = None
+
+
+@app.post("/api/presentations/{job_id}/feedback", tags=["Generation"])
+def submit_presentation_feedback(job_id: int, request: FeedbackSubmitRequest, db: Session = Depends(get_db)):
+    """Guarda o actualiza la calificación y observaciones del usuario para una diapositiva/job."""
+    job = db.query(models.GenerationJob).get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if request.rating < 1 or request.rating > 5:
+        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+
+    # Obtener o crear la pregunta
+    question = db.query(models.SurveyQuestion).filter(models.SurveyQuestion.key == request.question_key).first()
+    if not question:
+        question = models.SurveyQuestion(
+            key=request.question_key,
+            question_text=request.question_key.replace("_", " ").capitalize() + "?",
+            question_type="stars"
+        )
+        db.add(question)
+        db.flush()
+
+    # Buscar feedback existente para este job y pregunta
+    feedback = db.query(models.GenerationJobFeedback).filter(
+        models.GenerationJobFeedback.job_id == job_id,
+        models.GenerationJobFeedback.question_id == question.id
+    ).first()
+
+    if feedback:
+        feedback.rating = request.rating
+        feedback.comment = request.comment
+    else:
+        feedback = models.GenerationJobFeedback(
+            job_id=job_id,
+            question_id=question.id,
+            rating=request.rating,
+            comment=request.comment
+        )
+        db.add(feedback)
+
+    db.commit()
+    return {"status": "success", "job_id": job_id, "rating": request.rating, "comment": request.comment}
+
+
+@app.get("/api/presentations/{job_id}/feedback", tags=["Generation"])
+def get_presentation_feedback(job_id: int, db: Session = Depends(get_db)):
+    """Retorna todas las calificaciones y comentarios asociados a un job."""
+    feedbacks = db.query(models.GenerationJobFeedback).filter(
+        models.GenerationJobFeedback.job_id == job_id
+    ).all()
+    
+    return [
+        {
+            "question_key": f.question.key,
+            "question_text": f.question.question_text,
+            "rating": f.rating,
+            "comment": f.comment,
+            "created_at": f.created_at
+        }
+        for f in feedbacks
+    ]
+
+@app.get("/api/admin/metrics", tags=["Admin"])
+def get_performance_metrics(limit: int = 100, db: Session = Depends(get_db)):
+    """
+    Exposes the recorded performance metrics from the database.
+    Returns the last `limit` recorded metrics.
+    """
+    try:
+        metrics = db.query(models.PerformanceMetric).order_by(models.PerformanceMetric.timestamp.desc()).limit(limit).all()
+        return [
+            {
+                "id": m.id,
+                "event_name": m.event_name,
+                "duration_seconds": m.duration_seconds,
+                "metadata": m.metadata_json or {},
+                "timestamp": m.timestamp.isoformat() + "Z"
+            }
+            for m in metrics
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to query metrics: {e}")
 
 @app.delete("/api/admin/reset-db", tags=["Admin"])
 def reset_database(admin_token: str = None, db: Session = Depends(get_db)):
-    """HARD RESET: Limpia toda la base de datos y vuelve a sembrar las configuraciones."""
+    """HARD RESET: Limpia toda la base de datos, borra archivos temporales y vuelve a sembrar las configuraciones."""
     from fastapi import HTTPException
     import os
+    import shutil
     
     expected_token = os.getenv("ADMIN_TOKEN")
-    if not expected_token or admin_token != expected_token:
+    if expected_token and admin_token != expected_token:
         raise HTTPException(status_code=403, detail="Forbidden: Invalid or missing admin token")
         
     from database import engine, Base
-    import subprocess
-    import sys
     
     try:
         # Drop and recreate all tables
         Base.metadata.drop_all(bind=engine)
         Base.metadata.create_all(bind=engine)
         
+        # Clean uploads directory
+        if os.path.exists(UPLOAD_DIR):
+            for filename in os.listdir(UPLOAD_DIR):
+                file_path = os.path.join(UPLOAD_DIR, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete upload file {file_path}: {e}")
+
+        # Clean outputs directory
+        if os.path.exists(OUTPUT_DIR):
+            for filename in os.listdir(OUTPUT_DIR):
+                file_path = os.path.join(OUTPUT_DIR, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete output file {file_path}: {e}")
+        
         # Run seed.py to re-populate configs
         from utils.seed import seed_data
         seed_data()
         
-        return {"status": "success", "message": "Database reset and seeded successfully."}
+        return {"status": "success", "message": "Database and temporary files reset and seeded successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

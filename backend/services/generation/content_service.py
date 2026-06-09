@@ -137,7 +137,7 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
                 "strategy": "Initial Synthesis",
                 "objective": s_data.get("objective", "Create strategic summary")
             },
-            status="content_ready"
+            status=models.PresentationSlideStatus.CONTENT_READY
         )
         db.add(new_slide)
     

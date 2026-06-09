@@ -107,4 +107,46 @@ export class BrandService {
   resetDatabase(): Observable<any> {
     return this.http.delete(`${this.apiUrl}/admin/reset-db`);
   }
+
+  submitFeedback(jobId: number, rating: number, comment?: string, questionKey: string = 'presentation_satisfaction'): Observable<any> {
+    return this.http.post(`${this.apiUrl}/presentations/${jobId}/feedback`, {
+      question_key: questionKey,
+      rating,
+      comment
+    });
+  }
+
+  getFeedback(jobId: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/presentations/${jobId}/feedback`);
+  }
+
+  getFooters(): Observable<any> {
+    return this.http.get(`${this.apiUrl}/footers`);
+  }
+
+  createFooter(name: string, text?: string, disclaimer?: string, logoLight?: File, logoDark?: File, id?: number): Observable<any> {
+    const formData = new FormData();
+    if (id !== undefined && id !== null) {
+      formData.append('id', id.toString());
+    }
+    formData.append('name', name);
+    if (text) formData.append('text', text);
+    if (disclaimer) formData.append('disclaimer', disclaimer);
+    if (logoLight) formData.append('logo_light', logoLight);
+    if (logoDark) formData.append('logo_dark', logoDark);
+    
+    return this.http.post(`${this.apiUrl}/footers`, formData);
+  }
+
+  selectFooter(footerId: number): Observable<any> {
+    return this.http.put(`${this.apiUrl}/footers/${footerId}/select`, {});
+  }
+
+  deleteFooter(footerId: number): Observable<any> {
+    return this.http.delete(`${this.apiUrl}/footers/${footerId}`);
+  }
+
+  toggleFooterGlobal(enabled: boolean): Observable<any> {
+    return this.http.put(`${this.apiUrl}/footers/toggle?enabled=${enabled}`, {});
+  }
 }

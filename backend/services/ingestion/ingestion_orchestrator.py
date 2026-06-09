@@ -177,11 +177,11 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
             db.commit()
         finally:
             db.close()
-        set_job_status(job_key, "visual_dna", "completed")
+        set_job_status(job_key, "visual_dna", models.IngestionJobStatus.COMPLETED)
     except Exception as e:
         err_msg = f"Visual DNA error: {str(e)}"
         logger.error(f"[Orchestrator] {err_msg}")
-        set_job_status(job_key, "visual_dna", "error", message=err_msg)
+        set_job_status(job_key, "visual_dna", models.IngestionJobStatus.ERROR, message=err_msg)
 
 def task_extract_artistic_essence(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
     """Extracts Artistic Essence (v21.0) in isolation."""
@@ -223,36 +223,49 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
             db.commit()
         finally:
             db.close()
-        set_job_status(job_key, "artistic", "completed")
+        set_job_status(job_key, "artistic", models.IngestionJobStatus.COMPLETED)
     except Exception as e:
         err_msg = f"Artistic Essence error: {str(e)}"
         logger.error(f"[Orchestrator] {err_msg}")
-        set_job_status(job_key, "artistic", "error", message=err_msg)
+        set_job_status(job_key, "artistic", models.IngestionJobStatus.ERROR, message=err_msg)
 
 def task_extract_full_brand_style(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
-    """Decoupled brand identity orchestration (Context-Aware v22.0)."""
-    cb = lambda msg, p=0: update_job_step(job_key, "brand_style", msg, p)
-    
-    # 1. Esencia (Aislada) - USAR PDF SI ES POSIBLE (v34.0)
-    # Se extrae PRIMERO para generar el Contexto de Marca (Brand Rulebook)
-    try:
-        cb("Analyzing Artistic Essence (Vision High-Fidelity)...", 10)
-        essence_file = file_path
-        # The artistic_essence_service already handles PPTX directly via _pptx_to_images without LibreOffice
-        task_extract_artistic_essence(job_key, essence_file, source_filename, visibility_scope, brand_id, manual_tags)
-    except Exception as e:
-        logger.error(f"  [Orchestrator] Failed Artistic Essence: {e}")
+    """
+    Orquestación de identidad de marca — GAP 2: Enruta al AgentOrchestrator (v25.0).
 
-    # 2. DNA (Aislado) - Context-Aware
-    # Se ejecuta DESPUÉS para que el modelo de Visión tenga acceso al Brand Rulebook al clasificar imágenes
-    try:
-        cb("Extracting Visual DNA (Atomic & Context-Aware)...", 50)
-        task_extract_visual_dna(job_key, file_path, source_filename, visibility_scope, brand_id, manual_tags)
-    except Exception as e:
-        logger.error(f"  [Orchestrator] Failed Visual DNA: {e}")
+    El Brand Analyst Agent (ReadPPTXTool + ExtractPaletteTool) ahora corre bajo
+    el mismo Orquestador Central que el pipeline de generación, cerrando el ciclo MCP.
+    """
+    logger.info(f"[Orchestrator] task_extract_full_brand_style → AgentOrchestrator for brand_id={brand_id}")
+    from agents.orchestrator import AgentOrchestrator
 
-    update_job_step(job_key, "brand_style", "Process finished.", 100)
-    set_job_status(job_key, "brand_style", "completed")
+    upload_dir = os.path.dirname(file_path)
+
+    # Obtener el ID del IngestionJob para que los BrandAnalyst Tools puedan actualizar su estado
+    ingestion_job_id = -1  # Valor centinela: si no hay job en BD, las Tools actuarán sin actualizar estado
+    db = SessionLocal()
+    try:
+        job_record = db.query(models.IngestionJob).filter(
+            models.IngestionJob.client_name == job_key,
+            models.IngestionJob.ingestion_type == "brand_style"
+        ).first()
+        if job_record:
+            ingestion_job_id = job_record.id
+    finally:
+        db.close()
+
+    # Delegar al AgentOrchestrator (cierra el GAP 2)
+    orchestrator = AgentOrchestrator()
+    orchestrator.run_ingestion_pipeline(
+        ingestion_job_id=ingestion_job_id,
+        file_path=file_path,
+        source_filename=source_filename,
+        brand_id=brand_id,
+        upload_dir=upload_dir,
+        job_key=job_key,
+        visibility_scope=visibility_scope,
+        manual_tags=manual_tags,
+    )
 
 def task_ingest_knowledge(job_key: str, file_path: str, source_filename: str, brand_id: int = None, visibility_scope: str = "exclusive", document_type: str = "company_knowledge"):
     """Ingesta RAG con Soberanía (v21.0)."""
@@ -262,11 +275,11 @@ def task_ingest_knowledge(job_key: str, file_path: str, source_filename: str, br
         from services.ingestion.ingest_knowledge import ingest_document as ingest_rag
         is_public = (visibility_scope == "public")
         ingest_rag(file_path, client_name=source_filename, update_callback=cb, brand_id=brand_id, is_public=is_public)
-        set_job_status(job_key, "knowledge", "completed")
+        set_job_status(job_key, "knowledge", models.IngestionJobStatus.COMPLETED)
     except Exception as e:
         err_msg = f"Knowledge error: {str(e)}"
         logger.error(f"[Orchestrator] {err_msg}")
-        set_job_status(job_key, "knowledge", "error", message=err_msg)
+        set_job_status(job_key, "knowledge", models.IngestionJobStatus.ERROR, message=err_msg)
 
 def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str, visibility_scope: str = "exclusive", brand_id: int = None, manual_tags: List[str] = None):
     """Pure asset harvest (v21.0). Supports individual images and documents."""
@@ -299,44 +312,60 @@ def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str,
                 cb("Extracting assets from document...", 20)
                 dna = run_visual_dna_extraction(file_path, upload_dir, cb=cb)
                 raw_assets = dna.get("extracted_assets", {})
+                
+                flat_items = []
                 for cat, items in raw_assets.items():
                     for item in items:
-                        try:
-                            with db.begin_nested():
-                                raw_path = os.path.join(upload_dir, item["path"])
-                                register_asset(db, brand_id, raw_path, category=cat, is_public=is_public, source_doc=source_filename, manual_tags=manual_tags)
-                            db.commit()
-                        except: db.rollback()
+                        flat_items.append((cat, item))
+                        
+                total_items = len(flat_items)
+                processed_count = 0
+                
+                for cat, item in flat_items:
+                    try:
+                        processed_count += 1
+                        prog_percent = 30 + int((processed_count / total_items) * 65) if total_items > 0 else 95
+                        cb(f"Registering harvested asset ({processed_count}/{total_items})...", prog_percent)
+                        
+                        with db.begin_nested():
+                            raw_path = os.path.join(upload_dir, item["path"])
+                            register_asset(db, brand_id, raw_path, category=cat, is_public=is_public, source_doc=source_filename, manual_tags=manual_tags)
+                        db.commit()
+                    except Exception as loop_err:
+                        db.rollback()
+                        logger.warning(f"Failed to register asset in pure harvest: {loop_err}")
         finally:
             db.close()
             
-        set_job_status(job_key, "pure_assets", "completed")
+        set_job_status(job_key, "pure_assets", models.IngestionJobStatus.COMPLETED)
         update_job_step(job_key, "pure_assets", "Asset harvest complete.", 100)
     except Exception as e:
         err_msg = f"Pure Assets error: {str(e)}"
         logger.error(f"[Orchestrator] {err_msg}")
-        set_job_status(job_key, "pure_assets", "error", message=err_msg)
+        set_job_status(job_key, "pure_assets", models.IngestionJobStatus.ERROR, message=err_msg)
 
 def task_generate_presentation(job_id: int, req_data: dict):
     """
-    Background task for generation (v23.0 - Modular).
+    Background task for generation (v24.0 - Agent Orchestrator).
+    Enruta el job al AgentOrchestrator MCP.
     """
-    logger.info(f"[Orchestrator] Generation started for Job: {job_id}")
-    from services.rendering.layout_engine import generate_presentation_flow
+    logger.info(f"[Orchestrator] Generation started for Job: {job_id} via AgentOrchestrator")
+    from agents.orchestrator import AgentOrchestrator
     
     try:
-        db = SessionLocal()
-        # El motor espera db, job_id, y los datos.
-        # Asumimos que la ruta del PPTX se define dentro de generate_presentation_flow o se pasa aquí.
-        generate_presentation_flow(db, job_id, req_data)
-        db.close()
+        # Instanciar el orquestador inteligente
+        orchestrator = AgentOrchestrator()
+        orchestrator.run_generation_pipeline(job_id, req_data)
+        
     except Exception as e:
         err_msg = f"Generation error: {str(e)}"
         logger.error(f"[Orchestrator] {err_msg}")
         db = SessionLocal()
-        job = db.query(models.GenerationJob).get(job_id)
-        if job:
-            job.status = "error"
-            job.current_step = err_msg
-            db.commit()
-        db.close()
+        try:
+            job = db.query(models.GenerationJob).get(job_id)
+            if job:
+                job.status = models.GenerationJobStatus.ERROR
+                job.current_step = err_msg
+                db.commit()
+        finally:
+            db.close()

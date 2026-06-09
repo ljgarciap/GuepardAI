@@ -38,15 +38,32 @@ export class BrandHubComponent implements OnInit, OnDestroy {
 
   resetLoading: boolean = false;
 
+  // Footer Management Properties
+  footers: any[] = [];
+  isFooterEnabled: boolean = true;
+  newFooter: any = { name: '', text: '', disclaimer: '' };
+  logoLightFile: File | null = null;
+  logoDarkFile: File | null = null;
+  logoLightPreview: string = '';
+  logoDarkPreview: string = '';
+  isSavingFooter: boolean = false;
+  showFooterCreator: boolean = false;
+
   ngOnInit() {
     this.loadBrands();
+    this.loadFooters();
   }
 
   loadBrands() {
     this.brandService.getBrands().subscribe(res => {
-      // Excluimos la "Public Library" (-1) de aquí porque el usuario 
-      // ya tiene un botón dedicado para definir el scope como PUBLIC.
       this.officialBrands = res.filter((b: any) => b.id !== -1);
+    });
+  }
+
+  loadFooters() {
+    this.brandService.getFooters().subscribe(res => {
+      this.isFooterEnabled = res.is_footer_enabled;
+      this.footers = res.footers;
     });
   }
 
@@ -151,7 +168,7 @@ export class BrandHubComponent implements OnInit, OnDestroy {
     state.pollingSub = interval(2000)
       .pipe(
         switchMap(() => this.brandService.getIngestionStatus(filename, type)),
-        takeWhile((res) => res.status === 'processing' || res.status === 'pending' || res.status === 'none', true)
+        takeWhile((res) => res.status !== 'completed' && res.status !== 'error', true)
       )
       .subscribe({
         next: (res) => {
@@ -186,6 +203,7 @@ export class BrandHubComponent implements OnInit, OnDestroy {
   }
 
   private mapRole(step: string, type: string): string {
+    if (!step) return type === 'brand_style' ? 'Designer' : 'Analyst';
     if (step.includes('Parsing')) return 'Analyst';
     if (step.includes('Indexing')) return 'Architect';
     if (step.includes('Harvest')) return 'Technician';
@@ -193,6 +211,7 @@ export class BrandHubComponent implements OnInit, OnDestroy {
   }
 
   private mapStatus(step: string): string {
+    if (!step) return '';
     return step.replace(/Gemini|Claude|OpenAI/gi, 'The Intelligence')
                .replace('Extracting', 'Mapping')
                .replace('Architected', 'Planned')
@@ -218,6 +237,99 @@ export class BrandHubComponent implements OnInit, OnDestroy {
         this.loadBrands();
       },
       error: () => { this.resetLoading = false; }
+    });
+  }
+
+  onFooterLogoSelected(event: any, type: 'light' | 'dark') {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (type === 'light') {
+          this.logoLightFile = file;
+          this.logoLightPreview = reader.result as string;
+        } else {
+          this.logoDarkFile = file;
+          this.logoDarkPreview = reader.result as string;
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
+  editFooter(f: any) {
+    this.newFooter = {
+      id: f.id,
+      name: f.name,
+      text: f.text,
+      disclaimer: f.disclaimer
+    };
+    this.logoLightPreview = f.logo_light_path ? '/' + f.logo_light_path : '';
+    this.logoDarkPreview = f.logo_dark_path ? '/' + f.logo_dark_path : '';
+    this.logoLightFile = null;
+    this.logoDarkFile = null;
+    this.showFooterCreator = true;
+  }
+
+  clearFooterForm() {
+    this.newFooter = { id: undefined, name: '', text: '', disclaimer: '' };
+    this.logoLightFile = null;
+    this.logoDarkFile = null;
+    this.logoLightPreview = '';
+    this.logoDarkPreview = '';
+  }
+
+  saveFooter() {
+    if (!this.newFooter.name) return;
+    this.isSavingFooter = true;
+    this.brandService.createFooter(
+      this.newFooter.name,
+      this.newFooter.text,
+      this.newFooter.disclaimer,
+      this.logoLightFile || undefined,
+      this.logoDarkFile || undefined,
+      this.newFooter.id
+    ).subscribe({
+      next: (res) => {
+        this.isSavingFooter = false;
+        this.clearFooterForm();
+        this.showFooterCreator = false;
+        this.loadFooters();
+      },
+      error: (err) => {
+        this.isSavingFooter = false;
+        alert(err.error?.detail || 'Error saving footer config');
+      }
+    });
+  }
+
+  selectFooter(id: number) {
+    this.brandService.selectFooter(id).subscribe({
+      next: () => {
+        this.newFooter = { id: undefined, name: '', text: '', disclaimer: '' }; // reset id so it reloads the active one
+        this.loadFooters();
+      },
+      error: (err) => alert(err.error?.detail || 'Error selecting footer')
+    });
+  }
+
+  deleteFooter(id: number) {
+    if (!confirm('Are you sure you want to delete this footer template?')) return;
+    this.brandService.deleteFooter(id).subscribe({
+      next: () => {
+        if (this.newFooter.id === id) {
+          this.clearFooterForm();
+        }
+        this.loadFooters();
+      },
+      error: (err) => alert(err.error?.detail || 'Error deleting footer')
+    });
+  }
+
+  toggleFooterGlobal(enabled: boolean) {
+    this.brandService.toggleFooterGlobal(enabled).subscribe({
+      next: () => this.isFooterEnabled = enabled,
+      error: (err) => alert(err.error?.detail || 'Error toggling footer')
     });
   }
 

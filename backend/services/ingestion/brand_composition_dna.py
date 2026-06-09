@@ -165,13 +165,16 @@ def parse_essence_to_policy(
     primary_color = visual_dna.get("primary_color", "#333333")
 
     decorators = []
-    if not persistent_blocks:
-        decorators.append({
-            "decorator_type": "accent_line",
-            "geometry": {"left": 0, "top": 0, "width": 100, "height": 1.5},
-            "color": primary_color,
-            "opacity": 1.0
-        })
+    if persistent_blocks:
+        # Solo agregar accent_line si el brand lo pide explícitamente
+        for block in persistent_blocks:
+            if block.get("type") == "accent_line":
+                decorators.append({
+                    "decorator_type": "accent_line",
+                    "geometry": {"left": 0, "top": 0, "width": 100, "height": 1.5},
+                    "color": primary_color,
+                    "opacity": 1.0
+                })
     policy.persistent_decorators = decorators
     return policy
 
@@ -487,4 +490,6 @@ def build_slide_elements(
     full_bleed_budget: dict,
     font_scale_override: float = 1.0
 ) -> tuple:
-    return [], "default"
+    grammar_type = slide.get("layout_type", slide_type)
+    grammar_type = SLUG_ALIASES.get(grammar_type, grammar_type)
+    return [], grammar_type

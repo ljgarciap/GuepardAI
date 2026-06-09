@@ -129,6 +129,8 @@ jobs:
             git reset --hard origin/master
             echo "🔨 Building and restarting production containers..."
             sudo docker compose up -d --build
-            sudo docker image prune -f
+            echo "🧹 Cleaning up Docker resources and BuildKit cache..."
+            sudo docker system prune -f
+            sudo docker builder prune -a -f
             echo "✅ Deployment completed successfully!"
             echo "═══════════════════════════════════════════"

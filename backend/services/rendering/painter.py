@@ -7,6 +7,99 @@ from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from PIL import Image
+import re
+
+# --- HELPER FUNCTIONS FOR LIST PARSING & CONTRAST DETECTION ---
+
+def parse_markdown_line(line: str):
+    if not isinstance(line, str):
+        return str(line), 0, "text", ""
+        
+    # Count leading spaces for indentation level
+    stripped_left = line.lstrip()
+    indent_spaces = len(line) - len(stripped_left)
+    level = indent_spaces // 2
+    
+    text = stripped_left.strip()
+    
+    # Normalize square/block bullets (■ ▪ ● ◆) to a recognized prefix before parsing
+    text = re.sub(r'^[■▪●◆]\s*', '• ', text)
+
+    # 1. Match double bullets/lists first, e.g. "- - 84% of UK sales" or "- 1. Scaling..."
+    first_bullet_match = re.match(r'^([•\-–\*+]\s+)(.*)', text)
+    if first_bullet_match:
+        rest = first_bullet_match.group(2).strip()
+        # Check if the rest starts with a number or another bullet
+        sub_match_num = re.match(r'^(\(?\d+[\.\)]\s+)(.*)', rest)
+        if sub_match_num:
+            return sub_match_num.group(2).strip(), level + 1, "number", sub_match_num.group(1).strip()
+        sub_match_bullet = re.match(r'^([•\-–\*+]\s+)(.*)', rest)
+        if sub_match_bullet:
+            b_char = sub_match_bullet.group(1).strip()
+            item_type = "dash" if b_char in ('-', '–') else "bullet"
+            return sub_match_bullet.group(2).strip(), level + 1, item_type, b_char
+            
+        # Single bullet
+        b_char = first_bullet_match.group(1).strip()
+        item_type = "dash" if b_char in ('-', '–') else "bullet"
+        return rest, level, item_type, b_char
+
+    # 2. Match single numbered list item, e.g. "1. Scaling..."
+    num_match = re.match(r'^(\(?\d+[\.\)]\s+)(.*)', text)
+    if num_match:
+        return num_match.group(2).strip(), level, "number", num_match.group(1).strip()
+        
+    return text, level, "text", ""
+
+
+def get_image_region_luminance(img_path, region_box=None):
+    try:
+        with Image.open(img_path) as img:
+            img = img.convert('RGB')
+            w, h = img.size
+            if region_box:
+                left = int(w * region_box[0])
+                top = int(h * region_box[1])
+                right = int(w * region_box[2])
+                bottom = int(h * region_box[3])
+                crop_img = img.crop((left, top, right, bottom))
+            else:
+                crop_img = img
+            crop_img.thumbnail((1, 1))
+            r, g, b = crop_img.getpixel((0, 0))
+            return (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    except Exception as e:
+        print(f"Failed to get image luminance: {e}")
+        return 0.5
+
+def crop_to_fill(img_path, target_w, target_h):
+    try:
+        with Image.open(img_path) as img:
+            orig_w, orig_h = img.size
+            target_ratio = float(target_w) / float(target_h)
+            orig_ratio = float(orig_w) / float(orig_h)
+            
+            if orig_ratio > target_ratio:
+                # Image is wider: crop left/right
+                new_w = int(orig_h * target_ratio)
+                left = (orig_w - new_w) // 2
+                right = left + new_w
+                crop_box = (left, 0, right, orig_h)
+            else:
+                # Image is taller: crop top/bottom
+                new_h = int(orig_w / target_ratio)
+                top = (orig_h - new_h) // 2
+                bottom = top + new_h
+                crop_box = (0, top, orig_w, bottom)
+                
+            cropped = img.crop(crop_box)
+            base, ext = os.path.splitext(img_path)
+            temp_path = f"{base}_cropped_{int(target_w)}_{int(target_h)}{ext}"
+            cropped.save(temp_path)
+            return temp_path
+    except Exception as e:
+        print(f"Failed to crop image {img_path}: {e}")
+        return img_path
 
 # --- DYNAMIC BREATHING ENGINE (v8.35 - ADAPTIVE SPACING) ---
 
@@ -156,6 +249,14 @@ class GammaPainter:
         except Exception as e:
             print(f"  [Painter] Failed to add fitted image {img_path}: {e}")
 
+    def add_bleed_image(self, slide, img_path, x, y, exact_w, exact_h):
+        """Places an image at EXACT pixel-perfect dimensions — no ratio recalculation, no centering offsets.
+        Use this after crop_to_fill() to guarantee zero margins on full-bleed panels."""
+        try:
+            slide.shapes.add_picture(img_path, x, y, exact_w, exact_h)
+        except Exception as e:
+            print(f"  [Painter] Failed to add bleed image {img_path}: {e}")
+
     def paint_premium_geometry(self, slide, geometry_json_str, primary_asset_path):
         """v24.0: Native Premium Geometry Engine (Glassmorphism)"""
         if not geometry_json_str: return
@@ -265,7 +366,27 @@ class GammaPainter:
                 self.title_color = get_contrast_text_color(hex_to_rgb(glass_box.get("color_hex", self.brand.primary_color)))
         else:
             if img:
-                self.add_fitted_image(slide, img, 0, 0, self.w(50), self.prs.slide_height)
+                # v25.0: Check if the image is small/logo and shouldn't be stretched
+                is_small_or_logo = False
+                try:
+                    with Image.open(img) as PIL_img:
+                        w_orig, h_orig = PIL_img.size
+                        if w_orig < 512 or h_orig < 512 or "logo" in img.lower():
+                            is_small_or_logo = True
+                except Exception as e:
+                    print(f"Error checking image size: {e}")
+                
+                if is_small_or_logo:
+                    # Draw a nice solid/clean background block on the left
+                    fb = blend_colors(self.secondary, self.bg, 0.05)
+                    self.add_rect(slide, 0, 0, self.w(50), self.prs.slide_height, fb)
+                    # Center the logo nicely inside the left block
+                    self.add_fitted_image(slide, img, self.w(10), self.h(20), self.w(30), self.h(60))
+                else:
+                    # Large photo: crop to fill the left half exactly — use add_bleed_image so
+                    # no min-ratio centering logic re-introduces vertical gaps.
+                    cropped_img = crop_to_fill(img, self.w(50), self.prs.slide_height)
+                    self.add_bleed_image(slide, cropped_img, 0, 0, self.w(50), self.prs.slide_height)
             else:
                 # v16.9: Robust Visual Fallback for split slides
                 fb = blend_colors(self.secondary, self.bg, 0.15)
@@ -298,7 +419,7 @@ class GammaPainter:
             self.add_text(slide, f"Contact: {agency_data.get('email', 'partners@l-founders.com')}", self.w(55), self.h(67), self.w(40), self.h(5), size=10, color=RGBColor(255, 255, 255))
             self.apply_branding(slide, slide_data, slide_data.get("logo_path"), agency_data)
             return slide
-
+ 
         if is_first:
             meta = slide_data.get("metadata", {})
             prep, date, y_meta = meta.get("prepared_for"), meta.get("date"), content_top + 5.0
@@ -312,7 +433,7 @@ class GammaPainter:
                 self.add_text(slide, "CONFIDENTIAL", tx, self.h(y_meta + 2), tw, self.h(4), size=9, color=self.secondary, bold=True)
             self.apply_branding(slide, slide_data, slide_data.get("logo_path"), slide_data.get("agency_branding", {}))
             return slide
-
+ 
         bullets, metrics = slide_data.get("bullets", []), slide_data.get("metrics", [])
         if metrics and not bullets:
             card_cols = 3
@@ -325,13 +446,38 @@ class GammaPainter:
         if not bullets and not metrics:
             bullets = ["Strategic focus and incremental value creation.", "Operational excellence through data-driven insights."]
             
-        num_b = len(bullets[:5])
+        num_b = len(bullets[:6])
         available_h = self.SAFE_BOTTOM - content_top
         row_h = min(8.0, available_h / max(1, num_b))
-        for idx, b in enumerate(bullets[:5]):
-            y_pct = content_top + (idx * (row_h + 2))
-            self.add_rect(slide, tx, self.h(y_pct + 1), Pt(12), Pt(12), self.primary, rounded=True)
-            self.add_text(slide, b, tx + Pt(20), self.h(y_pct), tw - Pt(20), self.h(row_h), size=14, color=self.title_color)
+        for idx, b in enumerate(bullets[:6]):
+            text, level, item_type, prefix = parse_markdown_line(b)
+            indent_offset = Pt(level * 25)
+            y_pct = content_top + (idx * (row_h + 1.8))
+            
+            if item_type == "number":
+                self.add_text(slide, f"{prefix} {text}", tx + indent_offset, self.h(y_pct), tw - indent_offset, self.h(row_h), size=14, color=self.title_color)
+            elif item_type == "dash":
+                self.add_text(slide, "—", tx + indent_offset, self.h(y_pct), Pt(15), self.h(row_h), size=14, color=self.secondary)
+                self.add_text(slide, text, tx + indent_offset + Pt(18), self.h(y_pct), tw - indent_offset - Pt(18), self.h(row_h), size=14, color=self.title_color)
+            elif item_type == "bullet":
+                if level > 0:
+                    # Sub-bullet: indented circle bullet
+                    self.add_text(slide, "•", tx + indent_offset, self.h(y_pct), Pt(15), self.h(row_h), size=14, color=self.secondary)
+                    self.add_text(slide, text, tx + indent_offset + Pt(18), self.h(y_pct), tw - indent_offset - Pt(18), self.h(row_h), size=14, color=self.title_color)
+                else:
+                    # Top-level bullet: red/brand square + clean text (no prefix in content)
+                    self.add_rect(slide, tx, self.h(y_pct + 1), Pt(10), Pt(10), self.secondary, rounded=True)
+                    self.add_text(slide, text, tx + Pt(18), self.h(y_pct), tw - Pt(18), self.h(row_h), size=14, color=self.title_color)
+            else:  # item_type == "text" — plain text without a recognized bullet prefix
+                # Some LLM outputs may still sneak in a leading dash; strip it defensively
+                clean_text = re.sub(r'^[-•]\s+', '', text).strip()
+                if level > 0:
+                    self.add_text(slide, "•", tx + indent_offset, self.h(y_pct), Pt(15), self.h(row_h), size=14, color=self.secondary)
+                    self.add_text(slide, clean_text, tx + indent_offset + Pt(18), self.h(y_pct), tw - indent_offset - Pt(18), self.h(row_h), size=14, color=self.title_color)
+                else:
+                    # Treat as a top-level bullet with the brand square
+                    self.add_rect(slide, tx, self.h(y_pct + 1), Pt(10), Pt(10), self.secondary, rounded=True)
+                    self.add_text(slide, clean_text, tx + Pt(18), self.h(y_pct), tw - Pt(18), self.h(row_h), size=14, color=self.title_color)
         return slide
 
     def paint_big_metric(self, slide_data):
@@ -384,7 +530,8 @@ class GammaPainter:
         slide = self.secure_slide(slide_data)
         img = self.resolve_image(slide_data.get("primary_asset_path"), 1024)
         if img:
-            self.add_fitted_image(slide, img, 0, 0, self.prs.slide_width, self.prs.slide_height)
+            cropped_hero = crop_to_fill(img, self.prs.slide_width, self.prs.slide_height)
+            self.add_bleed_image(slide, cropped_hero, 0, 0, self.prs.slide_width, self.prs.slide_height)
             self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.primary, transparency=0.7)
         else:
             self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.primary)
@@ -404,14 +551,16 @@ class GammaPainter:
         for idx, b in enumerate(bullets[:4]):
             x_pos, w_pos = self.grid_x(idx * col_span), self.grid_w(col_span - 0.5)
             self.add_rect(slide, x_pos, self.h(30), w_pos, self.h(58), self.primary, transparency=0.92, rounded=True)
-            self.add_text(slide, b, x_pos + self.w(1), self.h(32), w_pos - self.w(2), self.h(54), size=14, color=get_contrast_text_color(self.bg))
+            b_clean = parse_markdown_line(b)[0]
+            self.add_text(slide, b_clean, x_pos + self.w(1), self.h(32), w_pos - self.w(2), self.h(54), size=14, color=get_contrast_text_color(self.bg))
         return slide
 
     def paint_data_grid_cards(self, slide_data):
         slide = self.secure_slide(slide_data)
         img = self.resolve_image(slide_data.get("primary_asset_path"), 300)
         if img:
-            self.add_fitted_image(slide, img, 0, 0, self.grid_x(5), self.prs.slide_height)
+            cropped_img = crop_to_fill(img, self.grid_x(5), self.prs.slide_height)
+            self.add_bleed_image(slide, cropped_img, 0, 0, self.grid_x(5), self.prs.slide_height)
             self.add_rect(slide, self.grid_x(5), 0, self.prs.slide_width - self.grid_x(5), self.prs.slide_height, self.bg)
             start_col, span_cols = 5.5, 6.5
         else:
@@ -425,7 +574,7 @@ class GammaPainter:
         accent_y = self.MARGIN_Y + title_h + 1
         self.add_accent_line(slide, self.grid_x(start_col), self.h(accent_y), self.grid_w(1.5), h_pt=3, color=self.secondary)
         metrics = slide_data.get("metrics", [])
-        if not metrics: metrics = [{"label": b, "value": "--"} for b in slide_data.get("bullets", [])]
+        if not metrics: metrics = [{"label": parse_markdown_line(b)[0], "value": "--"} for b in slide_data.get("bullets", [])]
         num_metrics = len(metrics)
         if num_metrics <= 2: card_cols, card_rows = span_cols // 2, 1
         elif num_metrics <= 4: card_cols, card_rows = span_cols // 2, 2
@@ -441,12 +590,15 @@ class GammaPainter:
             elif v_len < 20: v_size = 18
             else: v_size = 12
             self.add_text(slide, val, x_pos, y_pos + self.h(1), w_pos, self.h(11), size=v_size, bold=True, color=get_contrast_text_color(self.primary), align=PP_ALIGN.CENTER, v_align=MSO_ANCHOR.MIDDLE)
-            self.add_text(slide, m.get("label", ""), x_pos + self.w(1), y_pos + self.h(12), w_pos - self.w(2), self.h(8), size=11, color=get_contrast_text_color(self.primary), align=PP_ALIGN.CENTER)
+            label_clean = parse_markdown_line(m.get("label", ""))[0]
+            self.add_text(slide, label_clean, x_pos + self.w(1), y_pos + self.h(12), w_pos - self.w(2), self.h(8), size=11, color=get_contrast_text_color(self.primary), align=PP_ALIGN.CENTER)
             if m.get("growth"): self.add_text(slide, m.get("growth"), x_pos, y_pos + self.h(18), w_pos, self.h(4), size=10, color=get_contrast_text_color(self.primary), italic=True, align=PP_ALIGN.CENTER)
         bullets = slide_data.get("bullets", [])
         if not img and bullets:
             y_bullets = y_start + (card_rows * (card_h + self.h(self.GUTTER))) + self.h(4)
-            for i, b in enumerate(bullets[:3]): self.add_text(slide, b, self.grid_x(start_col), y_bullets + (i * self.h(7)), self.grid_w(span_cols), self.h(6), size=16, color=self.title_color)
+            for i, b in enumerate(bullets[:3]):
+                b_clean = parse_markdown_line(b)[0]
+                self.add_text(slide, b_clean, self.grid_x(start_col), y_bullets + (i * self.h(7)), self.grid_w(span_cols), self.h(6), size=16, color=self.title_color)
         return slide
 
     def paint_pillars(self, slide_data):
@@ -475,13 +627,14 @@ class GammaPainter:
         start_col = (12 - (num_bullets * col_span)) // 2
         for idx, b in enumerate(bullets[:num_bullets]):
             x_pos, w_pos = self.grid_x(start_col + (idx * col_span)), self.grid_w(col_span)
+            b_clean = parse_markdown_line(b)[0]
             
             if has_premium_geometry and glass_box:
                 # Si hay panel de cristal general, no dibujamos sub-cajas sólidas para no dañar el look Premium
-                self.add_text(slide, b, x_pos + self.w(2), self.h(base_y_pct + 20), w_pos - self.w(4), self.h(44), size=16, color=self.title_color, align=PP_ALIGN.CENTER, v_align=MSO_ANCHOR.MIDDLE)
+                self.add_text(slide, b_clean, x_pos + self.w(2), self.h(base_y_pct + 20), w_pos - self.w(4), self.h(44), size=16, color=self.title_color, align=PP_ALIGN.CENTER, v_align=MSO_ANCHOR.MIDDLE)
             else:
                 self.add_rect(slide, x_pos + self.w(1), self.h(35), w_pos - self.w(2), self.h(50), self.primary, rounded=True)
-                self.add_text(slide, b, x_pos + self.w(2), self.h(38), w_pos - self.w(4), self.h(44), size=16, color=get_contrast_text_color(self.primary), align=PP_ALIGN.CENTER, v_align=MSO_ANCHOR.MIDDLE)
+                self.add_text(slide, b_clean, x_pos + self.w(2), self.h(38), w_pos - self.w(4), self.h(44), size=16, color=get_contrast_text_color(self.primary), align=PP_ALIGN.CENTER, v_align=MSO_ANCHOR.MIDDLE)
         return slide
 
     def add_agency_signature(self, slide, agency, is_title=False, bg_color=None, slide_data=None):
@@ -531,16 +684,24 @@ class GammaPainter:
                 overall_dark = True
         
         if is_split and not overall_dark:
-            left_bg = self.primary
+            # Check if there is an image on the left, and if so, determine its luminance
+            img_path = self.resolve_image(slide_data.get("primary_asset_path")) if slide_data else None
+            if img_path:
+                # We crop it to fill ratio to get the exact part of the image that will be rendered
+                cropped_img_path = crop_to_fill(img_path, self.w(50), self.prs.slide_height)
+                left_lum = get_image_region_luminance(cropped_img_path, (0.10, 0.95, 0.18, 0.99))
+            else:
+                left_bg = self.primary
+                left_lum = get_luminance(left_bg)
             right_bg = self.bg
+            right_lum = get_luminance(right_bg)
         else:
             left_bg = bg_color if bg_color is not None else self.bg
             if overall_dark:
                 left_bg = self.primary
             right_bg = left_bg
-
-        left_lum = get_luminance(left_bg)
-        right_lum = get_luminance(right_bg)
+            left_lum = get_luminance(left_bg)
+            right_lum = get_luminance(right_bg)
 
         left_color = RGBColor(255, 255, 255) if left_lum < 0.5 else self.primary
         right_color = RGBColor(255, 255, 255) if right_lum < 0.5 else self.primary
@@ -550,6 +711,12 @@ class GammaPainter:
         if not selected_logo:
             # Fallback al logo de la marca
             selected_logo = getattr(self, "logo_light_path", None) if left_lum < 0.5 else getattr(self, "logo_dark_path", None)
+
+        # Draw a subtle semi-transparent strip behind the footer area to ensure logo/text readability
+        # This works regardless of whether the background is a light or dark image.
+        footer_bg_color = RGBColor(0, 0, 0) if left_lum >= 0.5 else RGBColor(255, 255, 255)
+        footer_bg_transparency = 0.88  # Very subtle — just enough to create contrast without being heavy
+        self.add_rect(slide, 0, self.h(94.5), self.prs.slide_width, self.h(6), footer_bg_color, transparency=footer_bg_transparency)
 
         # Draw a thin horizontal line on non-title slides
         if not is_title:
@@ -582,10 +749,11 @@ class GammaPainter:
             bg_path = slide_data.get("background_asset_path")
             if os.path.exists(bg_path):
                 try:
-                    # Fill entire background
-                    self.add_fitted_image(slide, bg_path, 0, 0, self.prs.slide_width, self.prs.slide_height)
+                    # Full-bleed background: crop to slide aspect ratio, then place at exact dimensions
+                    cropped_bg = crop_to_fill(bg_path, self.prs.slide_width, self.prs.slide_height)
+                    self.add_bleed_image(slide, cropped_bg, 0, 0, self.prs.slide_width, self.prs.slide_height)
                 except Exception as e:
-                    print(f"    [Painter] Error applying background SVG: {e}")
+                    print(f"    [Painter] Error applying background image: {e}")
                     
         return slide
 

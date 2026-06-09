@@ -144,7 +144,7 @@ def _build_slide_data(slide, asset_map: dict, db: Session) -> dict:
             raw = el["content"]
             # El body puede estar como "• bullet1\n• bullet2" o como lista
             if isinstance(raw, str) and "\n" in raw:
-                bullets = [b.lstrip("•– ").strip() for b in raw.split("\n") if b.strip()]
+                bullets = [b.rstrip() for b in raw.split("\n") if b.strip()]
             elif isinstance(raw, list):
                 bullets = raw
             break

@@ -204,6 +204,8 @@ def find_best_assets(db: Session, brand_id: int, keywords: List[str],
         query = db.query(models.BrandAsset).filter(
             or_(models.BrandAsset.brand_id == brand_id, models.BrandAsset.is_public == 1)
         ).filter(models.BrandAsset.category != "noise")
+        if category is None:
+            query = query.filter(models.BrandAsset.category.notin_(["logos", "design_elements"]))
         if category: query = query.filter(models.BrandAsset.category == category)
         if exclude_ids: query = query.filter(models.BrandAsset.id.not_in(exclude_ids))
         return [(a, 0.5) for a in query.limit(limit).all()]
@@ -216,7 +218,8 @@ def find_best_assets(db: Session, brand_id: int, keywords: List[str],
     ).filter(
         or_(models.BrandAsset.brand_id == brand_id, models.BrandAsset.is_public == 1)
     ).filter(models.BrandAsset.category != "noise")
-    
+    if category is None:
+        sql_query = sql_query.filter(models.BrandAsset.category.notin_(["logos", "design_elements"]))
     if category: sql_query = sql_query.filter(models.BrandAsset.category == category)
     if exclude_ids: sql_query = sql_query.filter(models.BrandAsset.id.not_in(exclude_ids))
     

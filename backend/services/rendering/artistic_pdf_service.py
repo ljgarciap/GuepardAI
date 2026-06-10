@@ -5,12 +5,64 @@ from jinja2 import Environment, FileSystemLoader
 from weasyprint import HTML
 
 
+def _is_dark_color(hex_color: str) -> bool:
+    hex_color = hex_color.lstrip("#")
+    if len(hex_color) != 6:
+        return True
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return luminance < 0.5
+
+
+def get_image_region_luminance(img_path, region_box=None):
+    from PIL import Image
+    try:
+        with Image.open(img_path) as img:
+            img = img.convert('RGB')
+            w, h = img.size
+            if region_box:
+                left = int(w * region_box[0])
+                top = int(h * region_box[1])
+                right = int(w * region_box[2])
+                bottom = int(h * region_box[3])
+                crop_img = img.crop((left, top, right, bottom))
+            else:
+                crop_img = img
+            crop_img.thumbnail((1, 1))
+            r, g, b = crop_img.getpixel((0, 0))
+            return (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    except Exception as e:
+        print(f"  [ArtisticPDF] Warning: Could not calculate luminance for {img_path}: {e}")
+        return 0.5
+
+
 class ArtisticPDFService:
     def __init__(self, templates_dir="templates", output_dir="outputs/artistic_pdf"):
         self.templates_dir = templates_dir
         self.output_dir = output_dir
         self.env = Environment(loader=FileSystemLoader(self.templates_dir))
         os.makedirs(self.output_dir, exist_ok=True)
+
+    def _resolve_asset_path(self, raw_path):
+        if not raw_path:
+            return None
+        candidates = []
+        if os.path.isabs(raw_path):
+            candidates.append(raw_path)
+        else:
+            candidates.extend([
+                raw_path,
+                os.path.join("uploads", raw_path),
+                os.path.join("backend", "uploads", raw_path),
+                os.path.join("/app", raw_path),
+                os.path.join("/app", "uploads", raw_path),
+            ])
+        for path in candidates:
+            if os.path.exists(path):
+                return path
+        return None
 
     def _asset_to_data_uri(self, raw_path):
         if not raw_path:
@@ -123,17 +175,6 @@ class ArtisticPDFService:
         pdf_filename = f"Premium_Portfolio_{job_id}_{int(datetime.datetime.now().timestamp())}.pdf"
         pdf_path = os.path.join(self.output_dir, pdf_filename)
 
-        for slide in slides_data:
-            slide["hero_image"] = self._asset_to_data_uri(slide.get("hero_image"))
-            slide["accent_image"] = self._asset_to_data_uri(slide.get("accent_image"))
-            slide["logo_image"] = self._asset_to_data_uri(slide.get("logo_image"))
-            slide["footer_logo"] = self._asset_to_data_uri(slide.get("footer_logo"))
-
-            if slide.get("canvas_elements"):
-                for el in slide["canvas_elements"]:
-                    if el.get("path"):
-                        el["path"] = self._asset_to_data_uri(el.get("path"))
-
         common_data = {
             "primary_color": getattr(brand_dna, "primary_color", "#002D62") if brand_dna else "#002D62",
             "secondary_color": getattr(brand_dna, "secondary_color", "#E31837") if brand_dna else "#E31837",
@@ -144,6 +185,59 @@ class ArtisticPDFService:
             "patterns": patterns or [],
             "evaluation": evaluation or {},
         }
+
+        primary_dark = _is_dark_color(common_data["primary_color"])
+        bg_dark = _is_dark_color(common_data["background_color"])
+
+        for slide in slides_data:
+            pattern = slide.get("pattern_type", "editorial_split")
+            hero_image_raw = slide.get("hero_image")
+            
+            is_dark_left = primary_dark
+            is_dark_right = bg_dark
+            
+            if pattern == "full_bleed_hero":
+                if hero_image_raw:
+                    resolved_path = self._resolve_asset_path(hero_image_raw)
+                    if resolved_path:
+                        left_lum = get_image_region_luminance(resolved_path, (0.0, 0.75, 0.46, 1.0))
+                        right_lum = get_image_region_luminance(resolved_path, (0.54, 0.75, 1.0, 1.0))
+                        is_dark_left = left_lum < 0.5
+                        is_dark_right = right_lum < 0.5
+                    else:
+                        is_dark_left = True
+                        is_dark_right = True
+                else:
+                    is_dark_left = True
+                    is_dark_right = True
+            elif pattern == "data_cards_brand_grid":
+                is_dark_left = bg_dark
+                is_dark_right = bg_dark
+            else:
+                if hero_image_raw:
+                    resolved_path = self._resolve_asset_path(hero_image_raw)
+                    if resolved_path:
+                        left_lum = get_image_region_luminance(resolved_path, (0.0, 0.75, 0.46, 1.0))
+                        is_dark_left = left_lum < 0.5
+                    else:
+                        is_dark_left = primary_dark
+                else:
+                    is_dark_left = primary_dark
+                    
+            slide["is_dark_left"] = is_dark_left
+            slide["is_dark_right"] = is_dark_right
+
+            slide["hero_image"] = self._asset_to_data_uri(hero_image_raw)
+            slide["accent_image"] = self._asset_to_data_uri(slide.get("accent_image"))
+            slide["logo_image"] = self._asset_to_data_uri(slide.get("logo_image"))
+            slide["footer_logo_light"] = self._asset_to_data_uri(slide.get("footer_logo_light"))
+            slide["footer_logo_dark"] = self._asset_to_data_uri(slide.get("footer_logo_dark"))
+            slide["footer_logo"] = self._asset_to_data_uri(slide.get("footer_logo"))
+
+            if slide.get("canvas_elements"):
+                for el in slide["canvas_elements"]:
+                    if el.get("path"):
+                        el["path"] = self._asset_to_data_uri(el.get("path"))
 
         template = self.env.get_template("premium_pdf.html")
         full_html = template.render(slides=slides_data, **common_data)

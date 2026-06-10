@@ -13,8 +13,13 @@
             --brand-text: {{ text_main_color|default('#111111') }};
             --brand-font: "{{ primary_font|default('Arial') }}", Arial, sans-serif;
         }
-        body {
+        html, body {
             margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+        }
+        body {
             background: var(--brand-bg);
             font-family: var(--brand-font);
             color: var(--brand-text);
@@ -41,10 +46,10 @@
         }
         .footer-lockup {
             position: absolute;
-            left: 56px;
-            right: 56px;
-            bottom: 20px;
-            height: 34px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 48px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -53,45 +58,53 @@
             letter-spacing: 0.12em;
             text-transform: uppercase;
             z-index: 15;
-            opacity: 0.8;
+            box-sizing: border-box;
         }
         .footer-left {
             display: flex;
             align-items: center;
             gap: 12px;
-            border-top: 1px solid transparent;
-            padding-top: 10px;
+            height: 100%;
+            padding: 0 24px 0 56px;
             flex: 0 0 46%;
+            box-sizing: border-box;
         }
         .footer-right {
-            border-top: 1px solid transparent;
-            padding-top: 10px;
-            text-align: right;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            height: 100%;
+            padding: 0 56px 0 24px;
             flex: 0 0 54%;
+            box-sizing: border-box;
         }
         .footer-left.dark-theme {
-            border-top-color: rgba(255,255,255,0.15);
-            color: rgba(255,255,255,0.85);
-            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+            background: rgba(0, 0, 0, 0.45);
+            color: rgba(255, 255, 255, 0.85);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+            border-top: 1px solid rgba(255, 255, 255, 0.15);
         }
         .footer-left.dark-theme img {
             filter: brightness(0) invert(1) drop-shadow(0 1px 2px rgba(0,0,0,0.5));
         }
         .footer-left.light-theme {
-            border-top-color: rgba(17,17,17,0.1);
-            color: rgba(17,17,17,0.55);
+            background: rgba(255, 255, 255, 0.65);
+            color: rgba(17, 17, 17, 0.65);
+            border-top: 1px solid rgba(17, 17, 17, 0.1);
         }
         .footer-right.dark-theme {
-            border-top-color: rgba(255,255,255,0.15);
-            color: rgba(255,255,255,0.85);
-            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+            background: rgba(0, 0, 0, 0.45);
+            color: rgba(255, 255, 255, 0.85);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+            border-top: 1px solid rgba(255, 255, 255, 0.15);
         }
         .footer-right.dark-theme img {
             filter: brightness(0) invert(1) drop-shadow(0 1px 2px rgba(0,0,0,0.5));
         }
         .footer-right.light-theme {
-            border-top-color: rgba(17,17,17,0.1);
-            color: rgba(17,17,17,0.55);
+            background: rgba(255, 255, 255, 0.65);
+            color: rgba(17, 17, 17, 0.65);
+            border-top: 1px solid rgba(17, 17, 17, 0.1);
         }
         .footer-lockup img {
             max-height: 22px;

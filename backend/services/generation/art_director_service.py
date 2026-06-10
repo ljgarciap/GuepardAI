@@ -13,20 +13,56 @@ from services.rendering.placeholder_service import get_placeholder_image
 from services.ingestion.brand_composition_dna import get_layout_geometry, build_decorator_elements
 from services.rendering.font_service import ensure_brand_fonts
 
-def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False):
+
+def _resolve_asset_dims(asset):
+    """
+    Resuelve las dimensiones físicas de un asset: metadata en BD o lectura PIL
+    del archivo (compartido por el filtro de Fase B, la degradación elegante y
+    la revalidación de layout_override).
+    """
+    w, h = asset.width, asset.height
+    if not w and asset.local_path:
+        candidates = [
+            asset.local_path,
+            os.path.join("uploads", os.path.basename(asset.local_path)),
+            os.path.join("backend", "uploads", os.path.basename(asset.local_path)),
+        ]
+        for p in candidates:
+            if os.path.exists(p):
+                try:
+                    with Image.open(p) as img:
+                        w, h = img.size
+                    break
+                except: pass
+    return w, h
+
+
+def _requires_hi_res(layout_slug) -> bool:
+    """Regla única de layouts que exigen foto de alta resolución."""
+    s = str(layout_slug)
+    return s in ["hero", "full_brand_overlay", "big_image", "full_bleed"] or "split" in s
+
+
+def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False, qa_feedback: str = None):
     """
     STRATEGIC DESIGN ENGINE v4.0.
     Sequential flow: Analysis -> Asset Scoring -> Audited Execution.
+
+    qa_feedback (F1 fixes-resiliencia): rechazo del ciclo de QA anterior; se
+    inyecta en el prompt del Art Director para que el retry no repita a ciegas.
     """
     job = db.query(models.GenerationJob).get(job_id)
     if not job: return False
-    
+
     # 0. Cargar Configuraciones Paramétricas (v4.0)
     threshold_cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == "asset_score_threshold").first()
     THRESHOLD = float(threshold_cfg.value) if threshold_cfg else 0.45
 
     aspect_cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == "aspect_ratio_tolerance").first()
     ASPECT_TOLERANCE = float(aspect_cfg.value) if aspect_cfg else 0.40
+
+    feedback_cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == "qa_feedback_max_chars").first()
+    FEEDBACK_MAX = int(feedback_cfg.value) if feedback_cfg else 1500
     
     slides = db.query(models.PresentationSlide).filter(
         models.PresentationSlide.job_id == job_id,
@@ -86,6 +122,10 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
             
         # Filtro semántico anti-competidores
         art_direction_note += f"\n\nCRITICAL BRAND SAFETY: If any asset in the 'found_assets' list belongs to a direct competitor (e.g., a competitor's logo or store), DO NOT select it under any circumstances. Always prioritize assets that belong specifically to the brand we are designing for."
+
+        # F1 (fixes-resiliencia): Feedback del ciclo de QA anterior en los retries
+        if qa_feedback and str(qa_feedback).strip():
+            art_direction_note += f"\n\nPREVIOUS QA REJECTION (MUST ADDRESS IN THIS ATTEMPT): {str(qa_feedback)[:FEEDBACK_MAX]}"
         
         # v8.0: El Analista decide el grammar_type — el Art Director lo respeta
         analyst_grammar_type = strategy.get("grammar_type", "composition_split")
@@ -152,7 +192,7 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
         # Obtener el layout sugerido por el analista para el filtro de resolución
         suggested_layout = strategy.get("grammar_type", "strategic_split")
         # Consideramos split también como hi-res requirements para evitar estiramientos
-        requires_hi_res = suggested_layout in ["hero", "full_brand_overlay", "big_image", "full_bleed"] or "split" in suggested_layout
+        requires_hi_res = _requires_hi_res(suggested_layout)
 
         # Panel de imagen del layout destino (para el chequeo de aspect ratio)
         slide_w_in = dna_record.slide_width_inches if dna_record and dna_record.slide_width_inches else 13.33
@@ -191,20 +231,7 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
             res_ok = True
             min_required = 1200 if requires_hi_res else 800
 
-            w, h = asset.width, asset.height
-            if not w and asset.local_path:
-                candidates = [
-                    asset.local_path,
-                    os.path.join("uploads", os.path.basename(asset.local_path)),
-                    os.path.join("backend", "uploads", os.path.basename(asset.local_path)),
-                ]
-                for p in candidates:
-                    if os.path.exists(p):
-                        try:
-                            with Image.open(p) as img:
-                                w, h = img.size
-                            break
-                        except: pass
+            w, h = _resolve_asset_dims(asset)
 
             if w and w < min_required:
                 res_ok = False
@@ -241,20 +268,7 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
                 if requires_hi_res and asset.category in ["logos", "icons"]:
                     continue
                 # STRICT FLOOR: NEVER allow images with width < 400px to be used as backgrounds
-                asset_w = asset.width
-                if not asset_w and asset.local_path:
-                    candidates = [
-                        asset.local_path,
-                        os.path.join("uploads", os.path.basename(asset.local_path)),
-                        os.path.join("backend", "uploads", os.path.basename(asset.local_path)),
-                    ]
-                    for p in candidates:
-                        if os.path.exists(p):
-                            try:
-                                with Image.open(p) as img:
-                                    asset_w, _ = img.size
-                                break
-                            except: pass
+                asset_w, _ = _resolve_asset_dims(asset)
                 if requires_hi_res and asset_w and asset_w < 400:
                     continue
                     
@@ -347,6 +361,8 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
         
         # v12.0: Layout Override (Soledad del Diseñador)
         layout_override = decision.get("suggested_layout_override")
+        prev_layout_slug = slide.layout_slug
+        override_rejected_info = None
         if layout_override:
             print(f"    [ArtDirector] LAYOUT OVERRIDE: {grammar_type} -> {layout_override}")
             grammar_type = layout_override
@@ -384,31 +400,56 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
                 else:
                     print(f"    [ArtDirector] RECOVERY ABORTED: Best match ({best_score}) below {THRESHOLD}. Triggering AI.")
 
+        # F2 (fixes-resiliencia): Revalidación del override con el asset FINAL.
+        # El filtro de Fase B se calculó con el layout del Analista; si el override
+        # exige hi-res y el asset elegido no califica, el override se descarta.
+        if layout_override and primary_id:
+            override_asset = db.query(models.BrandAsset).get(primary_id)
+            if override_asset and _requires_hi_res(layout_override):
+                ow, oh = _resolve_asset_dims(override_asset)
+                override_panel = get_layout_geometry(layout_override, slide_w_in, slide_h_in).get("image")
+                if not ow:
+                    override_rejected_info = {"override": str(layout_override), "reason": "Unknown dimensions for hi-res override"}
+                elif ow < 1200:
+                    override_rejected_info = {"override": str(layout_override), "reason": f"Resolution too low for override ({ow}px < 1200px)"}
+                else:
+                    override_diff = compute_aspect_fit(ow, oh, override_panel, slide_w_in, slide_h_in)
+                    if override_diff is not None and override_diff > ASPECT_TOLERANCE:
+                        override_rejected_info = {"override": str(layout_override), "reason": f"Aspect ratio mismatch for override ({override_diff:.2f} > {ASPECT_TOLERANCE:.2f})"}
+
+            if override_rejected_info:
+                print(f"    [ArtDirector] OVERRIDE REJECTED: {override_rejected_info['override']} — {override_rejected_info['reason']}. Keeping '{analyst_grammar_type}'.")
+                grammar_type = str(analyst_grammar_type)
+                slide.layout_slug = prev_layout_slug
+                layout_override = None
+
         # Persistir en Memoria Visual Absoluta y DB (v10.0 - Icon Support via planning_json)
         slide.assigned_image = None
-        
+
         # v23.8: Safe icon storage in planning_json to avoid DB schema mismatches
-        current_planning = slide.planning_json or {}
+        # F3 (fixes-resiliencia): copia única — la re-lectura posterior descartaba bullet_icon,
+        # y dict() garantiza que SQLAlchemy detecte el cambio en la columna JSON
+        current_planning = dict(slide.planning_json or {})
         current_planning["bullet_icon"] = None
-        
+
         if primary_id:
             asset_rec = db.query(models.BrandAsset).get(primary_id)
             if asset_rec:
                 slide.assigned_image = os.path.basename(asset_rec.local_path)
-        
+
         if accent_id:
             accent_rec = db.query(models.BrandAsset).get(accent_id)
             if accent_rec:
                 # Resolver path para el bullet icon (Base64) - Guardado en planning_json para estabilidad
                 current_planning["bullet_icon"] = os.path.basename(accent_rec.local_path)
-        
+
         # v8.80: Merge Art Director reasoning into planning_json
-        current_planning = slide.planning_json or {}
         current_planning["art_director"] = {
             "selected_asset": primary_id,
             "logic": "Designer Mode v3.0",
             "reasoning": raw_reasoning,
             "layout_override": layout_override,
+            "layout_override_rejected": override_rejected_info,
             "canvas_elements": decision.get("canvas_elements", []),
             "threshold": THRESHOLD,
             "timestamp": datetime.datetime.utcnow().isoformat()

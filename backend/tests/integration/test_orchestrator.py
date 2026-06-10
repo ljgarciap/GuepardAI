@@ -57,12 +57,15 @@ class TestAgentOrchestratorPipeline:
             "tier": "standard"
         }
 
+        # Capturar el id ANTES: el orquestador cierra la sesión que crea (la
+        # inyectada vía patch), y el ORM no puede refrescar atributos después.
+        job_id = sample_job.id
         with patch("agents.orchestrator.SessionLocal", return_value=db_session):
-            orchestrator.run_generation_pipeline(job_id=sample_job.id, req_data=req_data)
+            orchestrator.run_generation_pipeline(job_id=job_id, req_data=req_data)
 
         # Verificar que cada agente fue llamado exactamente 1 vez (en flujo sin errores)
         orchestrator.generate_text.assert_called_once_with(
-            job_id=sample_job.id,
+            job_id=job_id,
             prompt="Test presentation about AI",
             style_filename="test_style.pptx",
             knowledge_filename="test_knowledge.pdf",
@@ -218,11 +221,13 @@ class TestAgentOrchestratorPipeline:
         req_data = {"prompt": "Premium test", "style_filename": "s.pptx", "knowledge_filename": "k.pdf",
                     "region": "Global", "allow_ai_images": False, "output_format": "pdf", "tier": "premium"}
 
+        # Capturar el id ANTES: el orquestador cierra la sesión que crea (la inyectada vía patch)
+        job_id = sample_job.id
         with patch("agents.orchestrator.SessionLocal", return_value=db_session):
-            orchestrator.run_generation_pipeline(job_id=sample_job.id, req_data=req_data)
+            orchestrator.run_generation_pipeline(job_id=job_id, req_data=req_data)
 
-        # compose_layout debe recibir is_premium=True
-        orchestrator.compose_layout.assert_called_with(job_id=sample_job.id, is_premium=True)
+        # compose_layout debe recibir is_premium=True (qa_feedback=None en el primer intento, F1)
+        orchestrator.compose_layout.assert_called_with(job_id=job_id, is_premium=True, qa_feedback=None)
         # render_pptx también debe recibir is_premium=True
         call_kwargs = orchestrator.render_pptx.call_args.kwargs
         assert call_kwargs.get("is_premium") is True

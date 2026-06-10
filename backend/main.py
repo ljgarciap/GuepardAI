@@ -378,6 +378,7 @@ def get_generation_status(job_id: int, db: Session = Depends(get_db)):
     return {
         "id": job.id, "status": job.status, "progress": job.progress,
         "current_step": job.current_step,
+        "qa_forced": bool(job.qa_forced),
         "download_url": f"/api/generation/download/{job.id}" if job.status == models.GenerationJobStatus.COMPLETED else None
     }
 

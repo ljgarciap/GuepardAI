@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-10
 **Requested by**: Luis
-**Status**: In Development — implementación completa y tests en verde (55/55); pendiente Senior Review y aprobación final de Luis
+**Status**: Done — validado por Luis en prueba manual local (2026-06-10); pendiente solo merge a master y backfill en EC2 (ver docs/operations/post-deploy-alignment.md)
 **Project**: GuepardAI
 
 ## Problem

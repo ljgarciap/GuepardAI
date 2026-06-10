@@ -3,7 +3,7 @@
 **Date**: 2026-06-10
 **PM**: desglose del diseño `docs/designs/mejora-seleccion-imagenes.md`
 **Spec**: `docs/specs/mejora-seleccion-imagenes.md`
-**Status**: Assigned
+**Status**: Done — T1-T7 completadas, validadas por Luis (2026-06-10)
 
 > Nota de contexto crítica (verificado en código): el seeder (`utils/seed.py:241-253`)
 > **omite claves que ya existen** en `system_configs` — no hace upsert. Todo cambio

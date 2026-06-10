@@ -287,9 +287,8 @@ class PremiumVisualAgent:
                     is_dark_right = True
             
             # Select logo light/dark for footer
-            selected_footer_logo = footer_logo_light if is_dark_left else footer_logo_dark
-            if not selected_footer_logo:
-                selected_footer_logo = brand_logo_light_path if is_dark_left else brand_logo_dark_path
+            slide_footer_logo_light = footer_logo_light or brand_logo_light_path
+            slide_footer_logo_dark = footer_logo_dark or brand_logo_dark_path
                 
             # Select logo for header: prioritize dossier logo for brand consistency
             selected_header_logo = brand_logo_dossier
@@ -318,7 +317,9 @@ class PremiumVisualAgent:
                 "is_footer_enabled": is_footer_enabled,
                 "footer_text": footer_text,
                 "footer_disclaimer": footer_disclaimer,
-                "footer_logo": selected_footer_logo,
+                "footer_logo_light": slide_footer_logo_light,
+                "footer_logo_dark": slide_footer_logo_dark,
+                "footer_logo": slide_footer_logo_light if is_dark_left else slide_footer_logo_dark,
                 "is_dark_left": is_dark_left,
                 "is_dark_right": is_dark_right,
                 "canvas_elements": canvas_elements,

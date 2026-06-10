@@ -1,3 +1,4 @@
+from PIL import Image
 import os
 import json
 import random
@@ -164,17 +165,24 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
             min_required = 1200 if requires_hi_res else 800
             
             w, h = asset.width, asset.height
-            if not w and asset.local_path and os.path.exists(asset.local_path):
-                try:
-                    with Image.open(asset.local_path) as img:
-                        w, h = img.size
-                except: pass
+            if not w and asset.local_path:
+                candidates = [
+                    asset.local_path,
+                    os.path.join("uploads", os.path.basename(asset.local_path)),
+                    os.path.join("backend", "uploads", os.path.basename(asset.local_path)),
+                ]
+                for p in candidates:
+                    if os.path.exists(p):
+                        try:
+                            with Image.open(p) as img:
+                                w, h = img.size
+                            break
+                        except: pass
 
             if w and w < min_required:
                 res_ok = False
                 audit_metadata["rejected"].append({"reason": f"Resolution too low ({w}px < {min_required}px)", **asset_info})
             elif requires_hi_res and not w:
-                # v8.9.1: If dimensions are unknown and hi-res is required, reject it to prevent massive pixelation
                 res_ok = False
                 audit_metadata["rejected"].append({"reason": f"Unknown dimensions for hi-res layout", **asset_info})
 
@@ -186,11 +194,29 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
 
         # Graceful degradation fallback: if no assets passed the resolution filter, relax it
         if not filtered_assets and asset_candidates:
-            print(f"    [ArtDirector] No assets passed strict resolution ({min_required}px). Relaxing filter to allow any resolution...")
+            print(f"    [ArtDirector] No assets passed strict resolution ({min_required}px). Relaxing filter...")
             for asset, score in asset_candidates:
                 # Still reject logos/icons for backgrounds if it requires hi-res
                 if requires_hi_res and asset.category in ["logos", "icons"]:
                     continue
+                # STRICT FLOOR: NEVER allow images with width < 400px to be used as backgrounds
+                asset_w = asset.width
+                if not asset_w and asset.local_path:
+                    candidates = [
+                        asset.local_path,
+                        os.path.join("uploads", os.path.basename(asset.local_path)),
+                        os.path.join("backend", "uploads", os.path.basename(asset.local_path)),
+                    ]
+                    for p in candidates:
+                        if os.path.exists(p):
+                            try:
+                                with Image.open(p) as img:
+                                    asset_w, _ = img.size
+                                break
+                            except: pass
+                if requires_hi_res and asset_w and asset_w < 400:
+                    continue
+                    
                 asset_info = {
                     "id": asset.id, 
                     "score": score, 

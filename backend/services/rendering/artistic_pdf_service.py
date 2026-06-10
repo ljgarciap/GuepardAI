@@ -230,6 +230,8 @@ class ArtisticPDFService:
             slide["hero_image"] = self._asset_to_data_uri(hero_image_raw)
             slide["accent_image"] = self._asset_to_data_uri(slide.get("accent_image"))
             slide["logo_image"] = self._asset_to_data_uri(slide.get("logo_image"))
+            slide["footer_logo_light"] = self._asset_to_data_uri(slide.get("footer_logo_light"))
+            slide["footer_logo_dark"] = self._asset_to_data_uri(slide.get("footer_logo_dark"))
             slide["footer_logo"] = self._asset_to_data_uri(slide.get("footer_logo"))
 
             if slide.get("canvas_elements"):

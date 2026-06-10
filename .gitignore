@@ -39,4 +39,4 @@ backend/chroma_db/
 # Local logs & metadata
 backend_logs.txt
 memory.md
-
+CLAUDE.md

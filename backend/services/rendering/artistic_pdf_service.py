@@ -5,6 +5,17 @@ from jinja2 import Environment, FileSystemLoader
 from weasyprint import HTML
 
 
+def _is_dark_color(hex_color: str) -> bool:
+    hex_color = hex_color.lstrip("#")
+    if len(hex_color) != 6:
+        return True
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return luminance < 0.5
+
+
 class ArtisticPDFService:
     def __init__(self, templates_dir="templates", output_dir="outputs/artistic_pdf"):
         self.templates_dir = templates_dir
@@ -144,6 +155,20 @@ class ArtisticPDFService:
             "patterns": patterns or [],
             "evaluation": evaluation or {},
         }
+
+        primary_dark = _is_dark_color(common_data["primary_color"])
+        bg_dark = _is_dark_color(common_data["background_color"])
+        for slide in slides_data:
+            pattern = slide.get("pattern_type", "editorial_split")
+            if pattern == "full_bleed_hero":
+                slide.setdefault("is_dark_left", True)
+                slide.setdefault("is_dark_right", True)
+            elif pattern == "data_cards_brand_grid":
+                slide.setdefault("is_dark_left", bg_dark)
+                slide.setdefault("is_dark_right", bg_dark)
+            else:
+                slide.setdefault("is_dark_left", primary_dark)
+                slide.setdefault("is_dark_right", bg_dark)
 
         template = self.env.get_template("premium_pdf.html")
         full_html = template.render(slides=slides_data, **common_data)

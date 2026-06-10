@@ -269,12 +269,17 @@ class GammaPainter:
         if primary_asset_path:
             img_path = self.resolve_image(primary_asset_path)
             if img_path:
-                # Si el JSON dictó medidas las usamos, si no, full bleed por defecto
                 ix = self.w(img_treatment.get("x_pct", 0))
                 iy = self.h(img_treatment.get("y_pct", 0))
                 iw = self.w(img_treatment.get("w_pct", 100))
                 ih = self.h(img_treatment.get("h_pct", 100))
-                self.add_fitted_image(slide, img_path, ix, iy, iw, ih)
+                try:
+                    # Crop image to fill the target panel size exactly to avoid aspect ratio margins
+                    cropped_img = crop_to_fill(img_path, iw, ih)
+                    self.add_bleed_image(slide, cropped_img, ix, iy, iw, ih)
+                except Exception as e:
+                    print(f"  [Painter] Failed to crop and bleed premium image: {e}")
+                    self.add_fitted_image(slide, img_path, ix, iy, iw, ih)
             
         panels = geom.get("glass_panels", [])
         for panel in panels:
@@ -714,8 +719,8 @@ class GammaPainter:
 
         # Draw a subtle semi-transparent strip behind the footer area to ensure logo/text readability
         # This works regardless of whether the background is a light or dark image.
-        footer_bg_color = RGBColor(0, 0, 0) if left_lum >= 0.5 else RGBColor(255, 255, 255)
-        footer_bg_transparency = 0.88  # Very subtle — just enough to create contrast without being heavy
+        footer_bg_color = RGBColor(255, 255, 255) if left_lum >= 0.5 else RGBColor(0, 0, 0)
+        footer_bg_transparency = 0.5  # Adjust opacity to 50% so the contrast band is clearly visible
         self.add_rect(slide, 0, self.h(94.5), self.prs.slide_width, self.h(6), footer_bg_color, transparency=footer_bg_transparency)
 
         # Draw a thin horizontal line on non-title slides

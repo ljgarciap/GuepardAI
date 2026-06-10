@@ -129,9 +129,14 @@
             {% endif %}
 
             <!-- Global Footer -->
-            <div class="absolute bottom-10 left-16 right-16 flex justify-between items-center border-t border-white/5 pt-6 opacity-40">
-                <div class="text-[10px] text-slate-500 uppercase tracking-widest font-bold">L-Founders | Executive Intelligence</div>
-                <img src="{{ agency_logo }}" class="h-5 brightness-0 invert">
+            <div class="absolute bottom-10 left-16 right-16 flex justify-between items-center pt-6 opacity-40"
+                 style="border-top: 1px solid {% if slide.is_dark_bg|default(true) %}rgba(255,255,255,0.08){% else %}rgba(0,0,0,0.12){% endif %};">
+                <div class="text-[10px] uppercase tracking-widest font-bold"
+                     style="color: {% if slide.is_dark_bg|default(true) %}#cbd5e1{% else %}#475569{% endif %};">
+                    L-Founders | Executive Intelligence
+                </div>
+                <img src="{{ agency_logo }}" class="h-5"
+                     style="filter: brightness(0) {% if slide.is_dark_bg|default(true) %}invert(1){% endif %};">
             </div>
         </div>
     {% endfor %}

@@ -290,12 +290,15 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
         
         # v8.66: Optimized Recovery Floor (0.45) for better library usage
         if not primary_id and asset_candidates:
-            best_score = asset_candidates[0][1]
-            if best_score > 0.45:
-                print(f"    [ArtDirector] RECOVERY: Using confident semantic match ({best_score}): {asset_candidates[0][0].id}")
-                primary_id = asset_candidates[0][0].id
-            else:
-                print(f"    [ArtDirector] RECOVERY ABORTED: Best match ({best_score}) below 0.45. Triggering AI.")
+            # Only consider candidates that passed the resolution/category checks
+            valid_candidates = [ac for ac in asset_candidates if ac[0].id in valid_ids]
+            if valid_candidates:
+                best_score = valid_candidates[0][1]
+                if best_score > 0.45:
+                    print(f"    [ArtDirector] RECOVERY: Using confident semantic match ({best_score}): {valid_candidates[0][0].id}")
+                    primary_id = valid_candidates[0][0].id
+                else:
+                    print(f"    [ArtDirector] RECOVERY ABORTED: Best match ({best_score}) below 0.45. Triggering AI.")
 
         # Persistir en Memoria Visual Absoluta y DB (v10.0 - Icon Support via planning_json)
         slide.assigned_image = None

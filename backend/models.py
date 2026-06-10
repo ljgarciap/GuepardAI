@@ -118,8 +118,12 @@ class BrandAsset(Base):
     # Real physical dimensions (v34.0 - Anti-Stretching)
     width = Column(Integer, nullable=True)
     height = Column(Integer, nullable=True)
-    
-    is_public = Column(Integer, default=0) 
+
+    # Perfil visual estructurado del Vision LLM (Selección de Imágenes v1)
+    # {orientation, dominant_colors, composition: {subject_position, negative_space}, layout_suitability}
+    visual_profile = Column(JSON, nullable=True)
+
+    is_public = Column(Integer, default=0)
     source_doc = Column(String(512))      
 
     metadata_json = Column(JSON) 

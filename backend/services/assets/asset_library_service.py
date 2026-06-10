@@ -19,14 +19,73 @@ def get_file_hash(file_path: str) -> str:
             sha256_hash.update(byte_block)
     return sha256_hash.hexdigest()
 
-def register_asset(db: Session, brand_id: Optional[int], file_path: str, 
+def run_vision_classification(db: Session, brand_id: Optional[int], file_path: str) -> dict:
+    """
+    Ejecuta la clasificación Vision de un asset (categoría, descripción, tags y
+    perfil visual). Compartida entre register_asset y el backfill de perfiles.
+    Lee prompt_classifier_v2 con fallback a v1 y a un prompt hardcodeado.
+    """
+    config_record = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_classifier_v2").first()
+    if not config_record:
+        config_record = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_classifier_v1").first()
+
+    if config_record:
+        vision_prompt = config_record.value
+    else:
+        vision_prompt = """Analyze this image and return a JSON object strictly following this schema:
+{
+  "category": "photos",
+  "description": "Breve descripción en español (max 15 palabras)",
+  "tags": ["tag1", "tag2"]
+}
+RULES:
+1. 'logos' category is STRICTLY for brand logos, wordmarks, or company identities (even if on transparent backgrounds).
+2. Description MUST be in SPANISH and extremely short.
+3. Tags must be in English or Spanish, lowercase, max 5 tags.
+4. Never write huge paragraphs."""
+
+    # CONTEXT-AWARE INJECTION (v23.0)
+    brand_name = "Unknown Brand"
+    rulebook = ""
+    if brand_id:
+        brand_record = db.query(models.Brand).get(brand_id)
+        if brand_record: brand_name = brand_record.name
+
+        essence_record = db.query(models.BrandArtisticEssence).filter(models.BrandArtisticEssence.brand_id == brand_id).first()
+        if essence_record and essence_record.art_direction_note:
+            rulebook = essence_record.art_direction_note
+
+    if brand_name != "Unknown Brand" or rulebook:
+        vision_prompt += f"\n\nCRITICAL BRAND CONTEXT:\nYou are extracting assets for the brand '{brand_name}'. \n"
+        vision_prompt += "DESIGNER GUIDELINE: Focus on composition and potential for creative layouts. If it is a clean object or fruit, it is a 'design_element'. If it is a person, identify their posture and background.\n"
+        vision_prompt += f"Brand Rulebook Context: {rulebook[:1500]}"
+
+    return generate_vision_json(vision_prompt, [file_path])
+
+
+def build_visual_profile(vision_res: dict) -> Optional[dict]:
+    """
+    Parsea el perfil visual de la respuesta de Visión de forma tolerante.
+    Devuelve un dict listo para BrandAsset.visual_profile, o None si no hay
+    ningún campo aprovechable. Nunca lanza excepción.
+    """
+    try:
+        from schemas.asset_profile import AssetVisualProfile
+        profile = AssetVisualProfile.from_llm_response(vision_res)
+        return profile.to_storage() if profile else None
+    except Exception as e:
+        print(f"  [Library] Visual profile parsing failed (non-fatal): {e}")
+        return None
+
+
+def register_asset(db: Session, brand_id: Optional[int], file_path: str,
                    category: str = "photos", force_tagging: bool = False,
                    is_public: bool = False, source_doc: Optional[str] = None,
                    manual_tags: List[str] = None,
                    width: Optional[int] = None, height: Optional[int] = None) -> models.BrandAsset:
     """
     Registra un activo en la biblioteca con Gobernanza y Etiquetas Manuales.
-    Ahora incluye generación de Embedding Semántico (v12.0).
+    Ahora incluye generación de Embedding Semántico (v12.0) y Perfil Visual (v1).
     """
     f_hash = get_file_hash(file_path)
     filename = os.path.basename(file_path)
@@ -54,46 +113,14 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
     # Si la categoría viene explícita como logo desde la subida manual, la protegemos.
     is_explicit_logo = category in ["logo", "logos"]
     final_category = "logos" if is_explicit_logo else "photos"
-    
-    try:
-        # Carga dinámica del Prompt desde la DB (v19.1)
-        config_record = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_classifier_v1").first()
-        
-        if config_record:
-            vision_prompt = config_record.value
-        else:
-            vision_prompt = """Analyze this image and return a JSON object strictly following this schema:
-{
-  "category": "photos", 
-  "description": "Breve descripción en español (max 15 palabras)",
-  "tags": ["tag1", "tag2"]
-}
-RULES:
-1. 'logos' category is STRICTLY for brand logos, wordmarks, or company identities (even if on transparent backgrounds).
-2. Description MUST be in SPANISH and extremely short.
-3. Tags must be in English or Spanish, lowercase, max 5 tags.
-4. Never write huge paragraphs."""
-            
-        # CONTEXT-AWARE INJECTION (v23.0)
-        # La instrucción de concisión se movió al seeder (prompt_classifier_v1)
-        brand_name = "Unknown Brand"
-        rulebook = ""
-        if brand_id:
-            brand_record = db.query(models.Brand).get(brand_id)
-            if brand_record: brand_name = brand_record.name
-            
-            essence_record = db.query(models.BrandArtisticEssence).filter(models.BrandArtisticEssence.brand_id == brand_id).first()
-            if essence_record and essence_record.art_direction_note:
-                rulebook = essence_record.art_direction_note
-                
-        if brand_name != "Unknown Brand" or rulebook:
-            vision_prompt += f"\n\nCRITICAL BRAND CONTEXT:\nYou are extracting assets for the brand '{brand_name}'. \n"
-            vision_prompt += "DESIGNER GUIDELINE: Focus on composition and potential for creative layouts. If it is a clean object or fruit, it is a 'design_element'. If it is a person, identify their posture and background.\n"
-            vision_prompt += f"Brand Rulebook Context: {rulebook[:1500]}"
+    visual_profile = None
 
-            
-        vision_res = generate_vision_json(vision_prompt, [file_path])
-        
+    try:
+        vision_res = run_vision_classification(db, brand_id, file_path)
+
+        # Perfil visual estructurado (Selección de Imágenes v1) — tolerante, nunca aborta
+        visual_profile = build_visual_profile(vision_res)
+
         # Respetar el logo manual, si no, usar lo que diga Visión
         if not is_explicit_logo:
             cat_val = vision_res.get("category", "lifestyle_photos")
@@ -170,6 +197,7 @@ RULES:
         description=description,
         width=width,
         height=height,
+        visual_profile=visual_profile,
         is_public=1 if is_public else 0,
         source_doc=source_doc,
         embedding=embedding

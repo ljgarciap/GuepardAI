@@ -40,3 +40,4 @@ backend/chroma_db/
 backend_logs.txt
 memory.md
 CLAUDE.md
+notify.sh

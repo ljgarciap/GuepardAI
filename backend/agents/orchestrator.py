@@ -412,6 +412,20 @@ class AgentOrchestrator:
                 if needs_rework:
                     retries += 1
                     logger.info(f"[Orchestrator] QA rejected design. Retries used: {retries}/{self.MAX_RETRIES}")
+                    
+                    # Reset slides to CONTENT_READY so the architect can re-plan them
+                    try:
+                        slides_to_reset = local_db.query(models.PresentationSlide).filter(
+                            models.PresentationSlide.job_id == job_id
+                        ).all()
+                        for s in slides_to_reset:
+                            s.status = models.PresentationSlideStatus.CONTENT_READY
+                        local_db.commit()
+                        logger.info(f"[Orchestrator] Reset {len(slides_to_reset)} slides status to CONTENT_READY for retry.")
+                    except Exception as reset_err:
+                        logger.error(f"[Orchestrator] Failed to reset slides for retry: {reset_err}")
+                        local_db.rollback()
+
                     job = local_db.query(models.GenerationJob).get(job_id)
                     if job:
                         job.current_step = f"QA validation failed (Attempt {retries}). Retrying layout planning..."

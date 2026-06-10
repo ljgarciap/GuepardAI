@@ -184,6 +184,23 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
             else:
                 audit_metadata["rejected"].append(asset_info)
 
+        # Graceful degradation fallback: if no assets passed the resolution filter, relax it
+        if not filtered_assets and asset_candidates:
+            print(f"    [ArtDirector] No assets passed strict resolution ({min_required}px). Relaxing filter to allow any resolution...")
+            for asset, score in asset_candidates:
+                # Still reject logos/icons for backgrounds if it requires hi-res
+                if requires_hi_res and asset.category in ["logos", "icons"]:
+                    continue
+                asset_info = {
+                    "id": asset.id, 
+                    "score": score, 
+                    "category": asset.category, 
+                    "desc": asset.description[:80],
+                    "path": os.path.basename(asset.local_path)
+                }
+                filtered_assets.append(asset_info)
+                audit_metadata["considered"].append(asset_info)
+
         # FASE C: DIRECCIÓN DE ARTE (Ejecución con Memoria Visual)
         visual_history = []
         # Traer layouts recientes (v5.0 Variety Enforcement)

@@ -30,6 +30,18 @@ try:
 except Exception as e:
     print(f"  [DB] Warning: Could not initialize pgvector: {e}")
 
+# LIGHTWEIGHT IN-PLACE MIGRATIONS (Selección de Imágenes v1)
+# create_all() no altera tablas existentes; estos ALTER idempotentes cubren
+# bases de datos ya desplegadas. Solo columnas nullable (operación segura).
+try:
+    with engine.connect() as conn:
+        conn.execute(text(
+            "ALTER TABLE brand_assets ADD COLUMN IF NOT EXISTS visual_profile JSON;"
+        ))
+        conn.commit()
+except Exception as e:
+    print(f"  [DB] Warning: In-place migration skipped: {e}")
+
 # Dependency function to manage opening and closing DB connections
 def get_db():
     db = SessionLocal()

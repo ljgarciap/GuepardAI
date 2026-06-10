@@ -23,7 +23,10 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
     
     # 0. Cargar Configuraciones Paramétricas (v4.0)
     threshold_cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == "asset_score_threshold").first()
-    THRESHOLD = float(threshold_cfg.value) if threshold_cfg else 0.70
+    THRESHOLD = float(threshold_cfg.value) if threshold_cfg else 0.45
+
+    aspect_cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == "aspect_ratio_tolerance").first()
+    ASPECT_TOLERANCE = float(aspect_cfg.value) if aspect_cfg else 0.40
     
     slides = db.query(models.PresentationSlide).filter(
         models.PresentationSlide.job_id == job_id,
@@ -51,7 +54,10 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
         if logo_asset:
             logo_path = logo_asset.local_path
 
-    prompt_tpl = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_art_director_v1").first()
+    # v2 incluye instrucciones de perfil visual; fallback a v1 en BDs sin re-seedear
+    prompt_tpl = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_art_director_v2").first()
+    if not prompt_tpl:
+        prompt_tpl = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_art_director_v1").first()
 
     used_assets = []
     
@@ -137,33 +143,54 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
                 else:
                     print(f"    [ArtDirector] ACTION: AI Disabled. Falling back to placeholder.")
 
-        # Filtrar assets por umbral y resolución (v8.5)
+        # Filtrar assets por umbral, resolución (v8.5) y aspect ratio (Selección de Imágenes v1)
+        from services.generation.asset_fit import compute_aspect_fit, aspect_penalty_multiplier
+
         filtered_assets = []
         audit_metadata = {"considered": [], "rejected": []}
-        
+
         # Obtener el layout sugerido por el analista para el filtro de resolución
         suggested_layout = strategy.get("grammar_type", "strategic_split")
         # Consideramos split también como hi-res requirements para evitar estiramientos
         requires_hi_res = suggested_layout in ["hero", "full_brand_overlay", "big_image", "full_bleed"] or "split" in suggested_layout
-        
+
+        # Panel de imagen del layout destino (para el chequeo de aspect ratio)
+        slide_w_in = dna_record.slide_width_inches if dna_record and dna_record.slide_width_inches else 13.33
+        slide_h_in = dna_record.slide_height_inches if dna_record and dna_record.slide_height_inches else 7.5
+        panel_geo = get_layout_geometry(suggested_layout, slide_w_in, slide_h_in).get("image")
+
         for asset, score in asset_candidates:
             asset_info = {
-                "id": asset.id, 
-                "score": score, 
-                "category": asset.category, 
+                "id": asset.id,
+                "score": score,
+                "category": asset.category,
                 "desc": asset.description[:80],
                 "path": os.path.basename(asset.local_path)
             }
-            
+
+            # Resumen del perfil visual para el prompt del Art Director (v1)
+            profile = asset.visual_profile or {}
+            if profile:
+                comp = profile.get("composition") or {}
+                profile_summary = {
+                    "orientation": profile.get("orientation"),
+                    "subject_position": comp.get("subject_position"),
+                    "negative_space": comp.get("negative_space"),
+                    "layout_suitability": profile.get("layout_suitability"),
+                }
+                profile_summary = {k: v for k, v in profile_summary.items() if v}
+                if profile_summary:
+                    asset_info["visual_profile"] = profile_summary
+
             # REGLA DE CALIDAD ESTRICTA: No logos ni íconos como imágenes de fondo
             if requires_hi_res and asset.category in ["logos", "icons"]:
                 audit_metadata["rejected"].append({"reason": "Category forbidden for background", **asset_info})
                 continue
-            
+
             # REGLA DE CALIDAD v8.9: Verificación Física si no hay Metadata
             res_ok = True
             min_required = 1200 if requires_hi_res else 800
-            
+
             w, h = asset.width, asset.height
             if not w and asset.local_path:
                 candidates = [
@@ -186,7 +213,21 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
                 res_ok = False
                 audit_metadata["rejected"].append({"reason": f"Unknown dimensions for hi-res layout", **asset_info})
 
-            if score >= 0.40 and res_ok: 
+            # ASPECT RATIO FIT (Selección de Imágenes v1): sin dimensiones el criterio no aplica
+            if res_ok:
+                aspect_diff = compute_aspect_fit(w, h, panel_geo, slide_w_in, slide_h_in)
+                if aspect_diff is not None and aspect_diff > ASPECT_TOLERANCE:
+                    if requires_hi_res:
+                        audit_metadata["rejected"].append({
+                            "reason": f"Aspect ratio mismatch ({aspect_diff:.2f} > {ASPECT_TOLERANCE:.2f} tolerance)",
+                            **asset_info
+                        })
+                        continue
+                    else:
+                        score = score * aspect_penalty_multiplier(aspect_diff, ASPECT_TOLERANCE)
+                        asset_info["score"] = score
+
+            if score >= THRESHOLD and res_ok:
                 filtered_assets.append(asset_info)
                 audit_metadata["considered"].append(asset_info)
             else:
@@ -331,17 +372,17 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
                     primary_id = new_asset.id
                     print(f"    [ArtDirector] SUCCESS: AI Image generated and assigned.")
         
-        # v8.66: Optimized Recovery Floor (0.45) for better library usage
+        # v8.66: Recovery Floor configurable vía asset_score_threshold (Selección de Imágenes v1)
         if not primary_id and asset_candidates:
             # Only consider candidates that passed the resolution/category checks
             valid_candidates = [ac for ac in asset_candidates if ac[0].id in valid_ids]
             if valid_candidates:
                 best_score = valid_candidates[0][1]
-                if best_score > 0.45:
+                if best_score > THRESHOLD:
                     print(f"    [ArtDirector] RECOVERY: Using confident semantic match ({best_score}): {valid_candidates[0][0].id}")
                     primary_id = valid_candidates[0][0].id
                 else:
-                    print(f"    [ArtDirector] RECOVERY ABORTED: Best match ({best_score}) below 0.45. Triggering AI.")
+                    print(f"    [ArtDirector] RECOVERY ABORTED: Best match ({best_score}) below {THRESHOLD}. Triggering AI.")
 
         # Persistir en Memoria Visual Absoluta y DB (v10.0 - Icon Support via planning_json)
         slide.assigned_image = None
@@ -369,7 +410,7 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False)
             "reasoning": raw_reasoning,
             "layout_override": layout_override,
             "canvas_elements": decision.get("canvas_elements", []),
-            "threshold": 0.45,
+            "threshold": THRESHOLD,
             "timestamp": datetime.datetime.utcnow().isoformat()
         }
         slide.planning_json = current_planning

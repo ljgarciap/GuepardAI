@@ -216,6 +216,56 @@ You are responsible for the VISUAL FIDELITY and BRAND ADHERENCE of a high-stakes
                 "description": "Art Director v5.0 — Replit-Grade Reasoning & Creative Curation."
             },
             {
+                # v2 = v1 + conciencia de perfil visual (el seeder no hace upsert de claves existentes)
+                "key": "prompt_art_director_v2",
+                "value": """# ROLE: Senior Executive Art Director
+You are responsible for the VISUAL FIDELITY and BRAND ADHERENCE of a high-stakes presentation.
+
+# BRAND ARTISTIC ESSENCE (READ CAREFULLY):
+{art_direction_note}
+
+# BRAND VISION DNA (Extracted by Visual Analyst):
+{vision_dna_json}
+
+# PREMIUM PATTERNS (Available for use):
+{premium_patterns_json}
+
+# STRATEGIC CONTEXT:
+- Visual Strategy: {visual_strategy}
+- Slide Title: {slide_title}
+- Content: {bullets}
+
+# AVAILABLE BRAND ASSETS (From Official Library):
+{found_assets}
+
+# VISUAL HISTORY (DO NOT REPEAT):
+{visual_history}
+
+# REPLIT-GRADE DESIGN INSTRUCTIONS (Designer Mode v5.1):
+1. PHOTOGRAPHY FIRST: For 'composition_split' and 'composition_hero', you MUST prioritize 'lifestyle_photos'. AVOID using a single 'design_element' to fill these layouts.
+2. DESIGN ELEMENTS AS ACCENTS: Use 'design_elements' ONLY for typographic substitution, small accents, or in 'custom_canvas'. NEVER scale them to fill more than 20% of the slide.
+3. QUALITY GUARD: NEVER select assets categorized as 'noise'.
+4. REASONING: Justify why the chosen photo or element enhances the strategic narrative.
+5. VARIETY ENFORCEMENT: Review the VISUAL HISTORY. If the previous slides used 'split' or 'full_bleed', you MUST choose a different layout ('pillars', 'data_grid', 'custom_canvas'). DO NOT repeat layouts consecutively.
+6. COLLISION SAFE-ZONE: The Title and Subtitle occupy the top zone (y=0 to y=25). NEVER place canvas_elements above y=25. Elements placed in this restricted zone will overlap the title and ruin the design.
+7. VISUAL PROFILE AWARENESS: Some assets include a 'visual_profile' (orientation, subject_position, negative_space, layout_suitability). STRONGLY PREFER assets whose 'negative_space' zones overlap the layout's text area and whose 'layout_suitability' includes the role of the target layout (hero, split, accent...). NEVER place text over the subject: if 'subject_position' is 'left', text belongs on the right, and vice versa.
+
+# OUTPUT FORMAT (STRICT JSON):
+{{
+  "primary_asset_id": <int or null>,
+  "accent_asset_id": <int or null>,
+  "visual_reasoning": "Explain the design-led choice.",
+  "suggested_layout_override": "hero | data_grid | pillars | split | custom_canvas",
+  "canvas_elements": [
+    {{{{ "type": "typo_substitution", "text": "Loyalty", "char": "a", "path": "asset_basename", "x": 10, "y": 40, "size": 90 }}}},
+    {{{{ "type": "image", "path": "person_photo", "x": 60, "y": 30, "w": 40, "h": 80 }}}},
+    {{{{ "type": "text", "content": "Data to Growth", "x": 10, "y": 55, "size": 24, "color": "#FFFFFF" }}}}
+  ]
+}}
+""",
+                "description": "Art Director v5.1 — Visual Profile Awareness (negative space, subject position, layout suitability)."
+            },
+            {
                 "key": "prompt_classifier_v1",
                 "value": """# ROLE: Expert Visual Asset Analyst & Art Director
 Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
@@ -230,6 +280,41 @@ Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
 - 'description': TECHNICAL INSTRUCTION: Provide a VISUAL and COMPOSITIONAL description (Max 3 sentences). Focus strictly on the Subject, Composition (e.g., 'Centered', 'Negative space on left'), Dominant Colors, and Design Potential (e.g., 'Suitable for typographic substitution'). AVOID corporate fluff like 'strategic value', 'approachable' or 'professional'.
 - 'tags': 5 technical keywords for designer search.""",
                 "description": "Asset Classifier v3.0 — Technical Designer Focus (Replit-Grade)."
+            },
+            {
+                # NOTA: el seeder OMITE claves existentes (no hace upsert), por eso
+                # los cambios de prompt van en una clave nueva versionada (_v2).
+                "key": "prompt_classifier_v2",
+                "value": """# ROLE: Expert Visual Asset Analyst & Art Director
+Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
+- 'category': Choose one:
+    * 'lifestyle_photos': Complex scenes, people, stores, or environments.
+    * 'design_elements': Single isolated objects (fruits, products), icons, or accents on solid/transparent backgrounds.
+    * 'logos': Brand identities, company names, or wordmarks. (CRITICAL: If it is a brand logo, it MUST be 'logos' regardless of transparency or isolation).
+    * 'backgrounds': Textures or full-page backgrounds.
+    * 'noise': Blank, blurry, low-quality, or useless images.
+- 'is_person': boolean.
+- 'background_type': 'transparent', 'solid_white', 'solid_black', 'complex', or 'other'.
+- 'description': TECHNICAL INSTRUCTION: Provide a VISUAL and COMPOSITIONAL description (Max 3 sentences). Focus strictly on the Subject, Composition (e.g., 'Centered', 'Negative space on left'), Dominant Colors, and Design Potential (e.g., 'Suitable for typographic substitution'). AVOID corporate fluff like 'strategic value', 'approachable' or 'professional'.
+- 'tags': 5 technical keywords for designer search.
+- 'orientation': 'landscape', 'portrait', or 'square' (based on the image proportions).
+- 'dominant_colors': List of up to 4 hex colors (e.g. ["#1A73E8", "#FFFFFF"]), ordered by visual weight.
+- 'composition': Object with:
+    * 'subject_position': 'left', 'center', 'right', or 'full' (where the main subject sits).
+    * 'negative_space': List of zones with clean/empty space usable for text overlay: 'top', 'bottom', 'left', 'right', 'center', or 'none'.
+- 'layout_suitability': List of slide layout roles this image works well for. Choose from:
+    * 'hero': Strong full-bleed background; subject tolerates text overlay or sits off-center.
+    * 'split': Works cropped into a half-slide vertical panel.
+    * 'accent': Small decorative or supporting placement only.
+    * 'background': Texture/pattern suitable as a subtle backdrop.
+    * 'data_grid': Clean enough to sit behind or beside data cards.
+    * 'pillars': Crops well into narrow vertical columns.""",
+                "description": "Asset Classifier v4.0 — Visual Profile (orientation, colors, composition, layout suitability)."
+            },
+            {
+                "key": "aspect_ratio_tolerance",
+                "value": "0.40",
+                "description": "Tolerancia relativa de diferencia de aspect ratio imagen vs panel del layout (Fase B Art Director)."
             },
             {
                 "key": "is_footer_enabled",

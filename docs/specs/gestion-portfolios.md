@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-11
 **Requested by**: Luis
-**Status**: In Development — implementación completa; backend 15/15 y frontend 33/33 en verde; pendiente validación de Luis
+**Status**: Done — validado por Luis en prueba manual local (2026-06-11); viaja en el merge de feature/data-alignments junto con Alineaciones de Datos
 **Project**: GuepardAI
 
 ## Problem

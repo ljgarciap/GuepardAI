@@ -3,7 +3,7 @@
 **Date**: 2026-06-11
 **PM**: desglose del diseño `docs/designs/gestion-portfolios.md`
 **Spec**: `docs/specs/gestion-portfolios.md`
-**Status**: Ready — pendiente aprobación de Luis para arrancar
+**Status**: Done — B1-B4, F1-F3 y T1 completadas y validadas (2026-06-11); D1 pendiente de ejecutarse tras el merge/deploy
 **Rama**: `feature/data-alignments`
 
 ## Orden de ejecución

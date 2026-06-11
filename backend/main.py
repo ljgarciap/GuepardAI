@@ -181,10 +181,28 @@ def set_job_status(job_key: str, ingestion_type: str, status: str):
 # ENDPOINTS — BRAND DIRECTORY (v11.0)
 # ──────────────────────────────────────────────
 
+def _serialize_brand(brand: models.Brand) -> dict:
+    """Storage v1: logo_path servible real resuelto en lectura (nuevo → files/, legacy → uploads/)."""
+    from services.core.storage_service import resolve as resolve_storage, public_url
+    logo_url = None
+    if brand.logo_path:
+        physical = resolve_storage(brand.logo_path, brand_id=brand.id)
+        url = public_url(physical) if physical else None
+        logo_url = url.lstrip("/") if url else None
+    return {
+        "id": brand.id,
+        "name": brand.name,
+        "logo_path": logo_url,
+        "about": brand.about,
+        "core_value": brand.core_value,
+        "created_at": brand.created_at.isoformat() if brand.created_at else None,
+    }
+
+
 @app.get("/api/brands", tags=["Governance"])
 def list_brands(db: Session = Depends(get_db)):
     """Lista el Directorio Oficial de Marcas."""
-    return db.query(models.Brand).all()
+    return [_serialize_brand(b) for b in db.query(models.Brand).all()]
 
 @app.post("/api/brands", tags=["Governance"])
 async def create_brand(
@@ -200,13 +218,7 @@ async def create_brand(
         raise HTTPException(status_code=400, detail="Brand already exists.")
     
     brand = await create_brand_logic(db, name, about, core_value, logo)
-    return {
-        "id": brand.id,
-        "name": brand.name,
-        "logo_path": brand.logo_path,
-        "about": brand.about,
-        "core_value": brand.core_value
-    }
+    return _serialize_brand(brand)
 
 @app.put("/api/brands/{brand_id}", tags=["Governance"])
 async def update_brand(
@@ -221,14 +233,8 @@ async def update_brand(
     brand = await update_brand_logic(db, brand_id, name, about, core_value, logo)
     if not brand:
         raise HTTPException(status_code=404, detail="Brand not found.")
-    
-    return {
-        "id": brand.id,
-        "name": brand.name,
-        "logo_path": brand.logo_path,
-        "about": brand.about,
-        "core_value": brand.core_value
-    }
+
+    return _serialize_brand(brand)
 
 
 @app.get("/api/footers", tags=["Governance"])

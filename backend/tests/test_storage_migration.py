@@ -133,6 +133,29 @@ class TestFileReorganization:
         assert summary["orphans"] >= 1
         assert os.path.exists(orphan)  # sigue en legacy, decisión humana
 
+    def test_stale_brand_logo_pointer_realigned(self, isolated_storage, reorg_db):
+        # El logo vive dos veces en BD (BrandAsset + Brand.logo_path) sobre el
+        # mismo físico: cuando el paso de assets ya lo movió, el paso de marcas
+        # debe realinear el puntero aunque no haya nada que mover.
+        db, created = reorg_db
+        brand = models.Brand(name=f"ReorgBrand3_{os.urandom(3).hex()}")
+        db.add(brand); db.commit()
+        created["brands"].append(brand.id)
+
+        target = os.path.join(st.brand_assets_dir(brand.id), "stale_logo.png")
+        with open(target, "wb") as f:
+            f.write(b"logo")
+        brand.logo_path = "uploads/stale_logo.png"  # ref legacy; el archivo ya migró
+        db.commit()
+
+        summary = self._run()
+
+        assert summary["realigned"] >= 1
+        db.expire_all()
+        refreshed = db.query(models.Brand).get(brand.id)
+        assert "storage/public/brands" in refreshed.logo_path.replace("\\", "/")
+        assert st.resolve(refreshed.logo_path, brand_id=brand.id) == target
+
     def test_job_output_moves_to_job_dir(self, isolated_storage, reorg_db):
         db, created = reorg_db
         out = os.path.join(st.LEGACY_OUTPUTS, "old_deck.pptx")
@@ -191,6 +214,55 @@ class TestReadAfterMove:
             f.write(b"img")
 
         assert resolve_asset_path("profiled.png", brand_id=9) == target
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Brand Directory: logo_path resuelto en lectura (nuevo → files/, legacy → uploads/)
+# ─────────────────────────────────────────────────────────────────────────────
+@pytest.mark.integration
+class TestBrandDirectoryLogoUrl:
+    # Árbol REAL (sin isolated_storage): importar main bajo monkeypatch dejaría
+    # el mount /files apuntando al tmp y rompería los tests de seguridad.
+
+    def test_list_brands_resolves_stale_logo_ref(self, reorg_db):
+        from main import app
+        db, created = reorg_db
+        brand = models.Brand(
+            name=f"LogoBrand_{os.urandom(3).hex()}",
+            logo_path="uploads/dir_logo_test_only.png",  # ref legacy en BD
+        )
+        db.add(brand); db.commit()
+        created["brands"].append(brand.id)
+
+        # El físico ya vive en el árbol nuevo
+        target = os.path.join(st.brand_assets_dir(brand.id), "dir_logo_test_only.png")
+        with open(target, "wb") as f:
+            f.write(b"logo")
+
+        try:
+            client = TestClient(app)
+            res = client.get("/api/brands")
+            assert res.status_code == 200
+            row = next(b for b in res.json() if b["id"] == brand.id)
+            assert row["logo_path"] == f"files/brands/{brand.id}/assets/dir_logo_test_only.png"
+        finally:
+            os.remove(target)
+
+    def test_list_brands_missing_logo_returns_none(self, reorg_db):
+        from main import app
+        db, created = reorg_db
+        brand = models.Brand(
+            name=f"NoLogoBrand_{os.urandom(3).hex()}",
+            logo_path="uploads/ghost_logo_never_exists.png",  # no existe en ningún árbol
+        )
+        db.add(brand); db.commit()
+        created["brands"].append(brand.id)
+
+        client = TestClient(app)
+        res = client.get("/api/brands")
+        row = next(b for b in res.json() if b["id"] == brand.id)
+        # Mejor avatar con inicial que <img> rota: el serializador devuelve None
+        assert row["logo_path"] is None
 
 
 # ─────────────────────────────────────────────────────────────────────────────

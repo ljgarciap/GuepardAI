@@ -50,8 +50,22 @@ def _run_file_reorganization() -> dict:
     import os
     from services.core import storage_service as st
 
-    summary = {"moved": 0, "skipped": 0, "missing": 0, "conflicts": 0, "failed": 0, "orphans": 0}
+    summary = {"moved": 0, "skipped": 0, "realigned": 0, "missing": 0, "conflicts": 0, "failed": 0, "orphans": 0}
     db = SessionLocal()
+
+    def _already_in_storage(current: str, row, attr: str) -> bool:
+        """Archivo ya bajo storage/ (p.ej. movido por un paso anterior como otro
+        registro que apunta al mismo físico): realinear el puntero en BD igualmente."""
+        if not current.startswith(os.path.abspath(st.STORAGE_ROOT)):
+            return False
+        rel = st.to_relative(current)
+        if getattr(row, attr) != rel:
+            setattr(row, attr, rel)
+            summary["realigned"] += 1
+        else:
+            summary["skipped"] += 1
+        return True
+
     try:
         # 1. BrandAsset → public/brands/{id}/assets
         assets = db.query(models.BrandAsset).all()
@@ -62,8 +76,7 @@ def _run_file_reorganization() -> dict:
                 if not current:
                     summary["missing"] += 1
                     continue
-                if current.startswith(os.path.abspath(st.STORAGE_ROOT)):
-                    summary["skipped"] += 1
+                if _already_in_storage(current, a, "local_path"):
                     continue
                 dest_dir = st.brand_assets_dir(a.brand_id if not a.is_public else None)
                 moved = st.move_into(current, dest_dir, conflict_tag=str(a.id))
@@ -88,8 +101,7 @@ def _run_file_reorganization() -> dict:
                 if not current:
                     summary["missing"] += 1
                     continue
-                if current.startswith(os.path.abspath(st.STORAGE_ROOT)):
-                    summary["skipped"] += 1
+                if _already_in_storage(current, j, "pptx_path"):
                     continue
                 moved = st.move_into(current, st.job_dir(j.id), conflict_tag=str(j.id))
                 if moved:
@@ -108,8 +120,7 @@ def _run_file_reorganization() -> dict:
                 if not current:
                     summary["missing"] += 1
                     continue
-                if current.startswith(os.path.abspath(st.STORAGE_ROOT)):
-                    summary["skipped"] += 1
+                if _already_in_storage(current, b, "logo_path"):
                     continue
                 moved = st.move_into(current, st.brand_assets_dir(b.id), conflict_tag=f"logo{b.id}")
                 if moved:

@@ -55,6 +55,13 @@ try:
 except Exception as e:
     print(f"  [System] Warning: Seeding failed: {e}")
 
+# Alineaciones de datos (tercera capa, junto a esquema y config) — nunca bloquea el boot
+try:
+    from services.core.data_alignment_service import dispatch_pending_alignments
+    dispatch_pending_alignments()
+except Exception as e:
+    print(f"  [System] Warning: Data alignment dispatch failed: {e}")
+
 
 app = FastAPI(title="PowerAI API — Clean Architecture")
 

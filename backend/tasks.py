@@ -63,3 +63,9 @@ def celery_resume_generation_pipeline(job_id: int, req_payload: dict):
     except Exception as e:
         logger.error(f"[Celery] Resume pipeline task failed for job_id={job_id}: {e}")
 
+@celery_app.task(name="tasks.run_data_alignment")
+def task_run_data_alignment(name: str):
+    logger.info(f"[Celery] Data alignment task started: {name}")
+    from services.core.data_alignment_service import run_alignment
+    return run_alignment(name)
+

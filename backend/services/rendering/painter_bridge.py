@@ -70,12 +70,9 @@ def _resolve_asset_path(asset_source: str, asset_map: dict) -> str | None:
     if asset_source in asset_map:
         return asset_map[asset_source]
 
-    # Fallback: si es relativo y existe en uploads/
-    relative_path = os.path.join("uploads", os.path.basename(asset_source))
-    if os.path.exists(relative_path):
-        return os.path.abspath(relative_path)
-
-    return None
+    # Fallback: resolución centralizada (jerarquía nueva + legacy)
+    from services.core.storage_service import resolve as resolve_storage
+    return resolve_storage(asset_source)
 
 
 def _build_slide_data(slide, asset_map: dict, db: Session) -> dict:

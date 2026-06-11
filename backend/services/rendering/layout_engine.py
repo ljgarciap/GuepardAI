@@ -80,13 +80,12 @@ def apply_design_policy(content_manifest: dict, brand_dna, brand_essence=None, j
         "visual_strategy":       getattr(brand_essence, "visual_strategy", ""),
     }
 
-    # Resolver path real del PPTX fuente
+    # Resolver path real del PPTX fuente (jerarquía nueva, sources privados o legacy)
     pptx_source_path = None
     source_fn = getattr(brand_dna, "source_filename", None)
     if source_fn:
-        candidate = os.path.join("uploads", source_fn)
-        if os.path.exists(candidate):
-            pptx_source_path = candidate
+        from services.core.storage_service import resolve as resolve_storage
+        pptx_source_path = resolve_storage(source_fn, brand_id=getattr(brand_dna, "brand_id", None))
 
     policy = parse_essence_to_policy(
         brand_id=getattr(brand_dna, "brand_id", 0),

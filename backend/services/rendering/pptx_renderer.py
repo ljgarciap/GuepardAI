@@ -78,16 +78,9 @@ def render_background_image(slide, element, asset_map, sw_in, sh_in):
     """
     img_basename = element.get("source")
     raw_path = asset_map.get(img_basename)
-    
-    img_path = None
-    if raw_path and os.path.exists(raw_path):
-        img_path = raw_path
-    
-    if not img_path:
-        # Fallback a directorio uploads
-        potential = os.path.join("uploads", str(img_basename))
-        if os.path.exists(potential):
-            img_path = potential
+
+    from services.core.storage_service import resolve as resolve_storage
+    img_path = resolve_storage(raw_path) or resolve_storage(img_basename)
 
     if img_path and os.path.exists(img_path):
         try:
@@ -222,35 +215,18 @@ def render_image(slide, element, asset_map, sx, sy):
     img_path = None
     print(f"  [Renderer] Attempting to render slide asset: path='{provided_path}', source='{img_basename}'")
     
-    # 1. Intentar con provided_path
+    from services.core.storage_service import resolve as resolve_storage
+
+    # 1. Intentar con provided_path (resolve cubre ruta directa, jerarquía y legacy)
     if provided_path:
-        filename = os.path.basename(provided_path)
-        potential_uploads = os.path.join("uploads", filename)
-        if os.path.exists(potential_uploads):
-            img_path = potential_uploads
-            print(f"  [Renderer]   - Success: Found by filename in uploads/: {img_path}")
-        elif os.path.exists(provided_path):
-            img_path = provided_path
-            print(f"  [Renderer]   - Success: Found at provided path: {img_path}")
-            
+        img_path = resolve_storage(provided_path)
+        if img_path:
+            print(f"  [Renderer]   - Success: Resolved provided path: {img_path}")
+
     # 2. Intentar con asset_map y source
     if not img_path and img_basename:
         raw_path = asset_map.get(img_basename)
-        if raw_path:
-            if os.path.exists(raw_path):
-                img_path = raw_path
-            else:
-                potential = os.path.join("uploads", os.path.basename(raw_path))
-                if os.path.exists(potential):
-                    img_path = potential
-                    
-        # 3. Intentar nombre de archivo
-        if not img_path:
-            potential = os.path.join("uploads", str(img_basename))
-            if os.path.exists(potential):
-                img_path = potential
-            elif os.path.exists(str(img_basename)):
-                img_path = str(img_basename)
+        img_path = resolve_storage(raw_path) or resolve_storage(img_basename)
 
     if not img_path:
         print(f"  [Renderer]   - CRITICAL: No file found for asset {provided_path or img_basename} in any location.")
@@ -502,10 +478,9 @@ def render_pptx_manifest(design_manifest, asset_map, output_path):
 
 def render_background_image_dynamic(slide, element, asset_map, sw_in, sh_in):
     img_basename = element.get("source")
-    img_path = asset_map.get(img_basename)
-    if not (img_path and os.path.exists(img_path)):
-        img_path = os.path.join("uploads", str(img_basename))
-        
+    from services.core.storage_service import resolve as resolve_storage
+    img_path = resolve_storage(asset_map.get(img_basename)) or resolve_storage(img_basename)
+
     if img_path and os.path.exists(img_path):
         try:
             with PILImage.open(img_path) as img: iw, ih = img.size
@@ -565,19 +540,10 @@ def _render_image_v2(slide, element, asset_map, sx, sy):
     provided_path = element.get("path")
     img_basename = element.get("source")
     
-    img_path = None
-    if provided_path:
-        filename = os.path.basename(provided_path)
-        if os.path.exists(os.path.join("uploads", filename)):
-            img_path = os.path.join("uploads", filename)
-        elif os.path.exists(provided_path):
-            img_path = provided_path
-            
+    from services.core.storage_service import resolve as resolve_storage
+    img_path = resolve_storage(provided_path)
     if not img_path and img_basename:
-        raw = asset_map.get(img_basename)
-        if raw and os.path.exists(raw): img_path = raw
-        elif os.path.exists(os.path.join("uploads", str(img_basename))):
-            img_path = os.path.join("uploads", str(img_basename))
+        img_path = resolve_storage(asset_map.get(img_basename)) or resolve_storage(img_basename)
 
     if img_path and os.path.exists(img_path):
         try:

@@ -46,52 +46,25 @@ class ArtisticPDFService:
         os.makedirs(self.output_dir, exist_ok=True)
 
     def _resolve_asset_path(self, raw_path):
-        if not raw_path:
-            return None
-        candidates = []
-        if os.path.isabs(raw_path):
-            candidates.append(raw_path)
-        else:
-            candidates.extend([
-                raw_path,
-                os.path.join("uploads", raw_path),
-                os.path.join("backend", "uploads", raw_path),
-                os.path.join("/app", raw_path),
-                os.path.join("/app", "uploads", raw_path),
-            ])
-        for path in candidates:
-            if os.path.exists(path):
-                return path
-        return None
+        from services.core.storage_service import resolve as resolve_storage
+        return resolve_storage(raw_path)
 
     def _asset_to_data_uri(self, raw_path):
         if not raw_path:
             return ""
 
-        candidates = []
-        if os.path.isabs(raw_path):
-            candidates.append(raw_path)
-        else:
-            candidates.extend([
-                raw_path,
-                os.path.join("uploads", raw_path),
-                os.path.join("backend", "uploads", raw_path),
-                os.path.join("/app", raw_path),
-                os.path.join("/app", "uploads", raw_path),
-            ])
-
-        for path in candidates:
-            if os.path.exists(path):
-                try:
-                    import base64
-                    ext = os.path.splitext(path)[1].lower().replace(".", "") or "png"
-                    if ext == "jpg":
-                        ext = "jpeg"
-                    with open(path, "rb") as f:
-                        encoded = base64.b64encode(f.read()).decode()
-                    return f"data:image/{ext};base64,{encoded}"
-                except Exception as e:
-                    print(f"  [ArtisticPDF] Warning: Could not encode asset {path}: {e}")
+        path = self._resolve_asset_path(raw_path)
+        if path:
+            try:
+                import base64
+                ext = os.path.splitext(path)[1].lower().replace(".", "") or "png"
+                if ext == "jpg":
+                    ext = "jpeg"
+                with open(path, "rb") as f:
+                    encoded = base64.b64encode(f.read()).decode()
+                return f"data:image/{ext};base64,{encoded}"
+            except Exception as e:
+                print(f"  [ArtisticPDF] Warning: Could not encode asset {path}: {e}")
         return raw_path
 
     def _load_agency_logo(self):
@@ -111,7 +84,8 @@ class ArtisticPDFService:
         print(f"  [ArtisticPDF] Starting Playwright Render for Job {job_id}...")
 
         pdf_filename = f"Portfolio_{job_id}_{int(datetime.datetime.now().timestamp())}.pdf"
-        pdf_path = os.path.join(self.output_dir, pdf_filename)
+        from services.core.storage_service import job_dir
+        pdf_path = os.path.join(job_dir(job_id), pdf_filename)
 
         # Base64 encode images for local rendering
         for slide in slides_data:
@@ -173,7 +147,8 @@ class ArtisticPDFService:
         print(f"  [PremiumPDF] Starting Playwright Render for Job {job_id}...")
 
         pdf_filename = f"Premium_Portfolio_{job_id}_{int(datetime.datetime.now().timestamp())}.pdf"
-        pdf_path = os.path.join(self.output_dir, pdf_filename)
+        from services.core.storage_service import job_dir
+        pdf_path = os.path.join(job_dir(job_id), pdf_filename)
 
         common_data = {
             "primary_color": getattr(brand_dna, "primary_color", "#002D62") if brand_dna else "#002D62",

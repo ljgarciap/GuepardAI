@@ -1,4 +1,4 @@
-version: '3.8'
+﻿version: '3.8'
 
 services:
   db:
@@ -39,6 +39,7 @@ services:
     volumes:
       - ./backend:/app
       - ./backend/uploads:/app/uploads
+      - ./backend/storage:/app/storage
       - ./backend/custom_fonts:/usr/share/fonts/custom
     depends_on:
       - db
@@ -79,6 +80,7 @@ services:
     volumes:
       - ./backend:/app
       - ./backend/uploads:/app/uploads
+      - ./backend/storage:/app/storage
       - ./backend/custom_fonts:/usr/share/fonts/custom
     depends_on:
       - db

@@ -96,6 +96,12 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 app.mount("/uploads", CORSStaticFiles(directory=UPLOAD_DIR), name="uploads")
 app.mount("/outputs", CORSStaticFiles(directory=OUTPUT_DIR), name="outputs")
 
+# Storage v1: SOLO el árbol público se sirve por HTTP. private/ y tmp/ jamás se montan.
+from services.core.storage_service import PUBLIC_ROOT as STORAGE_PUBLIC_ROOT, cleanup_tmp
+os.makedirs(STORAGE_PUBLIC_ROOT, exist_ok=True)
+app.mount("/files", CORSStaticFiles(directory=STORAGE_PUBLIC_ROOT), name="files")
+cleanup_tmp()  # housekeeping de temporales >24h (tolerante, nunca bloquea)
+
 
 # ──────────────────────────────────────────────
 # MODELOS PYDANTIC
@@ -175,10 +181,28 @@ def set_job_status(job_key: str, ingestion_type: str, status: str):
 # ENDPOINTS — BRAND DIRECTORY (v11.0)
 # ──────────────────────────────────────────────
 
+def _serialize_brand(brand: models.Brand) -> dict:
+    """Storage v1: logo_path servible real resuelto en lectura (nuevo → files/, legacy → uploads/)."""
+    from services.core.storage_service import resolve as resolve_storage, public_url
+    logo_url = None
+    if brand.logo_path:
+        physical = resolve_storage(brand.logo_path, brand_id=brand.id)
+        url = public_url(physical) if physical else None
+        logo_url = url.lstrip("/") if url else None
+    return {
+        "id": brand.id,
+        "name": brand.name,
+        "logo_path": logo_url,
+        "about": brand.about,
+        "core_value": brand.core_value,
+        "created_at": brand.created_at.isoformat() if brand.created_at else None,
+    }
+
+
 @app.get("/api/brands", tags=["Governance"])
 def list_brands(db: Session = Depends(get_db)):
     """Lista el Directorio Oficial de Marcas."""
-    return db.query(models.Brand).all()
+    return [_serialize_brand(b) for b in db.query(models.Brand).all()]
 
 @app.post("/api/brands", tags=["Governance"])
 async def create_brand(
@@ -194,13 +218,7 @@ async def create_brand(
         raise HTTPException(status_code=400, detail="Brand already exists.")
     
     brand = await create_brand_logic(db, name, about, core_value, logo)
-    return {
-        "id": brand.id,
-        "name": brand.name,
-        "logo_path": brand.logo_path,
-        "about": brand.about,
-        "core_value": brand.core_value
-    }
+    return _serialize_brand(brand)
 
 @app.put("/api/brands/{brand_id}", tags=["Governance"])
 async def update_brand(
@@ -215,14 +233,8 @@ async def update_brand(
     brand = await update_brand_logic(db, brand_id, name, about, core_value, logo)
     if not brand:
         raise HTTPException(status_code=404, detail="Brand not found.")
-    
-    return {
-        "id": brand.id,
-        "name": brand.name,
-        "logo_path": brand.logo_path,
-        "about": brand.about,
-        "core_value": brand.core_value
-    }
+
+    return _serialize_brand(brand)
 
 
 @app.get("/api/footers", tags=["Governance"])
@@ -362,15 +374,18 @@ def list_images(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
     
     assets = query.all()
     # v21.5: Conversión manual para evitar fallos con pgvector/embeddings
+    from services.core.storage_service import resolve as resolve_storage, public_url
     safe_assets = []
     for a in assets:
-        # v21.6: Normalizar ruta para el frontend
+        # Storage v1: URL servible real (jerarquía nueva → /files, legacy → /uploads)
         filename = os.path.basename(a.local_path)
+        physical = resolve_storage(a.local_path, brand_id=a.brand_id)
+        url = public_url(physical) if physical else None
         safe_assets.append({
             "id": a.id,
             "brand_id": a.brand_id,
             "category": a.category,
-            "local_path": f"uploads/{filename}",
+            "local_path": url.lstrip("/") if url else f"uploads/{filename}",
             "tags": a.tags,
             "description": a.description,
             "source_doc": a.source_doc,
@@ -393,7 +408,10 @@ def get_generation_status(job_id: int, db: Session = Depends(get_db)):
 def download_presentation(job_id: int, db: Session = Depends(get_db)):
     job = db.query(models.GenerationJob).get(job_id)
     if not job or job.status != models.GenerationJobStatus.COMPLETED: raise HTTPException(status_code=404, detail="File not ready.")
-    return FileResponse(job.pptx_path, filename=os.path.basename(job.pptx_path))
+    from services.core.storage_service import resolve as resolve_storage
+    physical = resolve_storage(job.pptx_path)
+    if not physical: raise HTTPException(status_code=404, detail="File not found on disk.")
+    return FileResponse(physical, filename=os.path.basename(job.pptx_path))
 
 
 # ──────────────────────────────────────────────
@@ -412,9 +430,10 @@ async def upload_asset(
     """Punto de entrada para la ingesta de conocimiento y estilo."""
     job_key = file.filename
     safe_tags = [t.strip() for t in manual_tags.split(",")] if manual_tags else []
-    
-    # Guardar archivo
-    file_path = os.path.join(UPLOAD_DIR, job_key)
+
+    # Guardar el documento fuente en el árbol PRIVADO de la marca (storage v1)
+    from services.core.storage_service import brand_sources_dir
+    file_path = os.path.join(brand_sources_dir(brand_id), job_key)
     with open(file_path, "wb") as buffer:
         buffer.write(await file.read())
 
@@ -618,13 +637,25 @@ def delete_library_portfolio(job_id: int, db: Session = Depends(get_db)):
     db.delete(job)  # PresentationSlide cae por cascade="all, delete-orphan"
     db.commit()
 
-    # Limpieza del archivo físico DESPUÉS del commit, tolerante a ausencia
+    # Limpieza física DESPUÉS del commit, tolerante a ausencia
     if pptx_path:
         try:
-            if os.path.exists(pptx_path):
-                os.remove(pptx_path)
+            from services.core.storage_service import resolve as resolve_storage
+            physical = resolve_storage(pptx_path)
+            if physical and os.path.exists(physical):
+                os.remove(physical)
         except Exception as file_err:
             logger.warning(f"[Portfolios] Job {job_id} deleted from DB but file cleanup failed: {file_err}")
+
+    # Storage v1: si el job tiene carpeta propia, eliminarla completa
+    try:
+        import shutil
+        from services.core.storage_service import PUBLIC_ROOT as _public_root
+        job_folder = os.path.join(_public_root, "jobs", str(job_id))
+        if os.path.isdir(job_folder):
+            shutil.rmtree(job_folder, ignore_errors=True)
+    except Exception as dir_err:
+        logger.warning(f"[Portfolios] Job {job_id} folder cleanup failed: {dir_err}")
 
     return {"deleted": True, "id": job_id}
 

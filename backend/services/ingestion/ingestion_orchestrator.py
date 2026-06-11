@@ -74,9 +74,10 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
     is_public = (visibility_scope == "public")
     
     try:
-        upload_dir = os.path.dirname(file_path)
+        from services.core.storage_service import brand_assets_dir
+        upload_dir = brand_assets_dir(brand_id)
         dna = run_visual_dna_extraction(file_path, upload_dir, cb=cb)
-        
+
         db = SessionLocal()
         try:
             record = db.query(models.BrandVisualDna).filter(
@@ -189,7 +190,8 @@ def task_extract_artistic_essence(job_key: str, file_path: str, source_filename:
     cb = lambda msg, p=0: update_job_step(job_key, "artistic", msg, p)
 
     try:
-        upload_dir = os.path.dirname(file_path)
+        from services.core.storage_service import brand_assets_dir
+        upload_dir = brand_assets_dir(brand_id)
         brand_essence = run_artistic_essence_extraction(file_path, upload_dir, cb=cb, brand_id=brand_id)
 
         db = SessionLocal()
@@ -239,7 +241,9 @@ def task_extract_full_brand_style(job_key: str, file_path: str, source_filename:
     logger.info(f"[Orchestrator] task_extract_full_brand_style → AgentOrchestrator for brand_id={brand_id}")
     from agents.orchestrator import AgentOrchestrator
 
-    upload_dir = os.path.dirname(file_path)
+    # Los assets extraídos van al árbol público de la marca (la fuente vive en private/)
+    from services.core.storage_service import brand_assets_dir
+    upload_dir = brand_assets_dir(brand_id)
 
     # Obtener el ID del IngestionJob para que los BrandAnalyst Tools puedan actualizar su estado
     ingestion_job_id = -1  # Valor centinela: si no hay job en BD, las Tools actuarán sin actualizar estado
@@ -288,13 +292,18 @@ def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str,
     
     try:
         is_public = (visibility_scope == "public")
-        upload_dir = os.path.dirname(file_path)
+        # Assets cosechados van al árbol público de la marca (storage v1)
+        from services.core.storage_service import brand_assets_dir, move_into
+        upload_dir = brand_assets_dir(brand_id)
         ext = os.path.splitext(file_path)[1].lower()
-        
+
         db = SessionLocal()
         try:
             # Si es una imagen individual, registrarla directamente
             if ext in [".png", ".jpg", ".jpeg", ".svg", ".webp"]:
+                # La imagen subida ES un asset: moverla al árbol de assets
+                file_path = move_into(file_path, upload_dir) or file_path
+
                 # Extraer dimensiones (v36.5)
                 width, height = 0, 0
                 try:
@@ -302,7 +311,7 @@ def task_extract_pure_assets(job_key: str, file_path: str, source_filename: str,
                     with Image.open(file_path) as img:
                         width, height = img.size
                 except: pass
-                
+
                 # v36.6: Definir categoría por defecto para evitar NameError
                 category = "photos"
                 register_asset(db, brand_id, file_path, category=category, is_public=is_public, source_doc=source_filename, manual_tags=manual_tags, width=width, height=height)

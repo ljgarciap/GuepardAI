@@ -24,18 +24,10 @@ import models
 from services.assets.asset_library_service import run_vision_classification, build_visual_profile
 
 
-def resolve_asset_path(local_path: str) -> str:
+def resolve_asset_path(local_path: str, brand_id=None) -> str:
     """El local_path puede estar guardado como basename o como ruta completa."""
-    candidates = [
-        local_path,
-        os.path.join("uploads", os.path.basename(local_path)),
-        os.path.join("backend", "uploads", os.path.basename(local_path)),
-        os.path.join("/app/uploads", os.path.basename(local_path)),
-    ]
-    for p in candidates:
-        if p and os.path.exists(p):
-            return p
-    return None
+    from services.core.storage_service import resolve as resolve_storage
+    return resolve_storage(local_path, brand_id=brand_id)
 
 
 def backfill(brand_id: int = None, process_all: bool = False, force: bool = False) -> dict:

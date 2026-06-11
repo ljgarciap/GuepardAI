@@ -62,10 +62,12 @@ class TestDispatch:
         with patch("tasks.task_run_data_alignment", mock_task):
             summary = dispatch_pending_alignments()
 
-        # Default sin config: habilitado
+        # Default sin config: habilitado. Aserciones por nombre — el registry
+        # puede contener más alineaciones de otras iteraciones.
         assert summary["disabled"] is False
         assert "visual_profile_backfill_v1" in summary["enqueued"]
-        mock_task.delay.assert_called_once_with("visual_profile_backfill_v1")
+        enqueued_names = [c.args[0] for c in mock_task.delay.call_args_list]
+        assert "visual_profile_backfill_v1" in enqueued_names
         row = _get_row(alignment_db, "visual_profile_backfill_v1")
         assert row is not None and row.status == "pending"
 
@@ -77,7 +79,8 @@ class TestDispatch:
         with patch("tasks.task_run_data_alignment", mock_task):
             summary = dispatch_pending_alignments()
 
-        mock_task.delay.assert_not_called()
+        enqueued_names = [c.args[0] for c in mock_task.delay.call_args_list]
+        assert "visual_profile_backfill_v1" not in enqueued_names
         assert {"name": "visual_profile_backfill_v1", "status": "done"} in summary["skipped"]
 
     def test_failed_alignment_retried_on_next_boot(self, alignment_db):
@@ -88,7 +91,8 @@ class TestDispatch:
         with patch("tasks.task_run_data_alignment", mock_task):
             summary = dispatch_pending_alignments()
 
-        mock_task.delay.assert_called_once_with("visual_profile_backfill_v1")
+        enqueued_names = [c.args[0] for c in mock_task.delay.call_args_list]
+        assert "visual_profile_backfill_v1" in enqueued_names
         assert "visual_profile_backfill_v1" in summary["enqueued"]
 
     def test_guard_disabled_logs_but_does_not_enqueue(self, alignment_db):

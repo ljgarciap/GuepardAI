@@ -22,6 +22,7 @@ __pycache__/
 *.pyc
 
 # Project Data & Assets
+backend/storage/
 backend/uploads/*
 backend/outputs/*
 !backend/outputs/.gitkeep

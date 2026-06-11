@@ -20,7 +20,8 @@ def fetch_single_asset(idx, narrative, entropy_seed):
     url = f"https://loremflickr.com/1920/1080/{elite_query}/all"
     
     filename = f"asset_{idx}_{os.urandom(2).hex()}.jpg"
-    path = os.path.join("uploads", filename)
+    from services.core.storage_service import brand_assets_dir
+    path = os.path.join(brand_assets_dir(None), filename)
     
     headers = {'User-Agent': 'Mozilla/5.0'}
     for attempt in range(2):

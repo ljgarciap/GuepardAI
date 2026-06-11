@@ -22,18 +22,13 @@ def _resolve_asset_dims(asset):
     """
     w, h = asset.width, asset.height
     if not w and asset.local_path:
-        candidates = [
-            asset.local_path,
-            os.path.join("uploads", os.path.basename(asset.local_path)),
-            os.path.join("backend", "uploads", os.path.basename(asset.local_path)),
-        ]
-        for p in candidates:
-            if os.path.exists(p):
-                try:
-                    with Image.open(p) as img:
-                        w, h = img.size
-                    break
-                except: pass
+        from services.core.storage_service import resolve as resolve_storage
+        p = resolve_storage(asset.local_path, brand_id=asset.brand_id)
+        if p:
+            try:
+                with Image.open(p) as img:
+                    w, h = img.size
+            except: pass
     return w, h
 
 
@@ -173,8 +168,8 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False,
                     print(f"    [ArtDirector] ACTION: Library empty. Triggering Gemini Creator...")
                     from providers.llm_provider import generate_ai_image
                     from services.assets.asset_library_service import register_asset
-                    
-                    gen_path = generate_ai_image(visual_intent)
+
+                    gen_path = generate_ai_image(visual_intent, brand_id=job.brand_id)
                     if gen_path:
                         new_asset = register_asset(db, job.brand_id, gen_path, category="lifestyle_photos")
                         if new_asset:
@@ -380,8 +375,8 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False,
             print(f"    [ArtDirector] ACTION: Quality library empty. Triggering Gemini Creator...")
             from providers.llm_provider import generate_ai_image
             from services.assets.asset_library_service import register_asset
-            
-            gen_path = generate_ai_image(visual_intent)
+
+            gen_path = generate_ai_image(visual_intent, brand_id=job.brand_id)
             if gen_path:
                 new_asset = register_asset(db, job.brand_id, gen_path, category="lifestyle_photos")
                 if new_asset:

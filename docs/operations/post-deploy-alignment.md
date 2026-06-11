@@ -30,6 +30,24 @@ cuando el guard esté apagado (ejecución manual con los scripts de `utils/`).
 
 ---
 
+## Iteración 5 — Reorganización de Storage (2026-06-11)
+
+**Sin comandos manuales.** Alineación automática al arrancar:
+- Árbol `storage/` (public/private/tmp) → creado por el servicio al primer uso;
+  montado en compose (`./backend/storage:/app/storage`).
+- Migración del histórico → alineación `file_reorganization_v1` (mueve archivos
+  de uploads/outputs a la jerarquía y actualiza rutas en BD; idempotente).
+- Housekeeping de `storage/tmp/` (>24h) en cada arranque.
+
+**Atención post-deploy**:
+- Verificar `SELECT name, status, detail FROM data_alignments WHERE name='file_reorganization_v1';`
+  — el `detail` reporta `orphans`: archivos en `uploads/` sin fila en BD que NO
+  se movieron (decisión humana: borrar o re-ingestar).
+- El árbol legacy `uploads/`/`outputs/` queda como fallback de lectura hasta la
+  Fase 3 (iteración futura); no borrar manualmente hasta entonces.
+
+---
+
 ## Iteración 4 — Gestión de Portfolios (2026-06-11)
 
 **Sin comandos manuales.** Alineación automática al arrancar:

@@ -38,7 +38,9 @@ def test_generate_ai_image_primary_success(mock_open, mock_get, mock_openai, moc
         # Ensure DALL-E was NOT called
         mock_openai.OpenAI.assert_not_called()
         assert result is not None
-        assert "uploads/ai_v4_" in result
+        # Storage v1: las imágenes IA van al árbol de assets (público) de la marca
+        assert os.path.basename(result).startswith("ai_v4_")
+        assert "assets" in result.replace("\\", "/")
 
 @patch("providers.llm_provider.google_genai")
 @patch("providers.llm_provider.genai_types")
@@ -86,7 +88,9 @@ def test_generate_ai_image_fallback_success(mock_open, mock_get, mock_openai, mo
         )
         mock_get.assert_called_once_with("http://fakeurl.com/image.png")
         assert result is not None
-        assert "uploads/ai_v4_" in result
+        # Storage v1: las imágenes IA van al árbol de assets (público) de la marca
+        assert os.path.basename(result).startswith("ai_v4_")
+        assert "assets" in result.replace("\\", "/")
 
 @patch("providers.llm_provider.google_genai")
 @patch("providers.llm_provider.genai_types")

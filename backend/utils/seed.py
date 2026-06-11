@@ -46,6 +46,11 @@ def seed_data():
                 "description": "Umbral mínimo de similitud semántica para aceptar asset."
             },
             {
+                "key": "qa_fidelity_threshold",
+                "value": "0.8",
+                "description": "Umbral del QA Judge LLM: score < threshold => rework (spec qa-judge-verdict-consistency)."
+            },
+            {
                 "key": "embedding_model_chain",
                 "value": "mistral-embed,models/gemini-embedding-2,ollama/mxbai-embed-large",
                 "description": "Cadena de modelos para embeddings (v41.0)"

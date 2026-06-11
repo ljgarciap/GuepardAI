@@ -147,7 +147,7 @@ class TestScoreFidelityTool:
         }
 
         with patch("agents.qa_validator.SessionLocal", return_value=db_session), \
-             patch("agents.qa_validator.generate_json", return_value=low_score_response), \
+             patch("providers.llm_provider.generate_json", return_value=low_score_response), \
              patch.object(db_session, "close"):
             tool = ScoreFidelityTool()
             result = tool.run(job_id=sample_job.id)

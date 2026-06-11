@@ -5,7 +5,9 @@ from agents.base import BaseAgentTool
 
 from database import SessionLocal
 import models
-from providers.llm_provider import generate_json
+# Import del módulo (no del símbolo): el lookup en call-time permite que el
+# mock global de conftest sobre providers.llm_provider surta efecto siempre
+from providers import llm_provider
 
 class ValidateBrandArgs(BaseModel):
     job_id: int = Field(..., description="ID del trabajo a validar")
@@ -134,9 +136,36 @@ class ScoreFidelityTool(BaseAgentTool):
             }}
             """
 
-            result = generate_json(prompt, specialization="general")
-            score = float(result.get("score", 1.0))
-            needs_rework = bool(result.get("needs_rework", score < threshold))
+            # Threshold de runtime (spec qa-judge-verdict-consistency): el arg
+            # del tool solo es fallback si la config no parsea
+            try:
+                threshold = float(llm_provider.get_system_config("qa_fidelity_threshold", str(threshold)))
+            except (TypeError, ValueError):
+                pass
+
+            result = llm_provider.generate_json(prompt, specialization="general")
+
+            # El score numérico contra el threshold es la autoridad del veredicto;
+            # la flag del LLM es opinión auditada (spec qa-judge-verdict-consistency)
+            try:
+                score = max(0.0, min(1.0, float(result.get("score"))))
+            except (TypeError, ValueError):
+                score = None
+
+            llm_flag = result.get("needs_rework")
+            if isinstance(llm_flag, str):
+                llm_flag = llm_flag.strip().lower() == "true"
+            elif llm_flag is not None:
+                llm_flag = bool(llm_flag)
+
+            if score is not None:
+                needs_rework = score < threshold
+            elif llm_flag is not None:
+                needs_rework = llm_flag  # fallback 1: sin score parseable, decide la flag
+            else:
+                needs_rework = False      # fallback 2: fail-open, como el auto-pass por datos ausentes
+
+            llm_flag_overridden = score is not None and llm_flag is not None and llm_flag != needs_rework
             reasoning = result.get("reasoning", "")
 
             if needs_rework:
@@ -147,15 +176,25 @@ class ScoreFidelityTool(BaseAgentTool):
                 job.current_step = "QA Validator approved the layout plan."
 
             # GAP 1: Trazar veredicto del LLM Juez en ArtDirectorDecision
+            score_label = f"{score:.2f}" if score is not None else "n/a"
+            summary = f"LLM QA Judge: score={score_label}, needs_rework={needs_rework}"
+            if llm_flag_overridden:
+                summary += f" (LLM flag needs_rework={llm_flag} overridden by score vs threshold)"
             self.log_decision(
                 db=db,
                 job_id=job_id,
                 decision_type="qa_score",
-                summary=f"LLM QA Judge: score={score:.2f}, needs_rework={needs_rework}",
+                summary=summary,
                 reasoning=reasoning,
                 prompt_used=prompt,
                 response_raw=result,
-                metadata={"score": score, "threshold": threshold, "needs_rework": needs_rework},
+                metadata={
+                    "score": score,
+                    "threshold": threshold,
+                    "needs_rework": needs_rework,
+                    "llm_needs_rework": llm_flag,
+                    "llm_flag_overridden": llm_flag_overridden,
+                },
             )
             db.commit()
 

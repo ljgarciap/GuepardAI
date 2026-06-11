@@ -10,8 +10,7 @@ from sqlalchemy.orm import Session
 from fastapi import UploadFile
 import models
 from services.assets.asset_library_service import register_asset
-
-UPLOAD_DIR = "uploads"
+from services.core.storage_service import brand_assets_dir, to_relative
 
 async def create_brand_logic(db: Session, name: str, about: Optional[str], core_value: Optional[str], logo: Optional[UploadFile] = None):
     """Lógica integral: Crea marca, guarda logo físicamente y lo registra con IA."""
@@ -25,15 +24,15 @@ async def create_brand_logic(db: Session, name: str, about: Optional[str], core_
     if logo:
         try:
             safe_name = f"logo_{int(time.time())}_{logo.filename}"
-            temp_path = os.path.join(UPLOAD_DIR, safe_name)
-            
+            temp_path = os.path.join(brand_assets_dir(new_brand.id), safe_name)
+
             # Guardado físico
             content = await logo.read()
             with open(temp_path, "wb") as f:
                 f.write(content)
-            
-            # Asignar ruta a la base de datos PRIMERO
-            new_brand.logo_path = f"uploads/{safe_name}"
+
+            # Asignar ruta a la base de datos PRIMERO (relativa a backend/, portable)
+            new_brand.logo_path = to_relative(temp_path)
             db.commit()
             
             # Registro en Biblioteca (IA) - Separado para que un error no borre el logo
@@ -69,11 +68,11 @@ async def update_brand_logic(db: Session, brand_id: int, name: str, about: Optio
     if logo:
         try:
             safe_name = f"logo_{int(time.time())}_{logo.filename}"
-            temp_path = os.path.join(UPLOAD_DIR, safe_name)
+            temp_path = os.path.join(brand_assets_dir(brand.id), safe_name)
             content = await logo.read()
             with open(temp_path, "wb") as f: f.write(content)
-            
-            brand.logo_path = f"uploads/{safe_name}"
+
+            brand.logo_path = to_relative(temp_path)
             db.commit()
             
             try:

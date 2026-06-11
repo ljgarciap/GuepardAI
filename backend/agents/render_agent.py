@@ -245,13 +245,15 @@ class RenderPPTXTool(BaseAgentTool):
             )
             
             output_filename = f"Portfolio_Agent_{'Premium' if is_premium else 'Free'}_{job_id}_{int(time.time())}.pptx"
-            output_path = os.path.join(uploads_dir, output_filename)
-            
+            # Output final al árbol del job (storage v1)
+            from services.core.storage_service import job_dir, to_relative
+            output_path = os.path.join(job_dir(job_id), output_filename)
+
             painter = GammaPainter(dna)
             painter.render_slides(render_manifest)
             painter.save(output_path)
-            
-            job.pptx_path = output_path
+
+            job.pptx_path = to_relative(output_path)
             job.status = models.GenerationJobStatus.COMPLETED
             job.current_step = "Portfolio ready."
             job.progress = 100

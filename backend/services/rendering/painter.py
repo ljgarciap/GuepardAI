@@ -164,13 +164,8 @@ class GammaPainter:
 
     def resolve_image(self, asset_file, min_res=300):
         if not asset_file: return None
-        candidates = []
-        if os.path.isabs(asset_file): candidates.append(asset_file)
-        filename = os.path.basename(asset_file)
-        candidates.extend([os.path.abspath(os.path.join("uploads", filename)), os.path.abspath(os.path.join("backend", "uploads", filename))])
-        for target in candidates:
-            if os.path.exists(target): return target
-        return None
+        from services.core.storage_service import resolve as resolve_storage
+        return resolve_storage(asset_file)
 
     def add_rect(self, slide, x, y, w, h, color, transparency=0.0, rounded=False):
         shape = slide.shapes.add_shape(5 if rounded else 1, x, y, w, h)

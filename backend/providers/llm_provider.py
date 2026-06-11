@@ -916,15 +916,16 @@ def get_embedding(text: str) -> Optional[list]:
     return res[0] if res else None
 
 @retry_with_backoff(retries=2)
-def generate_ai_image(prompt: str) -> Optional[str]:
+def generate_ai_image(prompt: str, brand_id=None) -> Optional[str]:
     """
     Genera una imagen usando Google IMAGEN 4.0 (v8.52 - Protocolo Moderno).
+    brand_id (storage v1): destino en el árbol de assets de la marca.
     """
     gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-    
+
     # Pre-build path and prompt to be reused by both Imagen and DALL-E 3
-    output_path = f"uploads/ai_v4_{int(time.time())}.png"
-    os.makedirs("uploads", exist_ok=True)
+    from services.core.storage_service import brand_assets_dir
+    output_path = os.path.join(brand_assets_dir(brand_id), f"ai_v4_{int(time.time())}.png")
     
     # v8.66: Anti-Diagram & Spelling Protection (Hardened)
     forbidden = ["diagram", "infographic", "text", "chart", "table", "graph", "label", "writing", "logo", "brand"]
@@ -1019,13 +1020,13 @@ def generate_ai_image(prompt: str) -> Optional[str]:
 
     return None
 
-def _save_generated_image(data: bytes) -> Optional[str]:
-    """Guarda bytes en /uploads."""
+def _save_generated_image(data: bytes, brand_id=None) -> Optional[str]:
+    """Guarda bytes en el árbol de assets de la marca (storage v1)."""
     try:
         import uuid
-        os.makedirs("uploads", exist_ok=True)
+        from services.core.storage_service import brand_assets_dir
         filename = f"gen_ai_{uuid.uuid4().hex[:8]}.png"
-        save_path = os.path.join("uploads", filename)
+        save_path = os.path.join(brand_assets_dir(brand_id), filename)
         with open(save_path, "wb") as f:
             f.write(data)
         print(f"  [ImageGen] SUCCESS! Created: {save_path}")

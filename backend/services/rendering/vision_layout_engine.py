@@ -15,14 +15,9 @@ def generate_autonomous_layout(image_path: str, title: str, grammar_type: str, d
     """
     if not image_path: return None
     
-    # Resolving absolute path
-    filename = os.path.basename(image_path)
-    candidates = [
-        image_path if os.path.isabs(image_path) else None,
-        os.path.abspath(os.path.join("uploads", filename)),
-        os.path.abspath(os.path.join("backend", "uploads", filename))
-    ]
-    resolved_path = next((p for p in candidates if p and os.path.exists(p)), None)
+    # Resolución centralizada (jerarquía nueva + legacy)
+    from services.core.storage_service import resolve as resolve_storage
+    resolved_path = resolve_storage(image_path)
     
     if not resolved_path:
         logger.warning(f"[AutonomousVLM] Image not found: {image_path}")

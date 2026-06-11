@@ -41,8 +41,106 @@ def _run_visual_profile_backfill() -> dict:
     return backfill(process_all=True)
 
 
+def _run_file_reorganization() -> dict:
+    """
+    Migra el histórico de uploads/outputs planos a la jerarquía de storage
+    (Reorganización de Storage, Fase 2). Idempotente: filas ya bajo storage/
+    se saltan; archivos ausentes se reportan; huérfanos NO se mueven.
+    """
+    import os
+    from services.core import storage_service as st
+
+    summary = {"moved": 0, "skipped": 0, "missing": 0, "conflicts": 0, "failed": 0, "orphans": 0}
+    db = SessionLocal()
+    try:
+        # 1. BrandAsset → public/brands/{id}/assets
+        assets = db.query(models.BrandAsset).all()
+        batch = 0
+        for a in assets:
+            try:
+                current = st.resolve(a.local_path, brand_id=a.brand_id)
+                if not current:
+                    summary["missing"] += 1
+                    continue
+                if current.startswith(os.path.abspath(st.STORAGE_ROOT)):
+                    summary["skipped"] += 1
+                    continue
+                dest_dir = st.brand_assets_dir(a.brand_id if not a.is_public else None)
+                moved = st.move_into(current, dest_dir, conflict_tag=str(a.id))
+                if moved:
+                    if "_dup" in os.path.basename(moved):
+                        summary["conflicts"] += 1
+                    a.local_path = st.to_relative(moved)
+                    summary["moved"] += 1
+                    batch += 1
+                    if batch % 50 == 0:
+                        db.commit()
+            except Exception as e:
+                summary["failed"] += 1
+                logger.warning(f"[FileReorg] Asset {a.id} failed: {e}")
+        db.commit()
+
+        # 2. GenerationJob.pptx_path → public/jobs/{id}
+        jobs = db.query(models.GenerationJob).filter(models.GenerationJob.pptx_path.isnot(None)).all()
+        for j in jobs:
+            try:
+                current = st.resolve(j.pptx_path)
+                if not current:
+                    summary["missing"] += 1
+                    continue
+                if current.startswith(os.path.abspath(st.STORAGE_ROOT)):
+                    summary["skipped"] += 1
+                    continue
+                moved = st.move_into(current, st.job_dir(j.id), conflict_tag=str(j.id))
+                if moved:
+                    j.pptx_path = st.to_relative(moved)
+                    summary["moved"] += 1
+            except Exception as e:
+                summary["failed"] += 1
+                logger.warning(f"[FileReorg] Job {j.id} output failed: {e}")
+        db.commit()
+
+        # 3. Brand.logo_path → public/brands/{id}/assets
+        brands = db.query(models.Brand).filter(models.Brand.logo_path.isnot(None)).all()
+        for b in brands:
+            try:
+                current = st.resolve(b.logo_path, brand_id=b.id)
+                if not current:
+                    summary["missing"] += 1
+                    continue
+                if current.startswith(os.path.abspath(st.STORAGE_ROOT)):
+                    summary["skipped"] += 1
+                    continue
+                moved = st.move_into(current, st.brand_assets_dir(b.id), conflict_tag=f"logo{b.id}")
+                if moved:
+                    b.logo_path = st.to_relative(moved)
+                    summary["moved"] += 1
+            except Exception as e:
+                summary["failed"] += 1
+                logger.warning(f"[FileReorg] Brand {b.id} logo failed: {e}")
+        db.commit()
+
+        # 4. Huérfanos en legacy (sin fila en BD): solo conteo para decisión humana
+        try:
+            known = set()
+            for a in db.query(models.BrandAsset.local_path).all():
+                if a[0]:
+                    known.add(os.path.basename(a[0].replace("\\", "/")))
+            if os.path.isdir(st.LEGACY_UPLOADS):
+                for name in os.listdir(st.LEGACY_UPLOADS):
+                    if os.path.isfile(os.path.join(st.LEGACY_UPLOADS, name)) and name not in known:
+                        summary["orphans"] += 1
+        except Exception as e:
+            logger.warning(f"[FileReorg] Orphan scan failed: {e}")
+
+        return summary
+    finally:
+        db.close()
+
+
 ALIGNMENT_REGISTRY: Dict[str, Callable[[], dict]] = {
     "visual_profile_backfill_v1": _run_visual_profile_backfill,
+    "file_reorganization_v1": _run_file_reorganization,
 }
 
 

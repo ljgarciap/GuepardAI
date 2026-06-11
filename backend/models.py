@@ -254,6 +254,7 @@ class GenerationJob(Base):
     progress    = Column(Integer, default=0)    # v12.0: Porcentaje de avance
     allow_ai_images = Column(Boolean, default=False) # v7.0: Permiso para generar con Gemini
     qa_forced   = Column(Integer, default=0)    # F4 fixes-resiliencia: 1 si QA agotó reintentos y se forzó el pase
+    display_name = Column(String(120), nullable=True)  # Etiqueta visible editable (Gestión de Portfolios); null → basename del archivo
     pptx_path   = Column(String, nullable=True)
 
     created_at  = Column(DateTime, default=datetime.datetime.utcnow)
@@ -384,6 +385,23 @@ class SystemConfig(Base):
     value = Column(Text, nullable=False)
     description = Column(String(255), nullable=True)
     updated_at  = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+class DataAlignment(Base):
+    """
+    ALINEACIONES DE DATOS (Iteración Alineaciones v1).
+    Registro de procesos de convergencia de datos post-deploy (la tercera capa
+    junto al esquema y la config). Estados: pending | running | done | failed.
+    """
+    __tablename__ = "data_alignments"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    name        = Column(String(120), unique=True, index=True, nullable=False)
+    status      = Column(String(20), default="pending", index=True)
+    detail      = Column(Text, nullable=True)
+    started_at  = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    created_at  = Column(DateTime, default=datetime.datetime.utcnow)
+
 
 class PerformanceMetric(Base):
     """

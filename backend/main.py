@@ -22,7 +22,7 @@ from tasks import (
 )
 from services.core.brand_service import create_brand_logic, update_brand_logic
 import uuid
-from datetime import datetime
+from datetime import datetime, date
 from sqlalchemy import JSON
 
 # ── PIPELINE SERVICES ──
@@ -54,6 +54,13 @@ try:
     seed_data()
 except Exception as e:
     print(f"  [System] Warning: Seeding failed: {e}")
+
+# Alineaciones de datos (tercera capa, junto a esquema y config) — nunca bloquea el boot
+try:
+    from services.core.data_alignment_service import dispatch_pending_alignments
+    dispatch_pending_alignments()
+except Exception as e:
+    print(f"  [System] Warning: Data alignment dispatch failed: {e}")
 
 
 app = FastAPI(title="PowerAI API — Clean Architecture")
@@ -490,34 +497,136 @@ def list_library_knowledge(brand_id: Optional[int] = None, db: Session = Depends
         "brand_id": k.brand_id
     } for i, k in enumerate(knowledge)]
 
+def _portfolio_display_name(job) -> str:
+    """Nombre visible: etiqueta editable > basename del archivo > fallback."""
+    if job.display_name:
+        return job.display_name
+    if job.pptx_path:
+        return os.path.basename(job.pptx_path)
+    return f"Presentation_{job.id}.pptx"
+
+
+def _escape_like(term: str) -> str:
+    """Escapa comodines de LIKE para que el usuario busque literales."""
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 @app.get("/api/library/portfolios", tags=["Library"])
-def list_library_portfolios(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
-    """Lista las presentaciones generadas en la librería."""
+def list_library_portfolios(
+    brand_id: Optional[int] = None,
+    search: Optional[str] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    page: int = 1,
+    page_size: int = 12,
+    db: Session = Depends(get_db),
+):
+    """Lista paginada de presentaciones generadas (más reciente primero)."""
+    from sqlalchemy import or_
+
+    page = max(1, page)
+    page_size = min(max(1, page_size), 100)
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="date_from must be earlier than or equal to date_to.")
+
     query = db.query(models.GenerationJob).filter(models.GenerationJob.status == models.GenerationJobStatus.COMPLETED)
     if brand_id:
         query = query.filter(models.GenerationJob.brand_id == brand_id)
-    
-    jobs = query.all()
-    
-    # Pre-fetch satisfaction feedback to avoid N+1 queries
+    if search and search.strip():
+        pattern = f"%{_escape_like(search.strip())}%"
+        query = query.filter(or_(
+            models.GenerationJob.display_name.ilike(pattern, escape="\\"),
+            models.GenerationJob.pptx_path.ilike(pattern, escape="\\"),
+        ))
+    if date_from:
+        query = query.filter(models.GenerationJob.created_at >= datetime.combine(date_from, datetime.min.time()))
+    if date_to:
+        # Inclusivo: todo el día de date_to
+        query = query.filter(models.GenerationJob.created_at <= datetime.combine(date_to, datetime.max.time()))
+
+    total = query.count()
+    jobs = (query.order_by(models.GenerationJob.created_at.desc())
+                 .offset((page - 1) * page_size)
+                 .limit(page_size)
+                 .all())
+
+    # Pre-fetch satisfaction feedback, acotado a los jobs de la página
     satisfaction_q = db.query(models.SurveyQuestion).filter(models.SurveyQuestion.key == "presentation_satisfaction").first()
-    satisfaction_q_id = satisfaction_q.id if satisfaction_q else None
-    
     feedbacks_dict = {}
-    if satisfaction_q_id:
+    if satisfaction_q and jobs:
         feedbacks = db.query(models.GenerationJobFeedback).filter(
-            models.GenerationJobFeedback.question_id == satisfaction_q_id
+            models.GenerationJobFeedback.question_id == satisfaction_q.id,
+            models.GenerationJobFeedback.job_id.in_([j.id for j in jobs])
         ).all()
         feedbacks_dict = {f.job_id: {"rating": f.rating, "comment": f.comment} for f in feedbacks}
-        
-    return [{
-        "id": j.id, 
+
+    items = [{
+        "id": j.id,
         "filename": os.path.basename(j.pptx_path) if j.pptx_path else f"Presentation_{j.id}.pptx",
+        "display_name": _portfolio_display_name(j),
         "created_at": j.created_at,
         "brand_id": j.brand_id,
         "rating": feedbacks_dict.get(j.id, {}).get("rating"),
         "comment": feedbacks_dict.get(j.id, {}).get("comment")
     } for j in jobs]
+
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+class PortfolioRenameRequest(BaseModel):
+    display_name: str
+
+
+@app.patch("/api/library/portfolios/{job_id}", tags=["Library"])
+def rename_library_portfolio(job_id: int, payload: PortfolioRenameRequest, db: Session = Depends(get_db)):
+    """Renombra la etiqueta visible de una presentación (no toca el archivo físico)."""
+    job = db.query(models.GenerationJob).get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Presentation not found.")
+
+    name = (payload.display_name or "").strip()
+    if not name or len(name) > 120:
+        raise HTTPException(status_code=422, detail="display_name must be between 1 and 120 characters.")
+
+    job.display_name = name
+    db.commit()
+    return {"id": job.id, "display_name": job.display_name,
+            "filename": os.path.basename(job.pptx_path) if job.pptx_path else f"Presentation_{job.id}.pptx"}
+
+
+@app.delete("/api/library/portfolios/{job_id}", tags=["Library"])
+def delete_library_portfolio(job_id: int, db: Session = Depends(get_db)):
+    """
+    Elimina una presentación: job + slides (cascade) + feedback + decisiones de
+    arte + archivo físico (tolerante). Solo estados terminales — un job en
+    proceso devolvería el pipeline Celery escribiendo sobre un job borrado.
+    """
+    job = db.query(models.GenerationJob).get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Presentation not found.")
+    if job.status not in [models.GenerationJobStatus.COMPLETED, models.GenerationJobStatus.ERROR]:
+        raise HTTPException(status_code=409, detail=f"Cannot delete a presentation while its pipeline is active (status: {job.status}).")
+
+    pptx_path = job.pptx_path
+
+    db.query(models.GenerationJobFeedback).filter(
+        models.GenerationJobFeedback.job_id == job_id
+    ).delete(synchronize_session=False)
+    db.query(models.ArtDirectorDecision).filter(
+        models.ArtDirectorDecision.job_id == job_id
+    ).delete(synchronize_session=False)
+    db.delete(job)  # PresentationSlide cae por cascade="all, delete-orphan"
+    db.commit()
+
+    # Limpieza del archivo físico DESPUÉS del commit, tolerante a ausencia
+    if pptx_path:
+        try:
+            if os.path.exists(pptx_path):
+                os.remove(pptx_path)
+        except Exception as file_err:
+            logger.warning(f"[Portfolios] Job {job_id} deleted from DB but file cleanup failed: {file_err}")
+
+    return {"deleted": True, "id": job_id}
 
 # ──────────────────────────────────────────────
 # ENDPOINTS — GENERATION PIPELINE (Synthesis Studio)

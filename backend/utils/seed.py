@@ -322,6 +322,11 @@ Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
                 "description": "Máximo de caracteres del feedback de QA inyectado en el prompt del Art Director en los retries (F1 fixes-resiliencia)."
             },
             {
+                "key": "auto_data_alignment_enabled",
+                "value": "true",
+                "description": "Si es 'true', el arranque encola automáticamente las alineaciones de datos pendientes (pueden consumir tokens LLM)."
+            },
+            {
                 "key": "is_footer_enabled",
                 "value": "true",
                 "description": "Determina si el footer/firma está habilitado de forma global."

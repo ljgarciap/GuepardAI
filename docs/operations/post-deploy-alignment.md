@@ -1,47 +1,84 @@
-# Post-Deploy Alignment Commands
+# Post-Deploy Alignment Registry
 
-Registro de comandos manuales requeridos para alinear datos/esquema después de
-desplegar una release. **Si tu feature necesita un comando de este tipo, regístralo
-aquí** — el deploy a EC2 es automático (push a `master`), así que cualquier paso
-manual no documentado deja producción desalineada en silencio.
+Registro de alineaciones por release. Desde la iteración **Alineaciones de
+Datos** (2026-06-11), las TRES capas convergen automáticamente al arrancar el
+backend nuevo:
 
-Regla de oro: antes de añadir una entrada aquí, evalúa si el paso puede
-automatizarse en el arranque (seeds en `utils/seed.py`, ALTERs idempotentes en
-`database.py`). El comando manual es el último recurso.
+| Capa | Mecanismo | Dónde |
+|---|---|---|
+| Esquema | ALTERs idempotentes | `database.py` (in-place migrations) |
+| Configuración | Seeds (claves nuevas) | `utils/seed.py` |
+| **Datos** | **Alineaciones automáticas** (encoladas a Celery al arrancar) | `services/core/data_alignment_service.py` |
+
+**Cómo registrar una alineación de datos nueva**: añadir una función idempotente
+al `ALIGNMENT_REGISTRY` con nombre versionado (`_v1`, `_v2`...). El arranque la
+detecta, la encola y registra su estado en la tabla `data_alignments`
+(`pending/running/done/failed`; los `failed` se reintentan en el siguiente
+arranque). Contrato completo en el docstring del módulo.
+
+**Apagado de emergencia**: `system_configs.auto_data_alignment_enabled = "false"`
+— el arranque solo loggea las pendientes sin ejecutarlas (útil si una alineación
+consume tokens LLM y se quiere controlar el momento).
+
+**Verificación post-deploy**:
+```sql
+SELECT name, status, detail, finished_at FROM data_alignments ORDER BY id;
+```
+
+Este documento queda como **registro de auditoría por release** y como guía
+cuando el guard esté apagado (ejecución manual con los scripts de `utils/`).
+
+---
+
+## Iteración 4 — Gestión de Portfolios (2026-06-11)
+
+**Sin comandos manuales.** Alineación automática al arrancar:
+- Columna `generation_jobs.display_name` → ALTER idempotente en `database.py`.
+- Sin claves de config ni alineaciones de datos nuevas.
+
+Verificación opcional: `GET /api/library/portfolios?page=1&page_size=5` devuelve
+el envelope `{items, total, page, page_size}` ordenado por fecha descendente.
+
+---
+
+## Iteración 3 — Alineaciones de Datos (2026-06-11)
+
+**Sin comandos manuales.** El propio mecanismo se auto-instala:
+- Tabla `data_alignments` → creada por `create_all` al arrancar.
+- Clave `auto_data_alignment_enabled` = `"true"` → insertada por `seed.py`.
+- Primera alineación registrada: `visual_profile_backfill_v1` — **resuelve
+  automáticamente el backfill pendiente de la Iteración 1 en EC2** (perfila
+  todos los assets con `visual_profile IS NULL`, todas las marcas, idempotente).
+
+---
+
+## Iteración 2 — Fixes de Resiliencia del Pipeline (2026-06-10)
+
+**Sin comandos manuales.** Todo se alinea automáticamente al arrancar:
+- Columna `generation_jobs.qa_forced` → ALTER idempotente en `database.py`.
+- Clave `qa_feedback_max_chars` → insertada por `seed.py`.
+
+Verificación opcional: `SELECT qa_forced FROM generation_jobs ORDER BY id DESC LIMIT 5;`
 
 ---
 
 ## Iteración 1 — Selección de Imágenes (2026-06-10)
 
-**Qué se alinea automáticamente al desplegar (sin acción manual):**
-- Columna `brand_assets.visual_profile` → ALTER idempotente en `database.py` al arrancar.
-- Claves nuevas de `system_configs` (`prompt_classifier_v2`, `prompt_art_director_v2`,
-  `aspect_ratio_tolerance`) → insertadas por `seed.py` al arrancar.
+**Automático al desplegar**: columna `brand_assets.visual_profile` (ALTER),
+claves `prompt_classifier_v2`, `prompt_art_director_v2`, `aspect_ratio_tolerance` (seeds).
 
-**Acción manual requerida (una sola vez por marca existente):**
+**Acción manual histórica** (backfill de perfiles): ⚠️ **cubierta por
+`visual_profile_backfill_v1` desde la Iteración 3** — ya no requiere ejecución
+manual. El script sigue disponible para uso puntual:
 
 ```bash
-# Dentro del contenedor backend en EC2:
-docker exec -it guepard-backend python utils/backfill_visual_profiles.py --brand-id <id>
-# o para todas las marcas:
-docker exec -it guepard-backend python utils/backfill_visual_profiles.py --all
+docker exec -it guepard-backend python utils/backfill_visual_profiles.py --brand-id <id>   # una marca
+docker exec -it guepard-backend python utils/backfill_visual_profiles.py --all             # todas
+docker exec -it guepard-backend python utils/backfill_visual_profiles.py --all --force     # regenerar todo
 ```
 
-| Aspecto | Detalle |
-|---|---|
-| **Por qué** | Los assets ingestados antes de esta release no tienen `visual_profile`; sin él siguen funcionando, pero sin filtro de aspect ratio enriquecido ni perfil en el prompt del Art Director |
-| **Cuándo** | Después del primer deploy que incluya `bc7655b`; las marcas ingestadas a partir de esta release NO lo necesitan. **ORDEN CRÍTICO**: el backend nuevo debe haber arrancado al menos una vez antes del backfill (el arranque siembra `prompt_classifier_v2`; sin esa clave el backfill usa el prompt v1 y no genera perfiles — deja todo en NULL sin error) |
-| **Idempotencia** | Sí — solo procesa assets con `visual_profile IS NULL`; re-ejecutar es seguro. `--force` regenera todos |
-| **Costo** | 1 llamada Vision LLM por asset (secuencial). Un fallo (ej. 429) no aborta el lote; re-ejecutar reintenta solo los fallidos |
-| **Verificación** | `SELECT count(*) FROM brand_assets WHERE visual_profile IS NOT NULL AND category != 'noise';` debe acercarse al total de assets útiles |
-
----
-
-## Fixes de Resiliencia del Pipeline (2026-06-10)
-
-**Sin comandos manuales.** Todo se alinea automáticamente al arrancar el backend nuevo:
-- Columna `generation_jobs.qa_forced` → ALTER idempotente en `database.py`.
-- Clave `qa_feedback_max_chars` en `system_configs` → insertada por `seed.py`.
-
-Verificación opcional post-deploy: `SELECT qa_forced FROM generation_jobs ORDER BY id DESC LIMIT 5;`
-(la columna existe y los jobs nuevos arrancan en 0).
+Notas vigentes: idempotente (solo procesa `visual_profile IS NULL`); 1 llamada
+Vision por asset; un 429 no aborta el lote; el backend nuevo debe haber
+arrancado al menos una vez antes (siembra `prompt_classifier_v2` — sin esa
+clave los perfiles quedan NULL sin error). Verificación:
+`SELECT count(*) FROM brand_assets WHERE visual_profile IS NOT NULL AND category != 'noise';`

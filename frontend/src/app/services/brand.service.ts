@@ -1,7 +1,32 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
+
+export interface PortfolioItem {
+  id: number;
+  filename: string;
+  display_name: string;
+  created_at: string;
+  brand_id: number | null;
+  rating: number | null;
+  comment: string | null;
+}
+
+export interface PortfolioPage {
+  items: PortfolioItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface PortfolioFilters {
+  search?: string;
+  dateFrom?: string;   // YYYY-MM-DD
+  dateTo?: string;     // YYYY-MM-DD
+  page?: number;
+  pageSize?: number;
+}
 
 @Injectable({
   providedIn: 'root'
@@ -86,9 +111,26 @@ export class BrandService {
     return this.http.get<any[]>(url);
   }
 
-  getLibraryPortfolios(brandId?: number): Observable<any[]> {
-    const url = brandId ? `${this.apiUrl}/library/portfolios?brand_id=${brandId}` : `${this.apiUrl}/library/portfolios`;
-    return this.http.get<any[]>(url);
+  getLibraryPortfolios(brandId?: number, filters?: PortfolioFilters): Observable<PortfolioPage> {
+    let params = new HttpParams();
+    if (brandId) params = params.set('brand_id', brandId);
+    if (filters?.search?.trim()) params = params.set('search', filters.search.trim());
+    if (filters?.dateFrom) params = params.set('date_from', filters.dateFrom);
+    if (filters?.dateTo) params = params.set('date_to', filters.dateTo);
+    params = params.set('page', filters?.page ?? 1);
+    params = params.set('page_size', filters?.pageSize ?? 12);
+    return this.http.get<PortfolioPage>(`${this.apiUrl}/library/portfolios`, { params });
+  }
+
+  renamePortfolio(jobId: number, displayName: string): Observable<{ id: number; display_name: string; filename: string }> {
+    return this.http.patch<{ id: number; display_name: string; filename: string }>(
+      `${this.apiUrl}/library/portfolios/${jobId}`,
+      { display_name: displayName }
+    );
+  }
+
+  deletePortfolio(jobId: number): Observable<{ deleted: boolean; id: number }> {
+    return this.http.delete<{ deleted: boolean; id: number }>(`${this.apiUrl}/library/portfolios/${jobId}`);
   }
 
   generatePresentation(req: {

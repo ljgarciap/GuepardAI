@@ -30,13 +30,18 @@ try:
 except Exception as e:
     print(f"  [DB] Warning: Could not initialize pgvector: {e}")
 
-# LIGHTWEIGHT IN-PLACE MIGRATIONS (Selección de Imágenes v1)
+# LIGHTWEIGHT IN-PLACE MIGRATIONS
 # create_all() no altera tablas existentes; estos ALTER idempotentes cubren
-# bases de datos ya desplegadas. Solo columnas nullable (operación segura).
+# bases de datos ya desplegadas. Solo columnas nullable/default (operación segura).
 try:
     with engine.connect() as conn:
+        # Selección de Imágenes v1
         conn.execute(text(
             "ALTER TABLE brand_assets ADD COLUMN IF NOT EXISTS visual_profile JSON;"
+        ))
+        # Fixes de Resiliencia (F4)
+        conn.execute(text(
+            "ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS qa_forced INTEGER DEFAULT 0;"
         ))
         conn.commit()
 except Exception as e:

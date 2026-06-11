@@ -294,9 +294,6 @@ class AgentOrchestrator:
         import time
         from utils.observability import log_performance_metric
         start_time = time.perf_counter()
-        
-        import sys
-        is_test = "pytest" in sys.modules
 
         db = SessionLocal()
         try:
@@ -364,32 +361,33 @@ class AgentOrchestrator:
             except Exception as db_err:
                 logger.error(f"Failed to set error status: {db_err}")
         finally:
-            if not is_test:
-                db.close()
+            # Cerrar SIEMPRE: la sesión abierta deja una transacción 'idle in
+            # transaction' que bloquea el teardown del schema en tests.
+            db.close()
 
     def run_design_and_render(self, job_id: int, req_data: dict, db=None):
         """
         Ejecuta las etapas de diseño (Architect), QA y renderizado final.
         """
-        import sys
-        is_test = "pytest" in sys.modules
-
         local_db = db or SessionLocal()
         try:
             # Bucle de Diseño y QA
             retries = 0
             qa_passed = False
-            
+            # F1 (fixes-resiliencia): el rechazo de QA del ciclo anterior se inyecta
+            # en el siguiente intento del Architect (el más reciente reemplaza al anterior)
+            qa_feedback = None
+
             while retries <= self.MAX_RETRIES and not qa_passed:
                 logger.info(f"[Orchestrator] Delegating to Architect (ComposeLayoutTool) - Attempt {retries + 1}")
-                
+
                 job = local_db.query(models.GenerationJob).get(job_id)
                 if job:
                     job.progress = min(80, 50 + retries * 10)
                     job.current_step = f"Agent: Architect is planning layouts and images (Attempt {retries + 1})..."
                     local_db.commit()
 
-                self.compose_layout(job_id=job_id, is_premium=(req_data.get("tier") == "premium"))
+                self.compose_layout(job_id=job_id, is_premium=(req_data.get("tier") == "premium"), qa_feedback=qa_feedback)
 
                 logger.info(f"[Orchestrator] Delegating to QA Validator (ScoreFidelityTool/ValidateBrandTool)...")
                 
@@ -404,10 +402,21 @@ class AgentOrchestrator:
                 if brand_validation["status"] == "failed":
                     logger.warning(f"[Orchestrator] QA Deterministic Failed: {brand_validation['violations']}")
                     needs_rework = True
+                    import json as _json
+                    qa_feedback = f"Deterministic QA violations: {_json.dumps(brand_validation.get('violations', []))}"
                 else:
                     # Híbrido/LLM
                     qa_result = self.score_fidelity(job_id=job_id)
                     needs_rework = qa_result.get("needs_rework", False)
+                    if needs_rework:
+                        import json as _json
+                        reasoning = qa_result.get("reasoning", "")
+                        if isinstance(reasoning, (dict, list)):
+                            reasoning = _json.dumps(reasoning)
+                        if str(reasoning).strip():
+                            qa_feedback = f"QA Judge rejection (score {qa_result.get('score', '?')}): {reasoning}"
+                        else:
+                            qa_feedback = None
 
                 if needs_rework:
                     retries += 1
@@ -432,6 +441,16 @@ class AgentOrchestrator:
                         local_db.commit()
                     if retries > self.MAX_RETRIES:
                         logger.warning(f"[Orchestrator] Max retries reached. Forcing acceptance.")
+                        # F4 (fixes-resiliencia): dejar rastro consultable del forzado
+                        try:
+                            job = local_db.query(models.GenerationJob).get(job_id)
+                            if job:
+                                job.qa_forced = 1
+                                job.current_step = "QA exhausted retries; design accepted by force."
+                                local_db.commit()
+                        except Exception as flag_err:
+                            logger.error(f"[Orchestrator] Failed to persist qa_forced flag: {flag_err}")
+                            local_db.rollback()
                         qa_passed = True # Forzamos el pase porque nos quedamos sin reintentos
                 else:
                     logger.info(f"[Orchestrator] QA Approved design!")
@@ -450,10 +469,13 @@ class AgentOrchestrator:
                 output_format=req_data.get("output_format", "pptx"),
                 is_premium=(req_data.get("tier") == "premium")
             )
-                
+
             logger.info(f"[Orchestrator] Agent Pipeline completed for Job {job_id}")
         finally:
-            if not db and not is_test:
+            # Cerrar SIEMPRE la sesión que creamos nosotros: dejarla viva mantiene
+            # una transacción 'idle in transaction' que bloquea DROP/ALTER posteriores
+            # (en tests colgaba el teardown del schema de forma intermitente).
+            if not db:
                 local_db.close()
 
     def resume_generation_pipeline(self, job_id: int, req_data: dict):

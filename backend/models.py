@@ -253,6 +253,7 @@ class GenerationJob(Base):
     current_step = Column(String, nullable=True) # v12.0: Para logs en tiempo real
     progress    = Column(Integer, default=0)    # v12.0: Porcentaje de avance
     allow_ai_images = Column(Boolean, default=False) # v7.0: Permiso para generar con Gemini
+    qa_forced   = Column(Integer, default=0)    # F4 fixes-resiliencia: 1 si QA agotó reintentos y se forzó el pase
     pptx_path   = Column(String, nullable=True)
 
     created_at  = Column(DateTime, default=datetime.datetime.utcnow)

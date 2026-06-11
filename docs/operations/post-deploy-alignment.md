@@ -34,3 +34,14 @@ docker exec -it guepard-backend python utils/backfill_visual_profiles.py --all
 | **Idempotencia** | Sí — solo procesa assets con `visual_profile IS NULL`; re-ejecutar es seguro. `--force` regenera todos |
 | **Costo** | 1 llamada Vision LLM por asset (secuencial). Un fallo (ej. 429) no aborta el lote; re-ejecutar reintenta solo los fallidos |
 | **Verificación** | `SELECT count(*) FROM brand_assets WHERE visual_profile IS NOT NULL AND category != 'noise';` debe acercarse al total de assets útiles |
+
+---
+
+## Fixes de Resiliencia del Pipeline (2026-06-10)
+
+**Sin comandos manuales.** Todo se alinea automáticamente al arrancar el backend nuevo:
+- Columna `generation_jobs.qa_forced` → ALTER idempotente en `database.py`.
+- Clave `qa_feedback_max_chars` en `system_configs` → insertada por `seed.py`.
+
+Verificación opcional post-deploy: `SELECT qa_forced FROM generation_jobs ORDER BY id DESC LIMIT 5;`
+(la columna existe y los jobs nuevos arrancan en 0).

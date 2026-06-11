@@ -43,6 +43,10 @@ try:
         conn.execute(text(
             "ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS qa_forced INTEGER DEFAULT 0;"
         ))
+        # Gestión de Portfolios (renombrado)
+        conn.execute(text(
+            "ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS display_name VARCHAR(120);"
+        ))
         conn.commit()
 except Exception as e:
     print(f"  [DB] Warning: In-place migration skipped: {e}")

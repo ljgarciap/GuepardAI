@@ -334,10 +334,76 @@ describe('BrandService', () => {
       req.flush([]);
     });
 
-    it('getLibraryPortfolios() should GET /library/portfolios', () => {
-      service.getLibraryPortfolios().subscribe();
-      const req = httpMock.expectOne(`${API}/library/portfolios`);
-      req.flush([]);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Tests de Gestión de Portfolios (búsqueda, paginación, rename, delete)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('Portfolio management', () => {
+    const emptyPage = { items: [], total: 0, page: 1, page_size: 12 };
+
+    it('getLibraryPortfolios() should GET with default pagination params', () => {
+      service.getLibraryPortfolios().subscribe((res) => {
+        expect(res.items).toEqual([]);
+        expect(res.total).toBe(0);
+      });
+      const req = httpMock.expectOne(r => r.url === `${API}/library/portfolios`);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.params.get('page')).toBe('1');
+      expect(req.request.params.get('page_size')).toBe('12');
+      expect(req.request.params.has('search')).toBeFalse();
+      req.flush(emptyPage);
+    });
+
+    it('getLibraryPortfolios() should pass search, dates, page and brand_id as params', () => {
+      service.getLibraryPortfolios(5, {
+        search: 'Tesco',
+        dateFrom: '2026-06-01',
+        dateTo: '2026-06-11',
+        page: 3,
+        pageSize: 24
+      }).subscribe();
+
+      const req = httpMock.expectOne(r => r.url === `${API}/library/portfolios`);
+      expect(req.request.params.get('brand_id')).toBe('5');
+      expect(req.request.params.get('search')).toBe('Tesco');
+      expect(req.request.params.get('date_from')).toBe('2026-06-01');
+      expect(req.request.params.get('date_to')).toBe('2026-06-11');
+      expect(req.request.params.get('page')).toBe('3');
+      expect(req.request.params.get('page_size')).toBe('24');
+      req.flush(emptyPage);
+    });
+
+    it('getLibraryPortfolios() should omit blank search', () => {
+      service.getLibraryPortfolios(undefined, { search: '   ' }).subscribe();
+      const req = httpMock.expectOne(r => r.url === `${API}/library/portfolios`);
+      expect(req.request.params.has('search')).toBeFalse();
+      req.flush(emptyPage);
+    });
+
+    it('renamePortfolio() should PATCH the display_name', () => {
+      const mockResponse = { id: 42, display_name: 'Tesco Clubcard Pitch', filename: 'Presentation_42.pptx' };
+
+      service.renamePortfolio(42, 'Tesco Clubcard Pitch').subscribe((res) => {
+        expect(res.display_name).toBe('Tesco Clubcard Pitch');
+      });
+
+      const req = httpMock.expectOne(`${API}/library/portfolios/42`);
+      expect(req.request.method).toBe('PATCH');
+      expect(req.request.body).toEqual({ display_name: 'Tesco Clubcard Pitch' });
+      req.flush(mockResponse);
+    });
+
+    it('deletePortfolio() should DELETE the presentation', () => {
+      service.deletePortfolio(42).subscribe((res) => {
+        expect(res.deleted).toBeTrue();
+        expect(res.id).toBe(42);
+      });
+
+      const req = httpMock.expectOne(`${API}/library/portfolios/42`);
+      expect(req.request.method).toBe('DELETE');
+      req.flush({ deleted: true, id: 42 });
     });
   });
 

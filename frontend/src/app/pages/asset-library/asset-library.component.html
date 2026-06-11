@@ -80,10 +80,48 @@
 
     <!-- PORTFOLIOS VAULT -->
     <div class="list-container" *ngIf="activeTab === 'portfolios'">
+
+      <!-- Toolbar: búsqueda por nombre + rango de fechas -->
+      <div class="portfolio-toolbar glass-panel">
+        <input
+          type="text"
+          class="portfolio-search"
+          placeholder="🔍 Search by name..."
+          [(ngModel)]="portfolioSearch"
+          (ngModelChange)="onPortfolioSearchChange($event)" />
+        <div class="portfolio-dates">
+          <label>From</label>
+          <input type="date" [(ngModel)]="portfolioDateFrom" (change)="onPortfolioDateChange()" />
+          <label>To</label>
+          <input type="date" [(ngModel)]="portfolioDateTo" (change)="onPortfolioDateChange()" />
+        </div>
+        <button class="btn-mini" (click)="clearPortfolioFilters()"
+                *ngIf="portfolioSearch || portfolioDateFrom || portfolioDateTo">CLEAR</button>
+      </div>
+
       <div class="list-item glass-panel" *ngFor="let p of portfolios">
         <div class="item-icon">📽️</div>
         <div class="item-details">
-          <h3>{{ p.filename }}</h3>
+          <ng-container *ngIf="renamingJobId !== p.id; else renameEditor">
+            <h3>
+              {{ p.display_name }}
+              <button class="btn-rename" (click)="startRename(p)" title="Rename presentation">✏️</button>
+            </h3>
+          </ng-container>
+          <ng-template #renameEditor>
+            <div class="rename-row">
+              <input
+                type="text"
+                class="rename-input"
+                [(ngModel)]="renameValue"
+                maxlength="120"
+                (keyup.enter)="confirmRename()"
+                (keyup.escape)="cancelRename()"
+                autofocus />
+              <button class="btn-mini" (click)="confirmRename()" [disabled]="!renameValue.trim()">SAVE</button>
+              <button class="btn-mini btn-ghost" (click)="cancelRename()">CANCEL</button>
+            </div>
+          </ng-template>
           <div class="meta-row">
             <span class="meta-date">Strategic Synthesis • {{ p.created_at | date:'medium' }}</span>
             <span class="meta-divider" *ngIf="p.rating">•</span>
@@ -100,10 +138,24 @@
         <div class="item-actions">
           <button *ngIf="!p.rating" class="btn-mini btn-rate" (click)="openRatingModal(p.id)">★ RATE IT</button>
           <a [href]="baseUrl + '/api/generation/download/' + p.id" class="btn-mini" download>DOWNLOAD</a>
+          <button class="btn-mini btn-delete" (click)="askDeletePortfolio(p)" title="Delete presentation">🗑️</button>
         </div>
       </div>
+
       <div class="empty-state" *ngIf="portfolios.length === 0">
-        <p>No generated portfolios found for this selection.</p>
+        <p *ngIf="portfolioSearch || portfolioDateFrom || portfolioDateTo; else noPortfolios">
+          No presentations match your search. Try different filters.
+        </p>
+        <ng-template #noPortfolios>
+          <p>No generated portfolios found for this selection.</p>
+        </ng-template>
+      </div>
+
+      <!-- Paginador -->
+      <div class="portfolio-paginator" *ngIf="portfolioTotalPages > 1">
+        <button class="btn-mini" (click)="goToPortfolioPage(portfolioPage - 1)" [disabled]="portfolioPage <= 1">← PREV</button>
+        <span class="paginator-info">Page {{ portfolioPage }} of {{ portfolioTotalPages }} • {{ portfolioTotal }} presentations</span>
+        <button class="btn-mini" (click)="goToPortfolioPage(portfolioPage + 1)" [disabled]="portfolioPage >= portfolioTotalPages">NEXT →</button>
       </div>
     </div>
 
@@ -155,6 +207,27 @@
             <a [href]="baseUrl + '/' + selectedAsset.local_path" download class="btn-mini" style="width: 100%; text-align: center; margin-top: 1rem;">DOWNLOAD MASTER</a>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DELETE CONFIRMATION MODAL (PORTFOLIOS) -->
+  <div class="feedback-modal-overlay" *ngIf="showDeleteModal">
+    <div class="feedback-modal-card glass-panel slideUp">
+      <button class="btn-close" (click)="cancelDeletePortfolio()">×</button>
+
+      <div class="feedback-modal-header">
+        <h4>Delete Presentation</h4>
+        <p class="question">
+          You are about to permanently delete
+          <strong>"{{ deleteTarget?.display_name }}"</strong>.
+          This removes the presentation, its slides and its file. This action cannot be undone.
+        </p>
+      </div>
+
+      <div class="feedback-modal-actions delete-actions">
+        <button class="btn-mini btn-ghost" (click)="cancelDeletePortfolio()">CANCEL</button>
+        <button class="btn-danger-enterprise" (click)="confirmDeletePortfolio()">DELETE PERMANENTLY</button>
       </div>
     </div>
   </div>

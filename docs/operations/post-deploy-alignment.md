@@ -30,6 +30,17 @@ cuando el guard esté apagado (ejecución manual con los scripts de `utils/`).
 
 ---
 
+## Iteración 4 — Gestión de Portfolios (2026-06-11)
+
+**Sin comandos manuales.** Alineación automática al arrancar:
+- Columna `generation_jobs.display_name` → ALTER idempotente en `database.py`.
+- Sin claves de config ni alineaciones de datos nuevas.
+
+Verificación opcional: `GET /api/library/portfolios?page=1&page_size=5` devuelve
+el envelope `{items, total, page, page_size}` ordenado por fecha descendente.
+
+---
+
 ## Iteración 3 — Alineaciones de Datos (2026-06-11)
 
 **Sin comandos manuales.** El propio mecanismo se auto-instala:

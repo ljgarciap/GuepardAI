@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-11
 **Requested by**: Luis
-**Status**: Approved
+**Status**: In Development — implementación completa; backend 15/15 y frontend 33/33 en verde; pendiente validación de Luis
 **Project**: GuepardAI
 
 ## Problem

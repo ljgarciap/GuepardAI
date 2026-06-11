@@ -254,6 +254,7 @@ class GenerationJob(Base):
     progress    = Column(Integer, default=0)    # v12.0: Porcentaje de avance
     allow_ai_images = Column(Boolean, default=False) # v7.0: Permiso para generar con Gemini
     qa_forced   = Column(Integer, default=0)    # F4 fixes-resiliencia: 1 si QA agotó reintentos y se forzó el pase
+    display_name = Column(String(120), nullable=True)  # Etiqueta visible editable (Gestión de Portfolios); null → basename del archivo
     pptx_path   = Column(String, nullable=True)
 
     created_at  = Column(DateTime, default=datetime.datetime.utcnow)

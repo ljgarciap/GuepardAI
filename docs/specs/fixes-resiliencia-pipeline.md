@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-10
 **Requested by**: Luis
-**Status**: In Development — implementación completa, suite en verde (65/65); pendiente validación de Luis
+**Status**: Done — validado por Luis en prueba manual local (2026-06-10); viaja en el merge de 0906-advance a master (sin comandos manuales post-deploy)
 **Project**: GuepardAI
 
 ## Problem

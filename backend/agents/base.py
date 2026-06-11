@@ -106,10 +106,19 @@ class BaseAgentTool(abc.ABC):
         try:
             import models  # Import local para evitar circular imports
             import time
-            
+
             metadata_dict = dict(metadata) if metadata is not None else {}
             if hasattr(self, "_last_start_time"):
                 metadata_dict["duration_seconds"] = time.perf_counter() - self._last_start_time
+
+            # Los LLM a veces devuelven campos estructurados (dict/list) aunque el
+            # prompt pida string: las columnas VARCHAR no los adaptan → serializar
+            if reasoning is not None and not isinstance(reasoning, str):
+                reasoning = json.dumps(reasoning, ensure_ascii=False, default=str)
+            if summary is not None and not isinstance(summary, str):
+                summary = json.dumps(summary, ensure_ascii=False, default=str)
+            if prompt_used is not None and not isinstance(prompt_used, str):
+                prompt_used = json.dumps(prompt_used, ensure_ascii=False, default=str)
 
             decision = models.ArtDirectorDecision(
                 job_id=job_id,
@@ -121,8 +130,11 @@ class BaseAgentTool(abc.ABC):
                 response_raw=json.dumps(response_raw, default=str) if response_raw is not None else None,
                 metadata_json=metadata_dict,
             )
-            db.add(decision)
-            db.flush()  # flush sin commit: respeta la transacción del Tool que llama
+            # SAVEPOINT: si el flush falla, solo se revierte este INSERT — la
+            # transacción del Tool llamador (status del job, etc.) sigue viva y
+            # el commit posterior no muere con PendingRollbackError
+            with db.begin_nested():
+                db.add(decision)
             logger.debug(f"[{self.name}] Decision logged: type={decision_type}, job={job_id}, slide={slide_number}")
         except Exception as e:
             # Nunca debe romper el flujo principal por un error de logging

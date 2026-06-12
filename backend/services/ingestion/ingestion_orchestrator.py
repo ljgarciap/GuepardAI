@@ -28,7 +28,7 @@ def convert_pptx_to_pdf(pptx_path: str, output_dir: str) -> Optional[str]:
             "libreoffice", "--headless", "--convert-to", "pdf",
             "--outdir", output_dir, pptx_path
         ]
-        subprocess.run(cmd, check=True, capture_output=True)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=120)
         pdf_name = os.path.splitext(os.path.basename(pptx_path))[0] + ".pdf"
         pdf_path = os.path.join(output_dir, pdf_name)
         if os.path.exists(pdf_path):
@@ -154,25 +154,29 @@ def task_extract_visual_dna(job_key: str, file_path: str, source_filename: str, 
                         local_db.close()
                 
                 # Restored Concurrency: Limit to 1 worker to respect Mistral's 1 RPS Free Tier limit
+                asset_timeout = max(300, total_items * 90)
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                     future_to_item = {executor.submit(process_asset_worker, cat, item): item for cat, item in flat_items}
-                    for future in concurrent.futures.as_completed(future_to_item):
-                        processed_count += 1
-                        
-                        # DYNAMIC PROGRESS BAR: 40% to 95%
-                        prog_percent = 40 + int((processed_count / total_items) * 55)
-                        cb(f"Analyzing images with Vision LLM ({processed_count}/{total_items})...", prog_percent)
-                        
-                        res = future.result()
-                        if res and res.get("success"):
-                            real_cat = res["real_cat"]
-                            if real_cat != "noise":
-                                if real_cat not in final_library_assets: final_library_assets[real_cat] = []
-                                final_library_assets[real_cat].append({
-                                    "id": res["id"],
-                                    "path": res["path"],
-                                    "category": real_cat
-                                })
+                    try:
+                        for future in concurrent.futures.as_completed(future_to_item, timeout=asset_timeout):
+                            processed_count += 1
+
+                            # DYNAMIC PROGRESS BAR: 40% to 95%
+                            prog_percent = 40 + int((processed_count / total_items) * 55)
+                            cb(f"Analyzing images with Vision LLM ({processed_count}/{total_items})...", prog_percent)
+
+                            res = future.result()
+                            if res and res.get("success"):
+                                real_cat = res["real_cat"]
+                                if real_cat != "noise":
+                                    if real_cat not in final_library_assets: final_library_assets[real_cat] = []
+                                    final_library_assets[real_cat].append({
+                                        "id": res["id"],
+                                        "path": res["path"],
+                                        "category": real_cat
+                                    })
+                    except concurrent.futures.TimeoutError:
+                        logger.warning(f"[Orchestrator] Asset processing timed out after {asset_timeout}s — saving {len(final_library_assets)} asset(s) collected so far")
             
             record.extracted_assets = final_library_assets
             db.commit()

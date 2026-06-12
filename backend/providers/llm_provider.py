@@ -426,7 +426,7 @@ def _generate_vision_json_raw(prompt: str, image_paths: List[str], model: Option
                         # Reintento inteligente del adaptador: quitar prefijo
                         print(f"  [Vision] Gemini 404 with prefix. Retrying without 'models/'...", flush=True)
                         m = genai.GenerativeModel(m_name.replace("models/", ""))
-                        response = m.generate_content(content, generation_config=genai.GenerationConfig(temperature=0.1, response_mime_type="application/json"))
+                        response = m.generate_content(content, generation_config=genai.GenerationConfig(temperature=0.1, response_mime_type="application/json"), request_options={"timeout": 60})
                         return json.loads(response.text)
                     raise gem_err
                 

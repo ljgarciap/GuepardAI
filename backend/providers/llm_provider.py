@@ -767,7 +767,9 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
         # ERROR: No rellenar con ceros, esto causa 'ceguera vectorial' (Mismatch)
         raise ValueError(f"Vector dimension mismatch: Model returned {current}, but DB requires {target}. Zero-padding is disabled to prevent search blindness.")
 
-    for current_model in models_to_try:
+    # Usamos únicamente el modelo primario de la cadena para evitar mezclar
+    # espacios vectoriales de diferentes proveedores (ej. Mistral con Gemini).
+    for current_model in [models_to_try[0]]:
         try:
             print(f"  [Embeddings] Attempting with {current_model}...", flush=True)
             
@@ -849,7 +851,7 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
                 mis_key = get_system_config("mistral_api_key", None) or os.getenv("MISTRAL_API_KEY")
                 if not mis_key: raise ValueError("No Mistral Key")
                 from mistralai import Mistral
-                client = Mistral(api_key=mis_key, timeout=60)
+                client = Mistral(api_key=mis_key, timeout_ms=60000)
                 
                 # Solo texto para Mistral
                 text_inputs = [i for i in inputs if isinstance(i, str) and i.strip()]
@@ -926,11 +928,15 @@ def generate_ai_image(prompt: str, brand_id=None) -> Optional[str]:
     from services.core.storage_service import brand_assets_dir
     output_path = os.path.join(brand_assets_dir(brand_id), f"ai_v4_{int(time.time())}.png")
     
-    # v8.66: Anti-Diagram & Spelling Protection (Hardened)
-    forbidden = ["diagram", "infographic", "text", "chart", "table", "graph", "label", "writing", "logo", "brand"]
+    # v8.68: Anti-Diagram & Spelling Protection (Hardened)
+    forbidden = [
+        "diagram", "infographic", "text", "chart", "table", "graph", "label", "writing", "logo", "brand",
+        "dashboard", "screen", "analytics", "metrics", "numbers", "letters", "words", "charts", "diagrams",
+        "graphs", "tables", "logos", "texts", "infographics", "dashboards", "screens"
+    ]
     clean_intent = prompt.lower()
     for x in forbidden:
-        clean_intent = clean_intent.replace(x, "executive scene")
+        clean_intent = clean_intent.replace(x, "business concept")
     
     # v8.67: The "Board-Ready" Aesthetic Protocol (Polished to strictly avoid text/charts)
     clean_prompt = (
@@ -948,7 +954,7 @@ def generate_ai_image(prompt: str, brand_id=None) -> Optional[str]:
         try:
             # v8.65: Audited Imagen 4.0 Call
             print(f"  [ImageGen] INVOKING IMAGEN 4.0: models/imagen-4.0-generate-001 (High Timeout Mode)")
-            client = google_genai.Client(api_key=gem_key, http_options={'timeout': 600})
+            client = google_genai.Client(api_key=gem_key)
             
             # LOG AUDIT PRE-CALL
             log_audit("IMAGE_GEN_REQUEST", f"MODEL: imagen-4.0-generate-001\nPROMPT: {clean_prompt}")

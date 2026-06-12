@@ -84,8 +84,9 @@ class ValidateBrandTool(BaseAgentTool):
             for group_key, slide_numbers in duplicate_groups.items():
                 if len(slide_numbers) > 1:
                     violations.append({
-                        "slide_number": slide_numbers[0],
+                        "slide_number": slide_numbers[-1],
                         "rule": "DUPLICATE_IMAGE_ACROSS_SLIDES",
+                        "all_slide_numbers": slide_numbers,
                         "message": f"La misma imagen (o una variante visual idéntica) está asignada a los slides {sorted(slide_numbers)}. Cada slide debe usar una imagen distinta."
                     })
 

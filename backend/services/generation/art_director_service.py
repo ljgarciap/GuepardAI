@@ -109,7 +109,24 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False,
         prompt_tpl = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_art_director_v1").first()
 
     used_assets = []
-    
+
+    # Initialize used_assets with assets from slides that are already planned (v25.0)
+    existing_slides = db.query(models.PresentationSlide).filter(
+        models.PresentationSlide.job_id == job_id,
+        models.PresentationSlide.status != models.PresentationSlideStatus.CONTENT_READY
+    ).all()
+
+    for es in existing_slides:
+        if es.assigned_image:
+            # We match the asset by the filename stored in assigned_image
+            asset_rec = db.query(models.BrandAsset).filter(
+                models.BrandAsset.brand_id == job.brand_id,
+                models.BrandAsset.local_path.contains(es.assigned_image)
+            ).first()
+            if asset_rec:
+                used_assets.append(asset_rec.id)
+                print(f"  [ArtDirector] Excluded already planned slide {es.slide_number} asset ID {asset_rec.id} ({es.assigned_image})")
+
     for slide in slides:
         print(f"    [Engine v4.0] Strategic Planning for Slide {slide.slide_number}...")
         

@@ -428,13 +428,31 @@ class AgentOrchestrator:
                     
                     # Reset slides to CONTENT_READY so the architect can re-plan them
                     try:
-                        slides_to_reset = local_db.query(models.PresentationSlide).filter(
+                        # Targeted reset (v25.0): only reset slides with violations if deterministic QA failed.
+                        violating_slides = set()
+                        if brand_validation.get("status") == "failed":
+                            for v in brand_validation.get("violations", []):
+                                if v.get("rule") == "DUPLICATE_IMAGE_ACROSS_SLIDES" and v.get("all_slide_numbers"):
+                                    # Reset all duplicates except the first (original) one to break duplication
+                                    for sn in v["all_slide_numbers"][1:]:
+                                        violating_slides.add(sn)
+                                else:
+                                    violating_slides.add(v.get("slide_number"))
+                        
+                        query = local_db.query(models.PresentationSlide).filter(
                             models.PresentationSlide.job_id == job_id
-                        ).all()
+                        )
+                        if violating_slides:
+                            query = query.filter(models.PresentationSlide.slide_number.in_(list(violating_slides)))
+                            reset_msg = f"Reset targeted slides {sorted(list(violating_slides))} status to CONTENT_READY for retry."
+                        else:
+                            reset_msg = "Reset all slides status to CONTENT_READY for retry."
+                            
+                        slides_to_reset = query.all()
                         for s in slides_to_reset:
                             s.status = models.PresentationSlideStatus.CONTENT_READY
                         local_db.commit()
-                        logger.info(f"[Orchestrator] Reset {len(slides_to_reset)} slides status to CONTENT_READY for retry.")
+                        logger.info(f"[Orchestrator] {reset_msg}")
                     except Exception as reset_err:
                         logger.error(f"[Orchestrator] Failed to reset slides for retry: {reset_err}")
                         local_db.rollback()

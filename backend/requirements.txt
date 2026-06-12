@@ -15,6 +15,7 @@ anthropic
 mistralai==1.7.0
 openai
 google-generativeai
+google-genai
 
 
 # File Processing

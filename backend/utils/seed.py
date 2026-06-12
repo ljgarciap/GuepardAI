@@ -116,6 +116,38 @@ OUTPUT JSON:
 }}""",
                 "description": "Strategic Analyst v8.6."
             },
+            {
+                "key": "prompt_analyst_v2",
+                "value": """You are a Strategic Design Analyst for executive presentations.
+Analyze the slide content and define the Visual Strategy.
+
+SLIDE CONTENT:
+Title: {slide_title}
+Bullets: {bullets}
+RAG Context: {rag_context}
+
+GRAMMAR TYPE RULES:
+- "composition_hero": Cover or Section Breaks.
+- "composition_split": Content with supporting image.
+- "big_metric": Single major KPI hero.
+- "composition_quote": Testimonials or strategic pillars.
+- "data_grid_cards": Dashboards (3-6 metrics).
+- "composition_pillars": 3-4 distinct columns.
+
+CRITICAL INSTRUCTIONS FOR "visual_intent" AND "suggested_keywords":
+1. STRICT NO-TEXT & NO-GRAPHIC RULE: The "visual_intent" description MUST describe a high-end, metaphorical, realistic corporate lifestyle photograph or symbolic object. It MUST NOT describe any charts, diagrams, graphs, tables, dashboards, screens, mockups, or user interfaces.
+2. METAPHORICAL REPRESENTATION OF DATA: If the slide contains metrics, financial data, or statistics, DO NOT ask for a drawing of a chart or graphic. Instead, represent it using a real-world metaphor (e.g. "a modern suspension bridge built of concrete and steel", "a lush green plant sprout growing in soil on a clean corporate desk with natural lighting", "a close-up of a neat gears assembly inside a watch", "modern business colleagues collaborating in a brightly lit glass meeting room").
+3. NO FORBIDDEN WORDS: Do NOT include words like "chart", "diagram", "graph", "infographic", "table", "metric", "dashboard", "screen", "analytics", "numbers", "letters", "words", "logo", "text" in the "visual_intent" or "suggested_keywords".
+
+OUTPUT JSON:
+{{
+  "visual_intent": "...",
+  "suggested_keywords": ["..."],
+  "grammar_type": "...",
+  "metric_value": null
+}}""",
+                "description": "Strategic Analyst v8.7 — Metaphorical prompt styling with strict no-text and no-graphic constraints."
+            },
 
             # ─────────────────────────────────────────────────────
             # PROMPT: PROMPT ARCHITECT v1.2

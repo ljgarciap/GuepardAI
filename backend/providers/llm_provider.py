@@ -954,7 +954,7 @@ def generate_ai_image(prompt: str, brand_id=None) -> Optional[str]:
         try:
             # v8.65: Audited Imagen 4.0 Call
             print(f"  [ImageGen] INVOKING IMAGEN 4.0: models/imagen-4.0-generate-001 (High Timeout Mode)")
-            client = google_genai.Client(api_key=gem_key)
+            client = google_genai.Client(api_key=gem_key, http_options={'timeout': 600})
             
             # LOG AUDIT PRE-CALL
             log_audit("IMAGE_GEN_REQUEST", f"MODEL: imagen-4.0-generate-001\nPROMPT: {clean_prompt}")

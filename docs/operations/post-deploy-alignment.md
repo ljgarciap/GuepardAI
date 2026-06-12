@@ -30,6 +30,25 @@ cuando el guard esté apagado (ejecución manual con los scripts de `utils/`).
 
 ---
 
+## Iteración 6 — Calidad de Selección de Imágenes v2 (2026-06-11)
+
+**Sin comandos manuales.** Alineación automática al arrancar:
+- Columna `brand_assets.perceptual_hash` + índice → ALTERs idempotentes en `database.py`.
+- Clave `degraded_min_resolution_px` = `"600"` → insertada por `seed.py`.
+- Alineación `perceptual_hash_backfill_v1` — calcula el dHash de todos los
+  assets existentes (`perceptual_hash IS NULL`). **No consume tokens LLM**
+  (puro PIL), por lo que el kill switch no es necesario para esta alineación.
+
+**Atención post-deploy**:
+- Verificar `SELECT name, status, detail FROM data_alignments WHERE name='perceptual_hash_backfill_v1';`
+  — el `detail` reporta `{processed, failed, missing}`; `missing` = filas cuyo
+  archivo físico no se resolvió (mismos huérfanos de `file_reorganization_v1`).
+- Hasta que el backfill termine, la no-repetición por gemelos visuales y la
+  regla QA `DUPLICATE_IMAGE_ACROSS_SLIDES` solo operan sobre hashes no nulos
+  (degradan con gracia, sin error).
+
+---
+
 ## Iteración 5 — Reorganización de Storage (2026-06-11)
 
 **Sin comandos manuales.** Alineación automática al arrancar:

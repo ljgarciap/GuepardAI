@@ -322,6 +322,11 @@ Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
                 "description": "Tolerancia relativa de diferencia de aspect ratio imagen vs panel del layout (Fase B Art Director)."
             },
             {
+                "key": "degraded_min_resolution_px",
+                "value": "600",
+                "description": "Piso duro de ancho (px) para re-admitir assets en la degradación de la Fase B en layouts NO hi-res (Calidad Selección v2). Hi-res nunca degrada por debajo de 1200px."
+            },
+            {
                 "key": "qa_feedback_max_chars",
                 "value": "1500",
                 "description": "Máximo de caracteres del feedback de QA inyectado en el prompt del Art Director en los retries (F1 fixes-resiliencia)."

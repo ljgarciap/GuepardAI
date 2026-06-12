@@ -47,6 +47,13 @@ try:
         conn.execute(text(
             "ALTER TABLE generation_jobs ADD COLUMN IF NOT EXISTS display_name VARCHAR(120);"
         ))
+        # Calidad de Selección de Imágenes v2 (dedup perceptual)
+        conn.execute(text(
+            "ALTER TABLE brand_assets ADD COLUMN IF NOT EXISTS perceptual_hash VARCHAR(32);"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_brand_assets_perceptual_hash ON brand_assets (perceptual_hash);"
+        ))
         conn.commit()
 except Exception as e:
     print(f"  [DB] Warning: In-place migration skipped: {e}")

@@ -107,7 +107,10 @@ class BrandAsset(Base):
     brand_id = Column(Integer, ForeignKey("brands.id"), nullable=True) # Linked to Master Brand
     brand_dna_id = Column(Integer, ForeignKey("brand_visual_dna.id"), nullable=True) # Linked to specific DNA extraction
     
-    file_hash = Column(String(64), index=True) 
+    file_hash = Column(String(64), index=True)
+    # Hash perceptual dHash 64-bit (Calidad Selección v2): duplicados VISUALES
+    # (misma foto a distintas resoluciones). Null = pendiente de backfill.
+    perceptual_hash = Column(String(32), index=True, nullable=True)
     local_path = Column(String(1024))
     
     category = Column(String(50)) 

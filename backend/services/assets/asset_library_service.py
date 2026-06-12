@@ -89,18 +89,49 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
     """
     f_hash = get_file_hash(file_path)
     filename = os.path.basename(file_path)
-    
+
     # 1. Verificar duplicados
     existing = db.query(models.BrandAsset).filter(models.BrandAsset.file_hash == f_hash)
     if not is_public:
         existing = existing.filter(models.BrandAsset.brand_id == brand_id)
     else:
         existing = existing.filter(models.BrandAsset.is_public == 1)
-        
+
     existing_record = existing.first()
     if existing_record and not force_tagging:
         print(f"  [Library] Asset already exists. Reusing.")
         return existing_record
+
+    # 1.b Dedup perceptual (Calidad Selección v2): misma foto a otra resolución.
+    # Si ya existe una variante visual de resolución >= a la nueva, se reutiliza;
+    # si la nueva es mayor, se registra (la exclusión por gemelos en Fase B
+    # neutraliza la convivencia de variantes en selección).
+    from utils.image_hash import compute_dhash
+    p_hash = compute_dhash(file_path)
+    if p_hash and not force_tagging:
+        twin_q = db.query(models.BrandAsset).filter(models.BrandAsset.perceptual_hash == p_hash)
+        if not is_public:
+            twin_q = twin_q.filter(models.BrandAsset.brand_id == brand_id)
+        else:
+            twin_q = twin_q.filter(models.BrandAsset.is_public == 1)
+        twin = twin_q.order_by(models.BrandAsset.width.desc().nullslast()).first()
+        if twin:
+            new_w = width
+            if not new_w:
+                try:
+                    from PIL import Image
+                    with Image.open(file_path) as img:
+                        new_w, height = img.size
+                        width = new_w
+                except Exception:
+                    new_w = None
+            if twin.width and new_w and new_w <= twin.width:
+                print(f"  [Library] Visual twin exists (Asset {twin.id}, {twin.width}px >= {new_w}px). Reusing.")
+                return twin
+            if twin.width is None or new_w is None:
+                # Sin dimensiones comparables: reusar el twin evita inflar la librería
+                print(f"  [Library] Visual twin exists (Asset {twin.id}, dims unknown). Reusing.")
+                return twin
 
     # 2. Semantic Analysis v19.0: VISION-FIRST Categorization
     print(f"  [Library] Analyzing NEW asset with VISION: {filename}...")
@@ -190,6 +221,7 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
     new_asset = models.BrandAsset(
         brand_id=brand_id if not is_public else None,
         file_hash=f_hash,
+        perceptual_hash=p_hash,
         local_path=file_path,
         category=category,
         tags=tags,
@@ -209,7 +241,31 @@ def register_asset(db: Session, brand_id: Optional[int], file_path: str,
     
     return new_asset
 
-def find_best_assets(db: Session, brand_id: int, keywords: List[str], 
+def expand_with_visual_twins(db: Session, asset_ids: Optional[List[int]]) -> List[int]:
+    """
+    Expande una lista de exclusión con los gemelos VISUALES (mismo
+    perceptual_hash) de los assets dados (Calidad Selección v2). Evita que dos
+    slides consecutivas reciban la misma foto registrada a distintas
+    resoluciones. Hashes null (pre-backfill) se ignoran sin error.
+    """
+    if not asset_ids:
+        return []
+    hashes = [
+        row[0] for row in db.query(models.BrandAsset.perceptual_hash)
+        .filter(models.BrandAsset.id.in_(asset_ids),
+                models.BrandAsset.perceptual_hash.isnot(None))
+        .all()
+    ]
+    expanded = set(asset_ids)
+    if hashes:
+        twins = db.query(models.BrandAsset.id).filter(
+            models.BrandAsset.perceptual_hash.in_(hashes)
+        ).all()
+        expanded.update(t[0] for t in twins)
+    return list(expanded)
+
+
+def find_best_assets(db: Session, brand_id: int, keywords: List[str],
                       category: Optional[str] = None, limit: int = 5,
                       exclude_ids: Optional[List[int]] = None) -> List[tuple]:
     """

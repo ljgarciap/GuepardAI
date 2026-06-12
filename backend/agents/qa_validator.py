@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Any, Dict, List
 from pydantic import BaseModel, Field
 from agents.base import BaseAgentTool
@@ -8,6 +9,21 @@ import models
 # Import del módulo (no del símbolo): el lookup en call-time permite que el
 # mock global de conftest sobre providers.llm_provider surta efecto siempre
 from providers import llm_provider
+
+def _resolve_assigned_asset(db, img_val):
+    """
+    Resuelve el BrandAsset detrás de PresentationSlide.assigned_image, que puede
+    guardar el ID numérico o el basename del archivo. Compartido por el
+    validador determinista y el juez LLM (Calidad Selección v2).
+    """
+    if not img_val:
+        return None
+    if str(img_val).isdigit():
+        return db.query(models.BrandAsset).get(int(img_val))
+    return db.query(models.BrandAsset).filter(
+        models.BrandAsset.local_path.contains(str(img_val))
+    ).first()
+
 
 class ValidateBrandArgs(BaseModel):
     job_id: int = Field(..., description="ID del trabajo a validar")
@@ -26,33 +42,52 @@ class ValidateBrandTool(BaseAgentTool):
                 models.PresentationSlide.status == models.PresentationSlideStatus.PLANNED
             ).all()
 
+            # Regla única de hi-res y resolución de dimensiones compartidas con la
+            # Fase B del Art Director (Calidad Selección v2)
+            from services.generation.art_director_service import _requires_hi_res, _resolve_asset_dims
+
+            # Grupos de duplicados: gemelos visuales comparten perceptual_hash;
+            # sin hash (pre-backfill) el grupo cae al ID exacto del asset
+            duplicate_groups = {}
+
             for slide in slides:
                 # Regla Determinista 1: Logos como fondos de alta resolución
                 layout = slide.layout_slug or ""
                 requires_hi_res = layout in ["cover_hero", "full_brand_overlay", "big_image", "full_bleed"] or "split" in layout
-                
-                # Check assigned image
-                img_val = slide.assigned_image
-                if img_val:
-                    # En la BD el assigned_image suele guardar el basename o el ID
-                    # Intentamos inferir la categoría si es posible
-                    asset_rec = None
-                    if str(img_val).isdigit():
-                        asset_rec = db.query(models.BrandAsset).get(int(img_val))
-                    else:
-                        asset_rec = db.query(models.BrandAsset).filter(
-                            models.BrandAsset.local_path.contains(str(img_val))
-                        ).first()
 
-                    if asset_rec and requires_hi_res and asset_rec.category in ["logos", "icons"]:
+                asset_rec = _resolve_assigned_asset(db, slide.assigned_image)
+                if asset_rec:
+                    if requires_hi_res and asset_rec.category in ["logos", "icons"]:
                         violations.append({
                             "slide_number": slide.slide_number,
                             "rule": "HI_RES_BACKGROUND_VIOLATION",
                             "message": f"El slide usa un {asset_rec.category} como imagen principal en un layout que exige foto de alta resolución ({layout})."
                         })
 
-                # Puedes agregar más reglas deterministas aquí
-                # Ejemplo: Slide text demasiado largo para un impact_number, etc.
+                    # Regla Determinista 2 (Calidad Selección v2): resolución
+                    # insuficiente para el layout FINAL del slide. Sin dimensiones
+                    # conocidas el criterio no aplica.
+                    min_required = 1200 if _requires_hi_res(layout) else 800
+                    width, _ = _resolve_asset_dims(asset_rec)
+                    if width and width < min_required:
+                        violations.append({
+                            "slide_number": slide.slide_number,
+                            "rule": "LOW_RESOLUTION_IMAGE",
+                            "message": f"El slide usa una imagen de {width}px de ancho en un layout '{layout}' que exige al menos {min_required}px (se verá pixelada)."
+                        })
+
+                    # Regla Determinista 3 (Calidad Selección v2): acumular para
+                    # detección de imagen duplicada entre slides
+                    group_key = asset_rec.perceptual_hash or f"id:{asset_rec.id}"
+                    duplicate_groups.setdefault(group_key, []).append(slide.slide_number)
+
+            for group_key, slide_numbers in duplicate_groups.items():
+                if len(slide_numbers) > 1:
+                    violations.append({
+                        "slide_number": slide_numbers[0],
+                        "rule": "DUPLICATE_IMAGE_ACROSS_SLIDES",
+                        "message": f"La misma imagen (o una variante visual idéntica) está asignada a los slides {sorted(slide_numbers)}. Cada slide debe usar una imagen distinta."
+                    })
 
             result_status = "passed" if not violations else "failed"
 
@@ -110,11 +145,28 @@ class ScoreFidelityTool(BaseAgentTool):
 
             slides_context = []
             for s in slides:
+                ad_plan = s.planning_json.get("art_director", {}) if s.planning_json else {}
+
+                # Calidad Selección v2: el juez ahora VE la imagen asignada
+                # (archivo, dimensiones, categoría, descripción, flag degraded)
+                image_context = None
+                asset_rec = _resolve_assigned_asset(db, s.assigned_image)
+                if asset_rec:
+                    image_context = {
+                        "file": os.path.basename(asset_rec.local_path or ""),
+                        "width": asset_rec.width,
+                        "height": asset_rec.height,
+                        "category": asset_rec.category,
+                        "description": (asset_rec.description or "")[:80],
+                    }
+
                 slides_context.append({
                     "number": s.slide_number,
                     "title": s.title,
                     "layout_selected": s.layout_slug,
-                    "planning_reasoning": s.planning_json.get("art_director", {}).get("reasoning", "") if s.planning_json else ""
+                    "assigned_image": image_context,
+                    "degraded_asset_quality": bool(ad_plan.get("degraded")),
+                    "planning_reasoning": ad_plan.get("reasoning", "")
                 })
 
             prompt = f"""
@@ -128,6 +180,9 @@ class ScoreFidelityTool(BaseAgentTool):
             {json.dumps(slides_context)}
             
             Determine if the selected layouts and reasoning match the brand's tone.
+            Also weigh the assigned_image of each slide: penalize visually repetitive
+            image choices across slides and slides whose degraded_asset_quality is true
+            (the image did not meet the quality bar and was admitted as a last resort).
             Output JSON:
             {{
                 "score": 0.0 to 1.0,

@@ -149,9 +149,52 @@ def _run_file_reorganization() -> dict:
         db.close()
 
 
+def _run_perceptual_hash_backfill() -> dict:
+    """
+    Calcula el dHash perceptual para assets pre-v2 (perceptual_hash IS NULL).
+    Puro PIL — no consume tokens LLM. Idempotente: re-ejecutar solo procesa
+    los que siguen en NULL (archivos ausentes/corruptos se reportan y quedan
+    NULL; la selección y QA toleran hashes nulos).
+    Spec: docs/specs/calidad-seleccion-imagenes-v2.md
+    """
+    from utils.image_hash import compute_dhash
+    from services.core import storage_service as st
+
+    summary = {"processed": 0, "failed": 0, "missing": 0}
+    db = SessionLocal()
+    try:
+        assets = db.query(models.BrandAsset).filter(
+            models.BrandAsset.perceptual_hash.is_(None)
+        ).all()
+        batch = 0
+        for a in assets:
+            try:
+                path = st.resolve(a.local_path, brand_id=a.brand_id) if a.local_path else None
+                if not path:
+                    summary["missing"] += 1
+                    continue
+                p_hash = compute_dhash(path)
+                if p_hash:
+                    a.perceptual_hash = p_hash
+                    summary["processed"] += 1
+                    batch += 1
+                    if batch % 100 == 0:
+                        db.commit()
+                else:
+                    summary["failed"] += 1
+            except Exception as e:
+                summary["failed"] += 1
+                logger.warning(f"[PHashBackfill] Asset {a.id} failed: {e}")
+        db.commit()
+        return summary
+    finally:
+        db.close()
+
+
 ALIGNMENT_REGISTRY: Dict[str, Callable[[], dict]] = {
     "visual_profile_backfill_v1": _run_visual_profile_backfill,
     "file_reorganization_v1": _run_file_reorganization,
+    "perceptual_hash_backfill_v1": _run_perceptual_hash_backfill,
 }
 
 

@@ -86,8 +86,12 @@ class TestPortfolioListing:
         target = _make_job(db_session, sample_brand.id, days_ago=3, filename="in_range.pptx")
         _make_job(db_session, sample_brand.id, days_ago=0, filename="too_new.pptx")
 
-        d_from = (datetime.date.today() - datetime.timedelta(days=4)).isoformat()
-        d_to = (datetime.date.today() - datetime.timedelta(days=3)).isoformat()
+        # created_at se sella con utcnow(); el rango debe derivarse de la MISMA
+        # base UTC, no de date.today() (local). En UTC-5 por la tarde difieren un
+        # día y el rango inclusivo dejaba fuera al target (test timezone-frágil).
+        today_utc = datetime.datetime.utcnow().date()
+        d_from = (today_utc - datetime.timedelta(days=4)).isoformat()
+        d_to = (today_utc - datetime.timedelta(days=3)).isoformat()
         res = client.get("/api/library/portfolios", params={"date_from": d_from, "date_to": d_to})
         body = res.json()
         assert body["total"] == 1

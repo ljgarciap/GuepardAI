@@ -38,6 +38,21 @@ def _requires_hi_res(layout_slug) -> bool:
     return s in ["hero", "full_brand_overlay", "big_image", "full_bleed"] or "split" in s
 
 
+def _generate_ai_asset(db: Session, job, visual_intent: str):
+    """
+    Punto único de generación IA + registro en librería (Calidad Selección v2).
+    Reutilizado por el Nivel AI de Fase B.X, la pre-degradación y la Fase E.2.
+    Devuelve el BrandAsset registrado o None si la generación falla.
+    """
+    from providers.llm_provider import generate_ai_image
+    from services.assets.asset_library_service import register_asset
+
+    gen_path = generate_ai_image(visual_intent, brand_id=job.brand_id)
+    if not gen_path:
+        return None
+    return register_asset(db, job.brand_id, gen_path, category="lifestyle_photos")
+
+
 def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False, qa_feedback: str = None):
     """
     STRATEGIC DESIGN ENGINE v4.0.
@@ -58,6 +73,9 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False,
 
     feedback_cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == "qa_feedback_max_chars").first()
     FEEDBACK_MAX = int(feedback_cfg.value) if feedback_cfg else 1500
+
+    degraded_cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == "degraded_min_resolution_px").first()
+    DEGRADED_MIN_RES = int(degraded_cfg.value) if degraded_cfg else 600
     
     slides = db.query(models.PresentationSlide).filter(
         models.PresentationSlide.job_id == job_id,
@@ -133,48 +151,47 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False,
             db.commit()
         
         # FASE B: BÚSQUEDA EN CASCADA (Protocolo v6.0)
-        from services.assets.asset_library_service import find_assets_by_tags
-        
+        from services.assets.asset_library_service import find_assets_by_tags, expand_with_visual_twins
+
         search_keywords = slide.content_json.get("visual_tags", [])
         if not search_keywords:
             search_keywords = strategy.get("suggested_keywords", [slide.title])
-        
+
         print(f"    [ArtDirector] Protocol v6.0 Sequence for Slide {slide.slide_number}:")
-        
+
+        # Calidad Selección v2: la no-repetición también excluye los gemelos
+        # VISUALES (mismo perceptual_hash) de los assets ya usados
+        exclude_pool = expand_with_visual_twins(db, used_assets)
+
         # NIVEL 1: Definición Semántica (Embedding)
-        asset_candidates = find_best_assets(db, job.brand_id, search_keywords, limit=12, exclude_ids=used_assets)
+        asset_candidates = find_best_assets(db, job.brand_id, search_keywords, limit=12, exclude_ids=exclude_pool)
         best_semantic = max([s for a, s in asset_candidates] + [0])
-        
+
         if best_semantic >= 0.60:
             print(f"      - Level 1 Success: Semantic match found ({best_semantic:.2f})")
         else:
             print(f"      - Level 1 Weak ({best_semantic:.2f}). Trying Level 2 (3-Tag Intersection)...")
             # NIVEL 2: Intersección 3 Tags
-            asset_candidates = find_assets_by_tags(db, job.brand_id, search_keywords, min_matches=3, limit=12, exclude_ids=used_assets)
-            
+            asset_candidates = find_assets_by_tags(db, job.brand_id, search_keywords, min_matches=3, limit=12, exclude_ids=exclude_pool)
+
             if asset_candidates:
                 print(f"      - Level 2 Success: 3-tag match found")
             else:
                 print(f"      - Level 2 Failed. Trying Level 3 (2-Tag Intersection)...")
                 # NIVEL 3: Intersección 2 Tags
-                asset_candidates = find_assets_by_tags(db, job.brand_id, search_keywords, min_matches=2, limit=12, exclude_ids=used_assets)
+                asset_candidates = find_assets_by_tags(db, job.brand_id, search_keywords, min_matches=2, limit=12, exclude_ids=exclude_pool)
             if asset_candidates:
                 print(f"      - Level 3 Success: 2-tag match found")
             else:
                 print(f"      - All Library Levels Failed for Slide {slide.slide_number}")
-                
+
                 # FASE B.X: GENERACIÓN BAJO DEMANDA (v7.0 "The Creator")
                 if job.allow_ai_images:
-                    print(f"    [ArtDirector] ACTION: Library empty. Triggering Gemini Creator...")
-                    from providers.llm_provider import generate_ai_image
-                    from services.assets.asset_library_service import register_asset
-
-                    gen_path = generate_ai_image(visual_intent, brand_id=job.brand_id)
-                    if gen_path:
-                        new_asset = register_asset(db, job.brand_id, gen_path, category="lifestyle_photos")
-                        if new_asset:
-                            asset_candidates = [(new_asset, 0.99)]
-                            print(f"      - Level AI Success: Created and registered Asset {new_asset.id}")
+                    print(f"    [ArtDirector] ACTION: Library empty. Triggering AI Creator...")
+                    new_asset = _generate_ai_asset(db, job, visual_intent)
+                    if new_asset:
+                        asset_candidates = [(new_asset, 0.99)]
+                        print(f"      - Level AI Success: Created and registered Asset {new_asset.id}")
                 else:
                     print(f"    [ArtDirector] ACTION: AI Disabled. Falling back to placeholder.")
 
@@ -236,46 +253,88 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False,
                 audit_metadata["rejected"].append({"reason": f"Unknown dimensions for hi-res layout", **asset_info})
 
             # ASPECT RATIO FIT (Selección de Imágenes v1): sin dimensiones el criterio no aplica
+            aspect_tolerated = False
             if res_ok:
                 aspect_diff = compute_aspect_fit(w, h, panel_geo, slide_w_in, slide_h_in)
                 if aspect_diff is not None and aspect_diff > ASPECT_TOLERANCE:
-                    if requires_hi_res:
+                    # Crop seguro (Calidad Selección v2): el render usa `cover`
+                    # (recorta, no estira); con sujeto centrado el mismatch se
+                    # penaliza en ranking en vez de vaciar el pool de fotos buenas
+                    subject_position = (profile.get("composition") or {}).get("subject_position")
+                    if requires_hi_res and subject_position != "center":
                         audit_metadata["rejected"].append({
                             "reason": f"Aspect ratio mismatch ({aspect_diff:.2f} > {ASPECT_TOLERANCE:.2f} tolerance)",
                             **asset_info
                         })
                         continue
-                    else:
-                        score = score * aspect_penalty_multiplier(aspect_diff, ASPECT_TOLERANCE)
-                        asset_info["score"] = score
+                    score = score * aspect_penalty_multiplier(aspect_diff, ASPECT_TOLERANCE)
+                    asset_info["score"] = score
+                    if requires_hi_res:
+                        # Ya pasó resolución + categoría: el crop centrado es seguro,
+                        # así que sobrevive al umbral semántico aunque la penalización
+                        # de aspect lo deje por debajo. La penalización solo lo rankea
+                        # más abajo; NO debe expulsarlo al fallback degradado (RC3).
+                        aspect_tolerated = True
+                        asset_info["note"] = f"Aspect mismatch {aspect_diff:.2f} tolerated (centered subject, cover crop); score penalized"
 
-            if score >= THRESHOLD and res_ok:
+            if (score >= THRESHOLD or aspect_tolerated) and res_ok:
                 filtered_assets.append(asset_info)
                 audit_metadata["considered"].append(asset_info)
             else:
                 audit_metadata["rejected"].append(asset_info)
 
-        # Graceful degradation fallback: if no assets passed the resolution filter, relax it
+        # PRE-DEGRADACIÓN: IA PRIMERO (Calidad Selección v2).
+        # Si el pool de calidad quedó vacío y la IA está autorizada, generar una
+        # imagen nueva ANTES de re-admitir assets rechazados. La degradación de
+        # abajo pasa a ser último recurso (IA fallida o deshabilitada).
+        degraded = False
+        if not filtered_assets and asset_candidates and job.allow_ai_images:
+            print(f"    [ArtDirector] Quality pool empty. Triggering AI Creator BEFORE degradation...")
+            new_asset = _generate_ai_asset(db, job, visual_intent)
+            if new_asset:
+                asset_info = {
+                    "id": new_asset.id,
+                    "score": 0.99,
+                    "category": new_asset.category,
+                    "desc": (new_asset.description or "AI generated image")[:80],
+                    "path": os.path.basename(new_asset.local_path),
+                    "note": "AI-generated (quality pool was empty)"
+                }
+                filtered_assets.append(asset_info)
+                audit_metadata["considered"].append(asset_info)
+                asset_candidates.append((new_asset, 0.99))
+                print(f"    [ArtDirector] AI SUCCESS: Asset {new_asset.id} replaces degradation.")
+            else:
+                print(f"    [ArtDirector] AI generation failed. Falling back to degradation with hard floors.")
+
+        # ÚLTIMO RECURSO: degradación con pisos duros (Calidad Selección v2).
+        # Hi-res: NUNCA re-admitir un asset rechazado por resolución (<1200px).
+        # No hi-res: piso configurable degraded_min_resolution_px.
         if not filtered_assets and asset_candidates:
-            print(f"    [ArtDirector] No assets passed strict resolution ({min_required}px). Relaxing filter...")
+            print(f"    [ArtDirector] No assets passed strict resolution ({min_required}px). Relaxing filter with hard floors...")
             for asset, score in asset_candidates:
                 # Still reject logos/icons for backgrounds if it requires hi-res
                 if requires_hi_res and asset.category in ["logos", "icons"]:
                     continue
-                # STRICT FLOOR: NEVER allow images with width < 400px to be used as backgrounds
                 asset_w, _ = _resolve_asset_dims(asset)
-                if requires_hi_res and asset_w and asset_w < 400:
+                if requires_hi_res and (not asset_w or asset_w < 1200):
                     continue
-                    
+                if not requires_hi_res and asset_w and asset_w < DEGRADED_MIN_RES:
+                    continue
+
                 asset_info = {
-                    "id": asset.id, 
-                    "score": score, 
-                    "category": asset.category, 
+                    "id": asset.id,
+                    "score": score,
+                    "category": asset.category,
                     "desc": asset.description[:80],
-                    "path": os.path.basename(asset.local_path)
+                    "path": os.path.basename(asset.local_path),
+                    "note": "Admitted by degraded fallback"
                 }
                 filtered_assets.append(asset_info)
                 audit_metadata["considered"].append(asset_info)
+            if filtered_assets:
+                degraded = True
+        audit_metadata["degraded"] = degraded
 
         # FASE C: DIRECCIÓN DE ARTE (Ejecución con Memoria Visual)
         visual_history = []
@@ -370,18 +429,13 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False,
             print(f"    [ArtDirector] FORCING: LLM rejected/missed candidates. Using best library match: {filtered_assets[0]['id']}")
             primary_id = filtered_assets[0]["id"]
         
-        # FASE E.2: THE CREATOR (v8.5) - Solo si de verdad NO hay nada en la librería de calidad
+        # FASE E.2: THE CREATOR (v8.5) - Red de seguridad si aún no hay asset
         if not primary_id and job.allow_ai_images:
-            print(f"    [ArtDirector] ACTION: Quality library empty. Triggering Gemini Creator...")
-            from providers.llm_provider import generate_ai_image
-            from services.assets.asset_library_service import register_asset
-
-            gen_path = generate_ai_image(visual_intent, brand_id=job.brand_id)
-            if gen_path:
-                new_asset = register_asset(db, job.brand_id, gen_path, category="lifestyle_photos")
-                if new_asset:
-                    primary_id = new_asset.id
-                    print(f"    [ArtDirector] SUCCESS: AI Image generated and assigned.")
+            print(f"    [ArtDirector] ACTION: Quality library empty. Triggering AI Creator...")
+            new_asset = _generate_ai_asset(db, job, visual_intent)
+            if new_asset:
+                primary_id = new_asset.id
+                print(f"    [ArtDirector] SUCCESS: AI Image generated and assigned.")
         
         # v8.66: Recovery Floor configurable vía asset_score_threshold (Selección de Imágenes v1)
         if not primary_id and asset_candidates:
@@ -443,6 +497,7 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False,
             "selected_asset": primary_id,
             "logic": "Designer Mode v3.0",
             "reasoning": raw_reasoning,
+            "degraded": degraded,
             "layout_override": layout_override,
             "layout_override_rejected": override_rejected_info,
             "canvas_elements": decision.get("canvas_elements", []),

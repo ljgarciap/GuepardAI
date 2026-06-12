@@ -17,10 +17,7 @@ from database import SessionLocal, engine
 import models
 
 
-def seed_data():
-    db = SessionLocal()
-    try:
-        configs = [
+CONFIGS = [
 
             # ─────────────────────────────────────────────────────
             # INFRAESTRUCTURA
@@ -303,6 +300,90 @@ You are responsible for the VISUAL FIDELITY and BRAND ADHERENCE of a high-stakes
                 "description": "Art Director v5.1 — Visual Profile Awareness (negative space, subject position, layout suitability)."
             },
             {
+                # v3 = v2 + correct layout slug vocabulary (hero/split/pillars/data_grid/custom_canvas)
+                # Seeder skips existing keys — deployed DBs pick this up on next restart.
+                "key": "prompt_analyst_v3",
+                "value": """You are a Strategic Design Analyst for executive presentations.
+Analyze the slide content and define the Visual Strategy.
+
+SLIDE CONTENT:
+Title: {slide_title}
+Bullets: {bullets}
+RAG Context: {rag_context}
+
+GRAMMAR TYPE RULES (use EXACTLY these values):
+- "hero": Cover slides or Section Breaks. Full-screen image with title overlay.
+- "split": Content with supporting image. Image on one side, text on the other.
+- "data_grid": Quantitative data, KPIs, or dashboards (3-6 metrics).
+- "pillars": 3-4 distinct columns or strategic pillars.
+- "custom_canvas": Full creative freedom. Complex or mixed layouts.
+
+CRITICAL INSTRUCTIONS FOR "visual_intent" AND "suggested_keywords":
+1. STRICT NO-TEXT & NO-GRAPHIC RULE: The "visual_intent" description MUST describe a high-end, metaphorical, realistic corporate lifestyle photograph or symbolic object. It MUST NOT describe any charts, diagrams, graphs, tables, dashboards, screens, mockups, or user interfaces.
+2. METAPHORICAL REPRESENTATION OF DATA: If the slide contains metrics, financial data, or statistics, DO NOT ask for a drawing of a chart or graphic. Instead, represent it using a real-world metaphor (e.g. "a modern suspension bridge built of concrete and steel", "a lush green plant sprout growing in soil on a clean corporate desk with natural lighting").
+3. NO FORBIDDEN WORDS: Do NOT include words like "chart", "diagram", "graph", "infographic", "table", "metric", "dashboard", "screen", "analytics", "numbers", "letters", "words", "logo", "text" in the "visual_intent" or "suggested_keywords".
+
+OUTPUT JSON:
+{{
+  "visual_intent": "...",
+  "suggested_keywords": ["..."],
+  "grammar_type": "...",
+  "metric_value": null
+}}""",
+                "description": "Strategic Analyst v8.8 — Corrected layout slug vocabulary (hero/split/pillars/data_grid/custom_canvas)."
+            },
+            {
+                # v3 = v2 + corrected photography instruction slugs (hero/split instead of composition_hero/composition_split)
+                # Seeder skips existing keys — deployed DBs pick this up on next restart.
+                "key": "prompt_art_director_v3",
+                "value": """# ROLE: Senior Executive Art Director
+You are responsible for the VISUAL FIDELITY and BRAND ADHERENCE of a high-stakes presentation.
+
+# BRAND ARTISTIC ESSENCE (READ CAREFULLY):
+{art_direction_note}
+
+# BRAND VISION DNA (Extracted by Visual Analyst):
+{vision_dna_json}
+
+# PREMIUM PATTERNS (Available for use):
+{premium_patterns_json}
+
+# STRATEGIC CONTEXT:
+- Visual Strategy: {visual_strategy}
+- Slide Title: {slide_title}
+- Content: {bullets}
+
+# AVAILABLE BRAND ASSETS (From Official Library):
+{found_assets}
+
+# VISUAL HISTORY (DO NOT REPEAT):
+{visual_history}
+
+# REPLIT-GRADE DESIGN INSTRUCTIONS (Designer Mode v5.2):
+1. PHOTOGRAPHY FIRST: For 'split' and 'hero' layouts, you MUST prioritize 'lifestyle_photos'. AVOID using a single 'design_element' to fill these layouts.
+2. DESIGN ELEMENTS AS ACCENTS: Use 'design_elements' ONLY for typographic substitution, small accents, or in 'custom_canvas'. NEVER scale them to fill more than 20% of the slide.
+3. QUALITY GUARD: NEVER select assets categorized as 'noise'.
+4. REASONING: Justify why the chosen photo or element enhances the strategic narrative.
+5. VARIETY ENFORCEMENT: Review the VISUAL HISTORY. If the previous slides used 'split' or 'hero', you MUST choose a different layout ('pillars', 'data_grid', 'custom_canvas'). DO NOT repeat layouts consecutively.
+6. COLLISION SAFE-ZONE: The Title and Subtitle occupy the top zone (y=0 to y=25). NEVER place canvas_elements above y=25. Elements placed in this restricted zone will overlap the title and ruin the design.
+7. VISUAL PROFILE AWARENESS: Some assets include a 'visual_profile' (orientation, subject_position, negative_space, layout_suitability). STRONGLY PREFER assets whose 'negative_space' zones overlap the layout's text area and whose 'layout_suitability' includes the role of the target layout (hero, split, accent...). NEVER place text over the subject: if 'subject_position' is 'left', text belongs on the right, and vice versa.
+
+# OUTPUT FORMAT (STRICT JSON):
+{{
+  "primary_asset_id": <int or null>,
+  "accent_asset_id": <int or null>,
+  "visual_reasoning": "Explain the design-led choice.",
+  "suggested_layout_override": "hero | data_grid | pillars | split | custom_canvas",
+  "canvas_elements": [
+    {{{{ "type": "typo_substitution", "text": "Loyalty", "char": "a", "path": "asset_basename", "x": 10, "y": 40, "size": 90 }}}},
+    {{{{ "type": "image", "path": "person_photo", "x": 60, "y": 30, "w": 40, "h": 80 }}}},
+    {{{{ "type": "text", "content": "Data to Growth", "x": 10, "y": 55, "size": 24, "color": "#FFFFFF" }}}}
+  ]
+}}
+""",
+                "description": "Art Director v5.2 — Corrected layout slug vocabulary (hero/split instead of composition_hero/composition_split)."
+            },
+            {
                 "key": "prompt_classifier_v1",
                 "value": """# ROLE: Expert Visual Asset Analyst & Art Director
 Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
@@ -373,9 +454,13 @@ Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
                 "value": "true",
                 "description": "Determina si el footer/firma está habilitado de forma global."
             }
-        ]
+]
 
-        for cfg in configs:
+
+def seed_data():
+    db = SessionLocal()
+    try:
+        for cfg in CONFIGS:
             existing = db.query(models.SystemConfig).filter(
                 models.SystemConfig.key == cfg["key"]
             ).first()

@@ -3,10 +3,6 @@ import json
 import time
 import re
 from typing import List, Optional, Union
-try:
-    import google.generativeai as genai
-except ImportError:
-    genai = None  # Gemini not available — use OpenRouter/Mistral/Anthropic instead
 import openai
 import anthropic
 from mistralai import Mistral
@@ -188,23 +184,20 @@ def _generate_json_raw(prompt: str, model: Optional[str] = None, specialization:
             
             # 1. Routes according to model name content
             if "gemini" in current_model.lower():
-                # NATIVE GEMINI
+                # NATIVE GEMINI (google-genai SDK)
                 gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-                if not gem_key or genai is None: 
+                if not gem_key or google_genai is None:
                     raise ValueError("Gemini key missing or library not installed")
-                genai.configure(api_key=gem_key)
-                # v23.7: Use cleaned model name (stripping 'models/') to avoid 404s
-                m = genai.GenerativeModel(api_model_name)
-                # v8.54: Added mandatory timeout to prevent hangs
-                response = m.generate_content(
-                    prompt, 
-                    generation_config=genai.GenerationConfig(temperature=0.3, response_mime_type="application/json"),
-                    request_options={"timeout": 60} 
+                gemini_client = google_genai.Client(api_key=gem_key)
+                response = gemini_client.models.generate_content(
+                    model=api_model_name,
+                    contents=prompt,
+                    config=genai_types.GenerateContentConfig(
+                        temperature=0.3,
+                        response_mime_type="application/json"
+                    )
                 )
-                # LOG AUDIT (v25.0)
                 log_audit(f"GEN_JSON_{current_model}", f"PROMPT:\n{prompt}\n\nRESPONSE:\n{response.text}")
-                
-                # v25.1: Aggressive JSON cleaning
                 clean_text = clean_json_string(response.text)
                 return json.loads(clean_text)
                 
@@ -269,10 +262,15 @@ def _generate_json_raw(prompt: str, model: Optional[str] = None, specialization:
                     time.sleep(2)
                     try:
                         if "gemini" in api_model_name.lower():
-                            if "flash" in api_model_name:
-                                res = genai.GenerativeModel(api_model_name).generate_content(prompt, generation_config={"response_mime_type": "application/json"})
-                            else:
-                                res = genai.GenerativeModel(api_model_name).generate_content(prompt)
+                            gemini_client_retry = google_genai.Client(api_key=gem_key)
+                            res = gemini_client_retry.models.generate_content(
+                                model=api_model_name,
+                                contents=prompt,
+                                config=genai_types.GenerateContentConfig(
+                                    temperature=0.3,
+                                    response_mime_type="application/json"
+                                )
+                            )
                             content = res.text
                         elif "mistral" in current_model.lower():
                             m_slug = current_model.replace("mistral/", "")
@@ -389,46 +387,28 @@ def _generate_vision_json_raw(prompt: str, image_paths: List[str], model: Option
             print(f"  [Vision] Attempting with {current_model}...", flush=True)
             
             if "gemini" in current_model.lower():
-                # ADAPTADOR NATIVO GEMINI
+                # NATIVE GEMINI VISION (google-genai SDK)
                 gem_key = get_system_config("gemini_api_key", None) or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-                if not gem_key or genai is None:
+                if not gem_key or google_genai is None:
                     raise ValueError("Gemini key missing or library not installed")
-                genai.configure(api_key=gem_key)
-                
-                # The adapter handles the correct structure according to the SDK
+
                 m_name = current_model.replace("models/", "") if "gemini" in current_model.lower() else current_model
-                # But if it fails with models/, the adapter must know how to retry without it or use the base name
-                
-                try:
-                    m = genai.GenerativeModel(m_name)
-                    content = [prompt]
-                    for img_data in prepared_imgs:
-                        content.append({"mime_type": "image/jpeg", "data": img_data})
-                    
-                    m = genai.GenerativeModel(m_name)
-                    content = [prompt]
-                    for img_data in prepared_imgs:
-                        content.append({"mime_type": "image/jpeg", "data": img_data})
-                    
-                    response = m.generate_content(
-                        content, 
-                        generation_config=genai.GenerationConfig(
-                            temperature=0.1, 
-                            response_mime_type="application/json"
-                        ),
-                        request_options={"timeout": 60} # v8.54: Vision Timeout
+                gemini_client = google_genai.Client(api_key=gem_key)
+                contents = [genai_types.Part(text=prompt)]
+                for img_data in prepared_imgs:
+                    contents.append(genai_types.Part(
+                        inline_data=genai_types.Blob(mime_type="image/jpeg", data=img_data)
+                    ))
+                response = gemini_client.models.generate_content(
+                    model=m_name,
+                    contents=contents,
+                    config=genai_types.GenerateContentConfig(
+                        temperature=0.1,
+                        response_mime_type="application/json"
                     )
-                    # LOG AUDIT (v25.0)
-                    log_audit(f"VISION_JSON_{current_model}", f"PROMPT:\n{prompt}\n\nRESPONSE:\n{response.text}")
-                    return json.loads(response.text)
-                except Exception as gem_err:
-                    if "not found" in str(gem_err).lower() and "models/" in m_name:
-                        # Reintento inteligente del adaptador: quitar prefijo
-                        print(f"  [Vision] Gemini 404 with prefix. Retrying without 'models/'...", flush=True)
-                        m = genai.GenerativeModel(m_name.replace("models/", ""))
-                        response = m.generate_content(content, generation_config=genai.GenerationConfig(temperature=0.1, response_mime_type="application/json"), request_options={"timeout": 60})
-                        return json.loads(response.text)
-                    raise gem_err
+                )
+                log_audit(f"VISION_JSON_{current_model}", f"PROMPT:\n{prompt}\n\nRESPONSE:\n{response.text}")
+                return json.loads(response.text)
                 
             elif "mistral" in current_model.lower() or "pixtral" in current_model.lower():
                 # NATIVE MISTRAL VISION (Pixtral 12B / Large)
@@ -504,7 +484,20 @@ def _generate_vision_json_raw(prompt: str, image_paths: List[str], model: Option
                     time.sleep(3)
                     try:
                         if "gemini" in current_model.lower():
-                            res = genai.GenerativeModel(current_model).generate_content(msg_content, generation_config={"response_mime_type": "application/json"})
+                            gemini_client_retry = google_genai.Client(api_key=gem_key)
+                            contents_retry = [genai_types.Part(text=prompt)]
+                            for img_data in prepared_imgs:
+                                contents_retry.append(genai_types.Part(
+                                    inline_data=genai_types.Blob(mime_type="image/jpeg", data=img_data)
+                                ))
+                            res = gemini_client_retry.models.generate_content(
+                                model=current_model.replace("models/", ""),
+                                contents=contents_retry,
+                                config=genai_types.GenerateContentConfig(
+                                    temperature=0.1,
+                                    response_mime_type="application/json"
+                                )
+                            )
                             content_text = res.text
                         elif "mistral" in current_model.lower() or "pixtral" in current_model.lower():
                             m_slug = current_model.replace("mistral/", "")
@@ -774,73 +767,47 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
             print(f"  [Embeddings] Attempting with {current_model}...", flush=True)
             
             if "gemini" in current_model.lower() or "text-embedding" in current_model.lower() or "embedding" in current_model.lower():
-                # NATIVE GOOGLE EMBEDDINGS (Text or Multimodal)
+                # NATIVE GOOGLE EMBEDDINGS (google-genai SDK)
                 gem_key = get_system_config("gemini_api_key", None) or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-                if not gem_key or genai is None:
+                if not gem_key or google_genai is None:
                     raise ValueError("Gemini key missing or library not installed")
-                genai.configure(api_key=gem_key)
-                
+
+                from google.genai.types import EmbedContentConfig
+                gemini_client = google_genai.Client(api_key=gem_key)
+
                 results = []
                 for item in inputs:
                     if not item or (isinstance(item, str) and not item.strip()):
                         print("  [Gemini DEBUG] Skipping empty item", flush=True)
                         results.append(None)
                         continue
-                        
+
                     try:
-                        # ADAPTADOR INTELIGENTE (v4.0): Forzamos la dimensión a 1024 nativamente
                         m_name = current_model.replace("models/", "")
-                        
-                        try:
-                            if isinstance(item, str):
-                                print(f"  [Gemini DEBUG] Embedding string of len {len(item)}", flush=True)
-                                res = genai.embed_content(
-                                    model=m_name, content=item, 
-                                    task_type="retrieval_document",
+
+                        if isinstance(item, str):
+                            print(f"  [Gemini DEBUG] Embedding string of len {len(item)}", flush=True)
+                            response = gemini_client.models.embed_content(
+                                model=m_name,
+                                contents=item,
+                                config=EmbedContentConfig(
+                                    task_type="RETRIEVAL_DOCUMENT",
                                     output_dimensionality=TARGET_DIM
                                 )
-                            else:
-                                print(f"  [Gemini DEBUG] Embedding bytes of len {len(item)}", flush=True)
-                                res = genai.embed_content(
-                                    model=m_name,
-                                    content={'mime_type': 'image/jpeg', 'data': item},
-                                    task_type="retrieval_document",
-                                    output_dimensionality=TARGET_DIM
-                                )
-                            
-                            results.append(res["embedding"])
-                        except Exception as gem_err:
-                            if ("not found" in str(gem_err).lower() or "404" in str(gem_err)) and "models/" in m_name:
-                                alt_name = m_name.replace("models/", "")
-                                print(f"  [Embeddings] 404 with prefix. Retrying with: {alt_name}", flush=True)
-                                if isinstance(item, str):
-                                    res = genai.embed_content(
-                                        model=alt_name, content=item, 
-                                        task_type="retrieval_document",
-                                        output_dimensionality=TARGET_DIM
-                                    )
-                                else:
-                                    res = genai.embed_content(
-                                        model=alt_name,
-                                        content={'mime_type': 'image/jpeg', 'data': item},
-                                        task_type="retrieval_document",
-                                        output_dimensionality=TARGET_DIM
-                                    )
-                                results.append(res["embedding"])
-                            else:
-                                print(f"  [Embeddings] Gemini FATAL error (prefix={m_name}): {gem_err}", flush=True)
-                                raise gem_err
+                            )
+                            results.append(response.embeddings[0].values)
+                        else:
+                            # Image embedding not supported by google-genai text models
+                            print("  [Gemini DEBUG] Image embedding not supported, skipping", flush=True)
+                            results.append(None)
                     except Exception as e:
                         err_msg = str(e).lower()
                         print(f"  [Embeddings] Item failure in batch: {e}", flush=True)
-                        
-                        # CRITICAL: If it's a quota or auth error, don't continue the batch.
                         if "429" in err_msg or "quota" in err_msg or "401" in err_msg:
-                            print(f"  [Embeddings] FATAL QUOTA/AUTH ERROR DETECTED. Aborting batch.", flush=True)
+                            print("  [Embeddings] FATAL QUOTA/AUTH ERROR DETECTED. Aborting batch.", flush=True)
                             raise e
-                            
                         results.append(None)
-                
+
                 if any(r is not None for r in results):
                     return results
                 else:
@@ -919,16 +886,16 @@ def get_embedding(text: str) -> Optional[list]:
 @retry_with_backoff(retries=2)
 def generate_ai_image(prompt: str, brand_id=None) -> Optional[str]:
     """
-    Genera una imagen usando Google IMAGEN 4.0 (v8.52 - Protocolo Moderno).
+    3-tier image generation routing:
+    Tier 1: imagen-4.0-fast-generate-001 (Google, separate quota, fastest)
+    Tier 2: imagen-4.0-generate-001 (Google, standard quota, fallback)
+    Tier 3: gpt-image-1 (OpenAI, last resort — returns b64_json, not URL)
     brand_id (storage v1): destino en el árbol de assets de la marca.
     """
-    gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-
-    # Pre-build path and prompt to be reused by both Imagen and DALL-E 3
     from services.core.storage_service import brand_assets_dir
     output_path = os.path.join(brand_assets_dir(brand_id), f"ai_v4_{int(time.time())}.png")
-    
-    # v8.68: Anti-Diagram & Spelling Protection (Hardened)
+
+    # Anti-diagram & spelling protection
     forbidden = [
         "diagram", "infographic", "text", "chart", "table", "graph", "label", "writing", "logo", "brand",
         "dashboard", "screen", "analytics", "metrics", "numbers", "letters", "words", "charts", "diagrams",
@@ -937,8 +904,7 @@ def generate_ai_image(prompt: str, brand_id=None) -> Optional[str]:
     clean_intent = prompt.lower()
     for x in forbidden:
         clean_intent = clean_intent.replace(x, "business concept")
-    
-    # v8.67: The "Board-Ready" Aesthetic Protocol (Polished to strictly avoid text/charts)
+
     clean_prompt = (
         f"High-end, professional corporate lifestyle photography of: {clean_intent}. "
         "Clean and modern architectural composition, shallow depth of field. "
@@ -949,79 +915,90 @@ def generate_ai_image(prompt: str, brand_id=None) -> Optional[str]:
         "Focus purely on real-life photography of people, environments, or symbolic objects."
     )
 
-    # 1. PRIMARY: Google Imagen 4.0
+    gem_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+
+    # TIER 1: imagen-4.0-fast-generate-001 (separate quota bucket — faster)
     if gem_key and google_genai is not None:
         try:
-            # v8.65: Audited Imagen 4.0 Call
-            print(f"  [ImageGen] INVOKING IMAGEN 4.0: models/imagen-4.0-generate-001 (High Timeout Mode)")
-            client = google_genai.Client(api_key=gem_key, http_options={'timeout': 600})
-            
-            # LOG AUDIT PRE-CALL
-            log_audit("IMAGE_GEN_REQUEST", f"MODEL: imagen-4.0-generate-001\nPROMPT: {clean_prompt}")
-
+            print("  [ImageGen] TIER 1: imagen-4.0-fast-generate-001", flush=True)
+            # CRITICAL: no http_options — passing http_options={'timeout': N} causes ReadTimeout
+            client = google_genai.Client(api_key=gem_key)
+            log_audit("IMAGE_GEN_REQUEST", f"MODEL: imagen-4.0-fast-generate-001\nPROMPT: {clean_prompt}")
             response = client.models.generate_images(
-                model='imagen-4.0-generate-001',
+                model="imagen-4.0-fast-generate-001",
                 prompt=clean_prompt,
                 config=genai_types.GenerateImagesConfig(
                     number_of_images=1,
                     aspect_ratio="16:9"
                 )
             )
-            
             if response and response.generated_images:
                 img_bytes = response.generated_images[0].image.image_bytes
                 with open(output_path, "wb") as f:
                     f.write(img_bytes)
-                
-                # LOG AUDIT SUCCESS
-                log_audit("IMAGE_GEN_SUCCESS", f"ASSET CREATED: {output_path}")
-                print(f"  [ImageGen] SUCCESS: Created Imagen 4.0 asset: {output_path}")
+                log_audit("IMAGE_GEN_SUCCESS", f"TIER 1 ASSET CREATED: {output_path}")
+                print(f"  [ImageGen] TIER 1 SUCCESS: {output_path}", flush=True)
                 return output_path
-                
-            print("  [ImageGen] Imagen 4.0 failed: No images in response. Proceeding to fallback...")
-            
+            print("  [ImageGen] TIER 1: No images in response. Falling to Tier 2...", flush=True)
         except Exception as e:
-            print(f"  [ImageGen] Imagen 4.0 API ERROR: {e}. Proceeding to fallback...")
+            print(f"  [ImageGen] TIER 1 ERROR: {e}. Falling to Tier 2...", flush=True)
 
+    # TIER 2: imagen-4.0-generate-001 (standard quota)
+    if gem_key and google_genai is not None:
+        try:
+            print("  [ImageGen] TIER 2: imagen-4.0-generate-001", flush=True)
+            client = google_genai.Client(api_key=gem_key)
+            log_audit("IMAGE_GEN_REQUEST", f"MODEL: imagen-4.0-generate-001\nPROMPT: {clean_prompt}")
+            response = client.models.generate_images(
+                model="imagen-4.0-generate-001",
+                prompt=clean_prompt,
+                config=genai_types.GenerateImagesConfig(
+                    number_of_images=1,
+                    aspect_ratio="16:9"
+                )
+            )
+            if response and response.generated_images:
+                img_bytes = response.generated_images[0].image.image_bytes
+                with open(output_path, "wb") as f:
+                    f.write(img_bytes)
+                log_audit("IMAGE_GEN_SUCCESS", f"TIER 2 ASSET CREATED: {output_path}")
+                print(f"  [ImageGen] TIER 2 SUCCESS: {output_path}", flush=True)
+                return output_path
+            print("  [ImageGen] TIER 2: No images in response. Falling to Tier 3...", flush=True)
+        except Exception as e:
+            print(f"  [ImageGen] TIER 2 ERROR: {e}. Falling to Tier 3...", flush=True)
     else:
-        print("  [ImageGen] Imagen 4.0 skipped: SDK or API Key missing. Proceeding to fallback...")
+        print("  [ImageGen] TIER 1+2 skipped: SDK or API Key missing. Falling to Tier 3...", flush=True)
 
-    # 2. FALLBACK: OpenAI DALL-E 3
+    # TIER 3: gpt-image-1 (returns b64_json, NOT a URL)
     ope_key = os.getenv("OPENAI_API_KEY")
     if ope_key:
-        print("  [ImageGen] INVOKING FALLBACK: OpenAI DALL-E 3...")
         try:
-            import requests
+            import base64
+            print("  [ImageGen] TIER 3: gpt-image-1", flush=True)
             client_openai = openai.OpenAI(api_key=ope_key)
-            
-            # LOG AUDIT PRE-CALL
-            log_audit("IMAGE_GEN_REQUEST_FALLBACK_DALLE", f"MODEL: dall-e-3\nPROMPT: {clean_prompt}")
-            
+            log_audit("IMAGE_GEN_REQUEST", f"MODEL: gpt-image-1\nPROMPT: {clean_prompt}")
             response_openai = client_openai.images.generate(
-                model="dall-e-3",
+                model="gpt-image-1",
                 prompt=clean_prompt,
-                size="1792x1024", # 16:9 Landscape for DALL-E 3
-                quality="standard",
+                size="1536x1024",
+                quality="medium",
                 n=1,
             )
-            
             if response_openai and response_openai.data:
-                image_url = response_openai.data[0].url
-                img_data = requests.get(image_url).content
-                with open(output_path, "wb") as f:
-                    f.write(img_data)
-                
-                # LOG AUDIT SUCCESS
-                log_audit("IMAGE_GEN_SUCCESS_FALLBACK_DALLE", f"ASSET CREATED VIA DALL-E 3: {output_path}")
-                print(f"  [ImageGen] SUCCESS: Created DALL-E 3 asset: {output_path}")
-                return output_path
-                
-            print("  [ImageGen] DALL-E 3 failed: No data in response.")
-        except Exception as dalle_err:
-            print(f"  [ImageGen] DALL-E 3 Fallback ERROR: {dalle_err}")
-            
+                b64_data = response_openai.data[0].b64_json
+                if b64_data:
+                    img_data = base64.b64decode(b64_data)
+                    with open(output_path, "wb") as f:
+                        f.write(img_data)
+                    log_audit("IMAGE_GEN_SUCCESS", f"TIER 3 ASSET CREATED: {output_path}")
+                    print(f"  [ImageGen] TIER 3 SUCCESS: {output_path}", flush=True)
+                    return output_path
+            print("  [ImageGen] TIER 3: No data in response.", flush=True)
+        except Exception as e:
+            print(f"  [ImageGen] TIER 3 ERROR: {e}", flush=True)
     else:
-        print("  [ImageGen] DALL-E 3 skipped: OPENAI_API_KEY missing.")
+        print("  [ImageGen] TIER 3 skipped: OPENAI_API_KEY missing.", flush=True)
 
     return None
 

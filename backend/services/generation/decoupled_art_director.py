@@ -1,6 +1,5 @@
 import os
 import json
-import asyncio
 import re
 import base64
 import logging
@@ -100,7 +99,6 @@ Make it look PREMIUM and EXPENSIVE. Use glass panels (high transparency, rounded
     def __init__(self, db: Session, job_id: int, uploads_dir: str):
         super().__init__(db, job_id, is_premium=True)
         self.uploads_dir = uploads_dir
-        self.sem = asyncio.Semaphore(5)  # Restored concurrency; LLM provider will throttle locally if needed
         
     def embed_base64_images_svg(self, svg_code: str) -> str:
         def replacer(match):
@@ -127,60 +125,25 @@ Make it look PREMIUM and EXPENSIVE. Use glass panels (high transparency, rounded
         
         return re.sub(r'(data:image/[a-zA-Z0-9]+;base64,)([a-zA-Z0-9+/=]+)([\"\'])', fix_padding, svg_code)
 
-    async def _generate_premium_geometry(self, title: str, grammar_type: str, design_system: dict, assigned_image: str, slide_number: int) -> str:
-        """
-        VLM Autónomo: Llama 3.2 Vision analiza la foto y devuelve todo el JSON orgánico de diseño.
-        """
-        from services.rendering.vision_layout_engine import generate_autonomous_layout
-        
-        logger.info(f"  [PremiumArtDirector] Autonomous VLM Design for Slide {slide_number}...")
-        
-        geometry = await asyncio.to_thread(
-            generate_autonomous_layout,
-            assigned_image,
-            title,
-            grammar_type,
-            design_system
-        )
-        
-        if not geometry or "glass_panels" not in geometry:
-            logger.warning(f"[PremiumArtDirector] VLM failed to return valid JSON. Using fallback.")
-            geometry = {
-                "glass_panels": [{"x_pct": 5, "y_pct": 20, "w_pct": 40, "h_pct": 60, "color_hex": "#00539F", "transparency": 0.85, "rounded": True, "shadow": True}],
-                "image_treatment": {"style": "full_bleed"}
-            }
-        
+    def _generate_premium_geometry(self, title: str, grammar_type: str, design_system: dict, assigned_image: str, slide_number: int) -> str:
+        geometry = {
+            "glass_panels": [{"x_pct": 5, "y_pct": 20, "w_pct": 40, "h_pct": 60,
+                               "color_hex": "#00539F", "transparency": 0.85,
+                               "rounded": True, "shadow": True}],
+            "image_treatment": {"style": "full_bleed"}
+        }
         return json.dumps(geometry)
 
     def enrich_design(self, base_manifest, content_manifest, design_system) -> DesignManifest:
-        async def process_slides():
-            tasks = []
-            for d_slide in base_manifest.slides:
-                title = "Slide Title"
-                for c_slide in content_manifest.slides:
-                    if c_slide.slide_number == d_slide.slide_number:
-                        title = c_slide.title
-                        break
-                        
-                tasks.append(self._process_slide(d_slide, title, design_system))
-                
-            return await asyncio.gather(*tasks)
-            
-        processed_slides = asyncio.run(process_slides())
-        base_manifest.slides = processed_slides
-        return base_manifest
-        
-    async def _process_slide(self, base_design_slide, title, design_system):
-        async with self.sem:
-            geometry_str = await self._generate_premium_geometry(
+        title_map = {c.slide_number: c.title for c in content_manifest.slides}
+        for d_slide in base_manifest.slides:
+            title = title_map.get(d_slide.slide_number, "Slide Title")
+            geometry_str = self._generate_premium_geometry(
                 title=title,
-                grammar_type=base_design_slide.layout_type,
+                grammar_type=d_slide.layout_type,
                 design_system=design_system,
-                assigned_image=base_design_slide.primary_asset_path or "",
-                slide_number=base_design_slide.slide_number
+                assigned_image=d_slide.primary_asset_path or "",
+                slide_number=d_slide.slide_number
             )
-            
-            # Pasamos el JSON de geometría en el elemento "elements" u otro lugar
-            import json
-            base_design_slide.background_asset_path = geometry_str # Overload this field for now
-            return base_design_slide
+            d_slide.background_asset_path = geometry_str
+        return base_manifest

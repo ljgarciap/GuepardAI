@@ -63,6 +63,13 @@ try:
         conn.execute(text(
             "ALTER TABLE ingestion_jobs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP;"
         ))
+        # Fix 1 — QA retry per slide
+        conn.execute(text(
+            "ALTER TABLE presentation_slides ADD COLUMN IF NOT EXISTS qa_retry_count INTEGER DEFAULT 0;"
+        ))
+        conn.execute(text(
+            "ALTER TABLE presentation_slides ADD COLUMN IF NOT EXISTS qa_forced INTEGER DEFAULT 0;"
+        ))
         conn.commit()
 except Exception as e:
     print(f"  [DB] Warning: In-place migration skipped: {e}")

@@ -32,7 +32,7 @@ class TestAgentOrchestratorPipeline:
         orchestrator.generate_text = MagicMock(return_value={"slides": []})
         orchestrator.compose_layout = MagicMock(return_value={"success": True})
         orchestrator.validate_brand = MagicMock(return_value={"status": "passed", "violations": []})
-        orchestrator.score_fidelity = MagicMock(return_value={"score": 0.92, "needs_rework": False})
+        orchestrator.score_fidelity = MagicMock(return_value=[])  # List[Dict] — no failures by default
         orchestrator.render_pptx = MagicMock(return_value={"output_path": "/outputs/test.pptx"})
         return orchestrator
 
@@ -80,7 +80,7 @@ class TestAgentOrchestratorPipeline:
     # ─────────────────────────────────────────────────────────────────────────
     # Test 2: QA falla una vez → reintenta y luego aprueba
     # ─────────────────────────────────────────────────────────────────────────
-    def test_pipeline_qa_retry_on_first_failure(self, db_session, sample_job):
+    def test_pipeline_qa_retry_on_first_failure(self, db_session, sample_job, sample_slides):
         """
         GIVEN: el QA falla en el primer intento pero aprueba en el segundo
         WHEN: se ejecuta run_generation_pipeline
@@ -89,10 +89,10 @@ class TestAgentOrchestratorPipeline:
         """
         orchestrator = self._make_orchestrator_with_mock_tools()
 
-        # QA: falla en primer call, aprueba en segundo call
+        # QA: falla slide 1 en primer call, aprueba en segundo call — List[Dict] shape
         orchestrator.score_fidelity.side_effect = [
-            {"score": 0.3, "needs_rework": True, "reasoning": "Color mismatch"},   # Intento 1: FALLA
-            {"score": 0.95, "needs_rework": False, "reasoning": "Looks great now"}, # Intento 2: APRUEBA
+            [{"slide_number": 1, "score": 0.3, "needs_rework": True, "reasoning": "Color mismatch"}],   # Intento 1: FALLA
+            [{"slide_number": 1, "score": 0.95, "needs_rework": False, "reasoning": "Looks great now"}], # Intento 2: APRUEBA
         ]
 
         req_data = {"prompt": "Test", "style_filename": "s.pptx", "knowledge_filename": "k.pdf",
@@ -110,7 +110,7 @@ class TestAgentOrchestratorPipeline:
     # ─────────────────────────────────────────────────────────────────────────
     # Test 3: QA falla todas las veces → fuerza aceptación al agotar reintentos
     # ─────────────────────────────────────────────────────────────────────────
-    def test_pipeline_forces_acceptance_after_max_retries(self, db_session, sample_job):
+    def test_pipeline_forces_acceptance_after_max_retries(self, db_session, sample_job, sample_slides):
         """
         GIVEN: el QA siempre rechaza (score bajo en todos los intentos)
         WHEN: se ejecuta run_generation_pipeline
@@ -120,12 +120,10 @@ class TestAgentOrchestratorPipeline:
         orchestrator = self._make_orchestrator_with_mock_tools()
         MAX_RETRIES = orchestrator.MAX_RETRIES  # 2
 
-        # QA siempre rechaza
-        orchestrator.score_fidelity.return_value = {
-            "score": 0.2,
-            "needs_rework": True,
-            "reasoning": "Persistent brand mismatch"
-        }
+        # QA siempre rechaza slide 1 — List[Dict] shape
+        orchestrator.score_fidelity.return_value = [
+            {"slide_number": 1, "score": 0.2, "needs_rework": True, "reasoning": "Persistent brand mismatch"}
+        ]
 
         req_data = {"prompt": "Test", "style_filename": "s.pptx", "knowledge_filename": "k.pdf",
                     "region": "Global", "allow_ai_images": False, "output_format": "pptx", "tier": "standard"}
@@ -144,7 +142,7 @@ class TestAgentOrchestratorPipeline:
     # ─────────────────────────────────────────────────────────────────────────
     # Test 4: QA determinístico (ValidateBrand) falla → saltea el LLM QA
     # ─────────────────────────────────────────────────────────────────────────
-    def test_pipeline_deterministic_qa_failure_skips_llm_qa(self, db_session, sample_job):
+    def test_pipeline_deterministic_qa_failure_skips_llm_qa(self, db_session, sample_job, sample_slides):
         """
         GIVEN: el ValidateBrandTool (determinístico) detecta una violación
         WHEN: se ejecuta run_generation_pipeline
@@ -153,19 +151,14 @@ class TestAgentOrchestratorPipeline:
         """
         orchestrator = self._make_orchestrator_with_mock_tools()
 
-        # El validador determinístico siempre falla → el LLM QA no debe llamarse
-        orchestrator.validate_brand.return_value = {
-            "status": "failed",
-            "violations": [{"rule": "HI_RES_BACKGROUND_VIOLATION", "slide_number": 1}]
-        }
-        # En el último intento (MAX_RETRIES), el determinístico aprueba para salir del bucle
+        # El validador determinístico falla 2 veces, pasa al tercer intento
         orchestrator.validate_brand.side_effect = [
             {"status": "failed", "violations": [{"rule": "VIOLATION", "slide_number": 1}]},
             {"status": "failed", "violations": [{"rule": "VIOLATION", "slide_number": 1}]},
             {"status": "passed", "violations": []},  # Al tercer intento, pasa
         ]
-        # El LLM QA aprueba cuando se llama
-        orchestrator.score_fidelity.return_value = {"score": 0.95, "needs_rework": False}
+        # El LLM QA aprueba cuando finalmente se llama — List[Dict] shape
+        orchestrator.score_fidelity.return_value = []
 
         req_data = {"prompt": "Test", "style_filename": "s.pptx", "knowledge_filename": "k.pdf",
                     "region": "Global", "allow_ai_images": False, "output_format": "pptx", "tier": "standard"}

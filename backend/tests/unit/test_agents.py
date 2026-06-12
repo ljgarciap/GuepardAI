@@ -122,13 +122,15 @@ class TestScoreFidelityTool:
         dna = db_session.query(models.BrandVisualDna).filter_by(brand_id=sample_brand.id).first()
         assert dna is not None, "BrandVisualDna should be created by sample_brand fixture"
 
-        with patch("agents.qa_validator.SessionLocal", return_value=db_session):
+        with patch("agents.qa_validator.SessionLocal", return_value=db_session), \
+             patch.object(db_session, "close"):
             tool = ScoreFidelityTool()
             result = tool.run(job_id=sample_job.id)
 
-        assert result["needs_rework"] is False
-        assert result["score"] == 0.92  # Viene del mock en conftest.py
-        assert "reasoning" in result
+        assert len(result) >= 1
+        assert result[0]["needs_rework"] is False
+        assert result[0]["score"] == 0.92  # Viene del mock en conftest.py
+        assert "reasoning" in result[0]
 
     def test_score_fidelity_triggers_rework_when_llm_rejects(self, db_session, sample_job, sample_slides, sample_brand):
         """
@@ -152,8 +154,8 @@ class TestScoreFidelityTool:
             tool = ScoreFidelityTool()
             result = tool.run(job_id=sample_job.id)
 
-        assert result["needs_rework"] is True
-        assert result["score"] == 0.4
+        assert result[0]["needs_rework"] is True
+        assert result[0]["score"] == 0.4
 
         # Verificar que el estado del job en BD se actualizó
         db_session.refresh(sample_job)
@@ -167,12 +169,13 @@ class TestScoreFidelityTool:
         """
         from agents.qa_validator import ScoreFidelityTool
 
-        with patch("agents.qa_validator.SessionLocal", return_value=db_session):
+        with patch("agents.qa_validator.SessionLocal", return_value=db_session), \
+             patch.object(db_session, "close"):
             tool = ScoreFidelityTool()
             result = tool.run(job_id=sample_job.id)
 
-        # Sin slides, el QA no puede hacer nada → auto-pasa
-        assert result.get("needs_rework") is False
+        # Sin slides, el QA retorna lista vacía (auto-pasa — nada que rechazar)
+        assert result == []
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -375,108 +375,119 @@ class AgentOrchestrator:
         """
         local_db = db or SessionLocal()
         try:
-            # Bucle de Diseño y QA
-            retries = 0
+            # Bucle de Diseño y QA — per-slide retry (Fix 1)
+            # qa_feedback: Dict[int, str] mapping slide_number → rejection reason for next retry
+            qa_feedback: dict = {}
             qa_passed = False
-            # F1 (fixes-resiliencia): el rechazo de QA del ciclo anterior se inyecta
-            # en el siguiente intento del Architect (el más reciente reemplaza al anterior)
-            qa_feedback = None
+            iteration = 0
 
-            while retries <= self.MAX_RETRIES and not qa_passed:
-                logger.info(f"[Orchestrator] Delegating to Architect (ComposeLayoutTool) - Attempt {retries + 1}")
+            while not qa_passed:
+                iteration += 1
+                logger.info(f"[Orchestrator] Delegating to Architect (ComposeLayoutTool) - Iteration {iteration}")
 
                 job = local_db.query(models.GenerationJob).get(job_id)
                 if job:
-                    job.progress = min(80, 50 + retries * 10)
-                    job.current_step = f"Agent: Architect is planning layouts and images (Attempt {retries + 1})..."
+                    job.progress = min(80, 50 + (iteration - 1) * 10)
+                    job.current_step = f"Agent: Architect is planning layouts and images (Iteration {iteration})..."
                     local_db.commit()
 
-                self.compose_layout(job_id=job_id, is_premium=(req_data.get("tier") == "premium"), qa_feedback=qa_feedback)
+                self.compose_layout(
+                    job_id=job_id,
+                    is_premium=(req_data.get("tier") == "premium"),
+                    qa_feedback=qa_feedback if qa_feedback else None
+                )
 
-                logger.info(f"[Orchestrator] Delegating to QA Validator (ScoreFidelityTool/ValidateBrandTool)...")
-                
+                logger.info(f"[Orchestrator] Delegating to QA Validator (ValidateBrandTool/ScoreFidelityTool)...")
                 job = local_db.query(models.GenerationJob).get(job_id)
                 if job:
-                    job.progress = min(82, 60 + retries * 10)
+                    job.progress = min(82, 60 + (iteration - 1) * 10)
                     job.current_step = "Agent: QA Validator is verifying design compliance..."
                     local_db.commit()
 
-                # Determinista
+                # Collect failing slide numbers from both validators
+                import json as _json
+                failing_slides: dict = {}  # slide_number → feedback str
+
                 brand_validation = self.validate_brand(job_id=job_id)
                 if brand_validation["status"] == "failed":
                     logger.warning(f"[Orchestrator] QA Deterministic Failed: {brand_validation['violations']}")
-                    needs_rework = True
-                    import json as _json
-                    qa_feedback = f"Deterministic QA violations: {_json.dumps(brand_validation.get('violations', []))}"
-                else:
-                    # Híbrido/LLM
-                    qa_result = self.score_fidelity(job_id=job_id)
-                    needs_rework = qa_result.get("needs_rework", False)
-                    if needs_rework:
-                        import json as _json
-                        reasoning = qa_result.get("reasoning", "")
-                        if isinstance(reasoning, (dict, list)):
-                            reasoning = _json.dumps(reasoning)
-                        if str(reasoning).strip():
-                            qa_feedback = f"QA Judge rejection (score {qa_result.get('score', '?')}): {reasoning}"
+                    for v in brand_validation.get("violations", []):
+                        if v.get("rule") == "DUPLICATE_IMAGE_ACROSS_SLIDES" and v.get("all_slide_numbers"):
+                            for sn in v["all_slide_numbers"][1:]:
+                                failing_slides[sn] = failing_slides.get(sn, "") + f" DUPLICATE_IMAGE({v['all_slide_numbers']})"
                         else:
-                            qa_feedback = None
-
-                if needs_rework:
-                    retries += 1
-                    logger.info(f"[Orchestrator] QA rejected design. Retries used: {retries}/{self.MAX_RETRIES}")
-                    
-                    # Reset slides to CONTENT_READY so the architect can re-plan them
-                    try:
-                        # Targeted reset (v25.0): only reset slides with violations if deterministic QA failed.
-                        violating_slides = set()
-                        if brand_validation.get("status") == "failed":
-                            for v in brand_validation.get("violations", []):
-                                if v.get("rule") == "DUPLICATE_IMAGE_ACROSS_SLIDES" and v.get("all_slide_numbers"):
-                                    # Reset all duplicates except the first (original) one to break duplication
-                                    for sn in v["all_slide_numbers"][1:]:
-                                        violating_slides.add(sn)
-                                else:
-                                    violating_slides.add(v.get("slide_number"))
-                        
-                        query = local_db.query(models.PresentationSlide).filter(
-                            models.PresentationSlide.job_id == job_id
-                        )
-                        if violating_slides:
-                            query = query.filter(models.PresentationSlide.slide_number.in_(list(violating_slides)))
-                            reset_msg = f"Reset targeted slides {sorted(list(violating_slides))} status to CONTENT_READY for retry."
-                        else:
-                            reset_msg = "Reset all slides status to CONTENT_READY for retry."
-                            
-                        slides_to_reset = query.all()
-                        for s in slides_to_reset:
-                            s.status = models.PresentationSlideStatus.CONTENT_READY
-                        local_db.commit()
-                        logger.info(f"[Orchestrator] {reset_msg}")
-                    except Exception as reset_err:
-                        logger.error(f"[Orchestrator] Failed to reset slides for retry: {reset_err}")
-                        local_db.rollback()
-
-                    job = local_db.query(models.GenerationJob).get(job_id)
-                    if job:
-                        job.current_step = f"QA validation failed (Attempt {retries}). Retrying layout planning..."
-                        local_db.commit()
-                    if retries > self.MAX_RETRIES:
-                        logger.warning(f"[Orchestrator] Max retries reached. Forcing acceptance.")
-                        # F4 (fixes-resiliencia): dejar rastro consultable del forzado
-                        try:
-                            job = local_db.query(models.GenerationJob).get(job_id)
-                            if job:
-                                job.qa_forced = 1
-                                job.current_step = "QA exhausted retries; design accepted by force."
-                                local_db.commit()
-                        except Exception as flag_err:
-                            logger.error(f"[Orchestrator] Failed to persist qa_forced flag: {flag_err}")
-                            local_db.rollback()
-                        qa_passed = True # Forzamos el pase porque nos quedamos sin reintentos
+                            sn = v.get("slide_number")
+                            if sn:
+                                failing_slides[sn] = failing_slides.get(sn, "") + f" {v.get('rule', 'VIOLATION')}: {v.get('message', '')}"
                 else:
-                    logger.info(f"[Orchestrator] QA Approved design!")
+                    # LLM judge only runs when deterministic check passes — avoids burning tokens
+                    # on slides the deterministic validator already flagged for retry.
+                    llm_results = self.score_fidelity(job_id=job_id)  # returns List[Dict]
+                    for r in llm_results:
+                        if r.get("needs_rework"):
+                            sn = r.get("slide_number")
+                            if sn:
+                                score_info = f"QA Judge (score {r.get('score', '?')}): {r.get('reasoning', '')}"
+                                failing_slides[sn] = failing_slides.get(sn, "") + " " + score_info
+
+                if not failing_slides:
+                    logger.info(f"[Orchestrator] QA Approved all slides!")
                     qa_passed = True
+                    break
+
+                # Per-slide: increment retry count, decide reset vs accept-forced
+                try:
+                    slides_to_retry = []
+                    qa_feedback = {}
+
+                    for slide_num, feedback in failing_slides.items():
+                        slide = local_db.query(models.PresentationSlide).filter(
+                            models.PresentationSlide.job_id == job_id,
+                            models.PresentationSlide.slide_number == slide_num
+                        ).first()
+                        if not slide:
+                            continue
+                        slide.qa_retry_count = (slide.qa_retry_count or 0) + 1
+                        if slide.qa_retry_count > self.MAX_RETRIES:
+                            slide.qa_forced = 1
+                            logger.warning(
+                                f"[Orchestrator] Slide {slide_num} exhausted {self.MAX_RETRIES} retries. Accepting as-is (qa_forced=1)."
+                            )
+                        else:
+                            slide.status = models.PresentationSlideStatus.CONTENT_READY
+                            slides_to_retry.append(slide_num)
+                            qa_feedback[slide_num] = str(feedback).strip()[:500]
+
+                    local_db.commit()
+                    logger.info(
+                        f"[Orchestrator] QA rejected slides {sorted(failing_slides.keys())}. "
+                        f"Retrying: {sorted(slides_to_retry)}. "
+                        f"Forced-accepted: {sorted(set(failing_slides.keys()) - set(slides_to_retry))}."
+                    )
+                except Exception as reset_err:
+                    logger.error(f"[Orchestrator] Failed to update slides for retry: {reset_err}")
+                    local_db.rollback()
+                    qa_passed = True  # fail-open: continue to render
+                    break
+
+                if not slides_to_retry:
+                    # All failing slides exhausted retries — set job flag and proceed
+                    try:
+                        job = local_db.query(models.GenerationJob).get(job_id)
+                        if job:
+                            job.qa_forced = 1
+                            job.current_step = "QA exhausted retries on some slides; design accepted by force."
+                            local_db.commit()
+                    except Exception as flag_err:
+                        logger.error(f"[Orchestrator] Failed to persist qa_forced flag: {flag_err}")
+                        local_db.rollback()
+                    qa_passed = True
+                    break
+
+                job = local_db.query(models.GenerationJob).get(job_id)
+                if job:
+                    job.current_step = f"QA failed on slides {sorted(slides_to_retry)}. Retrying..."
+                    local_db.commit()
 
             # 4. Render Engine
             logger.info(f"[Orchestrator] Calling Render Agent (RenderPPTXTool)...")

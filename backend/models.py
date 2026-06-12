@@ -330,6 +330,8 @@ class PresentationSlide(Base):
     
     # Estados de flujo v23.0
     status       = Column(String(50), default="pending") # pending | content_ready | planned | rendered
+    qa_retry_count = Column(Integer, default=0)  # retries consumed for this slide
+    qa_forced    = Column(Integer, default=0)    # 1 when retries exhausted; slide accepted as-is
     planning_json = Column(JSONB, nullable=True) # Decisiones de IA Art Director
     
     # Elementos finales renderizables (v18.5)

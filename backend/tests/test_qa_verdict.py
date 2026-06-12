@@ -76,7 +76,7 @@ class TestQAJudgeVerdict:
         result, decision = _run_with_llm(qa_job, {
             "score": 0.92, "needs_rework": True, "reasoning": "contradictory judge",
         })
-        assert result["needs_rework"] is False
+        assert result[0]["needs_rework"] is False
         assert decision.metadata_json["llm_flag_overridden"] is True
         assert decision.metadata_json["llm_needs_rework"] is True
         db, job = qa_job
@@ -87,7 +87,7 @@ class TestQAJudgeVerdict:
         result, decision = _run_with_llm(qa_job, {
             "score": 0.5, "needs_rework": False, "reasoning": "lenient judge",
         })
-        assert result["needs_rework"] is True
+        assert result[0]["needs_rework"] is True
         assert decision.metadata_json["llm_flag_overridden"] is True
 
     def test_missing_score_falls_back_to_llm_flag_tolerant_parse(self, qa_job):
@@ -95,15 +95,15 @@ class TestQAJudgeVerdict:
         result, _ = _run_with_llm(qa_job, {
             "needs_rework": "true", "reasoning": "no score given",
         })
-        assert result["needs_rework"] is True
-        assert result["score"] is None
+        assert result[0]["needs_rework"] is True
+        assert result[0]["score"] is None
 
     def test_unparseable_score_without_flag_fails_open(self, qa_job):
         # Criterio 4 — nunca abortar el pipeline por JSON malformado del judge
         result, _ = _run_with_llm(qa_job, {
             "score": "high", "reasoning": "malformed",
         })
-        assert result["needs_rework"] is False
+        assert result[0]["needs_rework"] is False
 
     def test_threshold_read_from_system_configs(self, qa_job):
         # Criterio 5 — la config de runtime gobierna el veredicto
@@ -116,7 +116,7 @@ class TestQAJudgeVerdict:
         result, decision = _run_with_llm(qa_job, {
             "score": 0.92, "needs_rework": False, "reasoning": "passes 0.8 but not 0.95",
         })
-        assert result["needs_rework"] is True
+        assert result[0]["needs_rework"] is True
         assert decision.metadata_json["threshold"] == 0.95
 
     def test_out_of_range_score_is_clamped(self, qa_job):
@@ -124,5 +124,5 @@ class TestQAJudgeVerdict:
         result, _ = _run_with_llm(qa_job, {
             "score": 4.5, "needs_rework": False, "reasoning": "judge on a 5-point scale",
         })
-        assert result["score"] == 1.0
-        assert result["needs_rework"] is False
+        assert result[0]["score"] == 1.0
+        assert result[0]["needs_rework"] is False

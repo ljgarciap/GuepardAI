@@ -117,15 +117,20 @@ class ScoreFidelityArgs(BaseModel):
 
 class ScoreFidelityTool(BaseAgentTool):
     name = "score_fidelity"
-    description = "Validador Híbrido (LLM): actúa como juez evaluando la coherencia semántica del diseño seleccionado frente a la identidad de marca."
+    description = "Validador Híbrido (LLM): actúa como juez evaluando la coherencia semántica del diseño por slide."
     args_schema = ScoreFidelityArgs
 
-    def run(self, job_id: int, threshold: float = 0.8) -> Dict[str, Any]:
+    def run(self, job_id: int, threshold: float = 0.8) -> List[Dict[str, Any]]:
+        """
+        Returns a list of per-slide results:
+          [{"slide_number": int, "score": float, "needs_rework": bool, "reasoning": str}, ...]
+        On LLM failure returns [] (caller treats as global pass — no slides reset).
+        """
         db = SessionLocal()
         try:
             job = db.query(models.GenerationJob).get(job_id)
             if not job:
-                return {"error": "Job not found"}
+                return []
 
             slides = db.query(models.PresentationSlide).filter(
                 models.PresentationSlide.job_id == job_id,
@@ -136,9 +141,8 @@ class ScoreFidelityTool(BaseAgentTool):
             essence = db.query(models.BrandArtisticEssence).filter(models.BrandArtisticEssence.brand_id == job.brand_id).first()
 
             if not slides or not dna:
-                return {"score": 1.0, "needs_rework": False, "reasoning": "Missing data for QA, auto-passing."}
+                return []
 
-            # Preparamos contexto para el LLM Juez
             brand_context = {
                 "primary_color": dna.primary_color,
                 "strategy": essence.art_direction_note if essence else "Corporate standard"
@@ -147,9 +151,6 @@ class ScoreFidelityTool(BaseAgentTool):
             slides_context = []
             for s in slides:
                 ad_plan = s.planning_json.get("art_director", {}) if s.planning_json else {}
-
-                # Calidad Selección v2: el juez ahora VE la imagen asignada
-                # (archivo, dimensiones, categoría, descripción, flag degraded)
                 image_context = None
                 asset_rec = _resolve_assigned_asset(db, s.assigned_image)
                 if asset_rec:
@@ -160,7 +161,6 @@ class ScoreFidelityTool(BaseAgentTool):
                         "category": asset_rec.category,
                         "description": (asset_rec.description or "")[:80],
                     }
-
                 slides_context.append({
                     "number": s.slide_number,
                     "title": s.title,
@@ -170,95 +170,136 @@ class ScoreFidelityTool(BaseAgentTool):
                     "planning_reasoning": ad_plan.get("reasoning", "")
                 })
 
-            prompt = f"""
-            You are a strict QA Brand Validator.
-            Evaluate the following presentation design plan against the brand strategy.
-            
-            BRAND STRATEGY:
-            {json.dumps(brand_context)}
-            
-            SLIDES PLANNED:
-            {json.dumps(slides_context)}
-            
-            Determine if the selected layouts and reasoning match the brand's tone.
-            Also weigh the assigned_image of each slide: penalize visually repetitive
-            image choices across slides and slides whose degraded_asset_quality is true
-            (the image did not meet the quality bar and was admitted as a last resort).
-            Output JSON:
-            {{
-                "score": 0.0 to 1.0,
-                "needs_rework": true/false,
-                "reasoning": "Explanation"
-            }}
-            """
-
-            # Threshold de runtime (spec qa-judge-verdict-consistency): el arg
-            # del tool solo es fallback si la config no parsea
+            # Runtime threshold from system_configs
             try:
                 threshold = float(llm_provider.get_system_config("qa_fidelity_threshold", str(threshold)))
             except (TypeError, ValueError):
                 pass
 
-            result = llm_provider.generate_json(prompt, specialization="general")
+            prompt = f"""
+            You are a strict QA Brand Validator.
+            Evaluate the following presentation design plan against the brand strategy.
 
-            # El score numérico contra el threshold es la autoridad del veredicto;
-            # la flag del LLM es opinión auditada (spec qa-judge-verdict-consistency)
+            BRAND STRATEGY:
+            {json.dumps(brand_context)}
+
+            SLIDES PLANNED:
+            {json.dumps(slides_context)}
+
+            Evaluate EACH slide individually. Penalize visually repetitive image choices
+            and slides whose degraded_asset_quality is true.
+            Output a JSON ARRAY (one object per slide):
+            [
+              {{
+                "slide_number": <int>,
+                "score": 0.0 to 1.0,
+                "needs_rework": true/false,
+                "reasoning": "Explanation"
+              }},
+              ...
+            ]
+            """
+
             try:
-                score = max(0.0, min(1.0, float(result.get("score"))))
-            except (TypeError, ValueError):
-                score = None
+                raw = llm_provider.generate_json(prompt, specialization="general")
+            except Exception as llm_err:
+                import logging as _log
+                _log.getLogger(__name__).warning(
+                    f"[ScoreFidelityTool] LLM call failed for job {job_id}: {llm_err}. Auto-passing all slides."
+                )
+                return []
 
-            llm_flag = result.get("needs_rework")
-            if isinstance(llm_flag, str):
-                llm_flag = llm_flag.strip().lower() == "true"
-            elif llm_flag is not None:
-                llm_flag = bool(llm_flag)
-
-            if score is not None:
-                needs_rework = score < threshold
-            elif llm_flag is not None:
-                needs_rework = llm_flag  # fallback 1: sin score parseable, decide la flag
+            # The LLM might return a list, a list-wrapping dict, or a bare single-slide dict.
+            if isinstance(raw, list):
+                raw_list = raw
+            elif isinstance(raw, dict):
+                if "slides" in raw or "results" in raw:
+                    raw_list = raw.get("slides") or raw.get("results") or []
+                elif "score" in raw or "needs_rework" in raw:
+                    # Bare single-slide dict — synthesize slide_number from context
+                    fallback_num = slides[0].slide_number if slides else 1
+                    raw_list = [{**raw, "slide_number": raw.get("slide_number", fallback_num)}]
+                else:
+                    raw_list = []
             else:
-                needs_rework = False      # fallback 2: fail-open, como el auto-pass por datos ausentes
+                import logging as _log
+                _log.getLogger(__name__).warning(
+                    f"[ScoreFidelityTool] Unexpected LLM response shape for job {job_id}: {type(raw)}. Auto-passing."
+                )
+                return []
 
-            llm_flag_overridden = score is not None and llm_flag is not None and llm_flag != needs_rework
-            reasoning = result.get("reasoning", "")
+            results: List[Dict[str, Any]] = []
+            any_rework = False
+            llm_flag_overridden_any = False
 
-            if needs_rework:
+            for item in raw_list:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    slide_num = int(item.get("slide_number", 0))
+                    raw_score = item.get("score")
+                    try:
+                        score = max(0.0, min(1.0, float(raw_score))) if raw_score is not None else None
+                    except (TypeError, ValueError):
+                        score = None  # Unparseable score — treat as absent, fall back to LLM flag
+
+                    llm_flag = item.get("needs_rework")
+                    if isinstance(llm_flag, str):
+                        llm_flag = llm_flag.strip().lower() == "true"
+                    elif llm_flag is not None:
+                        llm_flag = bool(llm_flag)
+
+                    if score is not None:
+                        needs_rework = score < threshold
+                    elif llm_flag is not None:
+                        needs_rework = llm_flag
+                    else:
+                        needs_rework = False
+
+                    # Track when score overrides the LLM flag (audit trail)
+                    flag_overridden = (
+                        score is not None and llm_flag is not None and needs_rework != llm_flag
+                    )
+                    if flag_overridden:
+                        llm_flag_overridden_any = True
+
+                    results.append({
+                        "slide_number": slide_num,
+                        "score": score,
+                        "needs_rework": needs_rework,
+                        "reasoning": str(item.get("reasoning", "")),
+                        "llm_flag": llm_flag,
+                        "llm_flag_overridden": flag_overridden,
+                    })
+                    if needs_rework:
+                        any_rework = True
+                except (TypeError, ValueError):
+                    continue
+
+            if any_rework:
                 job.status = models.GenerationJobStatus.QA_FAILED
-                job.current_step = "QA Validator rejected the layout plan. Needs rework."
+                job.current_step = "QA Validator found slides needing rework."
             else:
                 job.status = models.GenerationJobStatus.QA_PASSED
-                job.current_step = "QA Validator approved the layout plan."
+                job.current_step = "QA Validator approved all slides."
 
-            # GAP 1: Trazar veredicto del LLM Juez en ArtDirectorDecision
-            score_label = f"{score:.2f}" if score is not None else "n/a"
-            summary = f"LLM QA Judge: score={score_label}, needs_rework={needs_rework}"
-            if llm_flag_overridden:
-                summary += f" (LLM flag needs_rework={llm_flag} overridden by score vs threshold)"
             self.log_decision(
                 db=db,
                 job_id=job_id,
                 decision_type="qa_score",
-                summary=summary,
-                reasoning=reasoning,
+                summary=f"LLM QA Judge per-slide: {len(results)} evaluated, {sum(1 for r in results if r['needs_rework'])} need rework.",
+                reasoning=json.dumps(results),
                 prompt_used=prompt,
-                response_raw=result,
+                response_raw=raw,
                 metadata={
-                    "score": score,
                     "threshold": threshold,
-                    "needs_rework": needs_rework,
-                    "llm_needs_rework": llm_flag,
-                    "llm_flag_overridden": llm_flag_overridden,
+                    "per_slide_results": results,
+                    "llm_flag_overridden": llm_flag_overridden_any,
+                    "llm_needs_rework": results[0]["llm_flag"] if len(results) == 1 else None,
                 },
             )
             db.commit()
-
-            return {
-                "score": score,
-                "needs_rework": needs_rework,
-                "reasoning": reasoning
-            }
+            return results
         finally:
             db.close()
 

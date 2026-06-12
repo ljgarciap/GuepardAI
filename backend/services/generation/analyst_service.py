@@ -11,8 +11,10 @@ def get_slide_visual_strategy(db: Session, slide: models.PresentationSlide, job:
     """
     print(f"    [Analyst] Defining visual strategy for slide {slide.slide_number}...")
     
-    # 1. Obtener Prompt del Analista
-    prompt_tpl = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_analyst_v2").first()
+    # 1. Obtener Prompt del Analista (v3→v2→v1 fallback)
+    prompt_tpl = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_analyst_v3").first()
+    if not prompt_tpl:
+        prompt_tpl = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_analyst_v2").first()
     if not prompt_tpl:
         prompt_tpl = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_analyst_v1").first()
     if not prompt_tpl:

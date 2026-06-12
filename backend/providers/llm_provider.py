@@ -849,7 +849,7 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
                 mis_key = get_system_config("mistral_api_key", None) or os.getenv("MISTRAL_API_KEY")
                 if not mis_key: raise ValueError("No Mistral Key")
                 from mistralai import Mistral
-                client = Mistral(api_key=mis_key)
+                client = Mistral(api_key=mis_key, timeout=60)
                 
                 # Solo texto para Mistral
                 text_inputs = [i for i in inputs if isinstance(i, str) and i.strip()]
@@ -858,7 +858,6 @@ def get_embeddings_batch(inputs: List[Union[str, bytes]], model: Optional[str] =
                     print("  [Mistral DEBUG] SKIPPING because text_inputs is empty!", flush=True)
                     continue
                 
-                # Use a higher timeout to prevent hanging
                 try:
                     response = client.embeddings.create(
                         model="mistral-embed",

@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 import models
-from database import SessionLocal, engine, Base
+from database import SessionLocal, engine, Base, reconcile_additive_columns
 from tasks import (
     celery_extract_full_brand_style,
     celery_ingest_knowledge,
@@ -50,6 +50,13 @@ logger = logging.getLogger(__name__)
 from utils.seed import seed_data
 
 Base.metadata.create_all(bind=engine)
+# Capa de schema: tras crear tablas nuevas, poner al día las ya existentes con
+# las columnas aditivas que el modelo declara y la BD desplegada aún no tiene.
+# Evita que cada columna nueva rompa la ingesta/generación en bases viejas.
+try:
+    reconcile_additive_columns()
+except Exception as e:
+    print(f"  [System] Warning: Schema reconcile failed: {e}")
 try:
     seed_data()
 except Exception as e:

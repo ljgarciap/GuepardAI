@@ -490,6 +490,77 @@ Analyze this image with TECHNICAL DESIGN RIGOR and return a JSON with:
                 "key": "is_footer_enabled",
                 "value": "true",
                 "description": "Determina si el footer/firma está habilitado de forma global."
+            },
+            {
+                # Option A — 3-step surgical RAG pipeline.
+                # Produces slide structure only (titles/sections/layouts); content team fills details.
+                # Seeder skips existing keys — deployed DBs pick this up on next restart.
+                "key": "prompt_content_outline_v1",
+                "value": """### ROLE: STRATEGIC PRESENTATION PLANNER
+Your only job is to create a slide-by-slide STRUCTURE. Do NOT write any content, bullets, or metrics.
+The content team fills in all details per slide using targeted company data.
+
+### MASTER INSTRUCTION:
+{polished_prompt}
+
+### INITIAL CONTEXT (use only to decide structure — do not use as content):
+{rag_context}
+
+### REQUIREMENTS:
+- Output Language: {target_lang}
+- Generate between 15 and 20 slides
+- Slide 1 MUST be the COVER (layout_type: composition_hero, section_label: COVER)
+- Last slide MUST be a closing/next-steps slide
+- Allowed layout_type values: [composition_hero, composition_split, composition_quote, data_grid_cards, composition_pillars]
+- Avoid using the same layout_type on two consecutive slides
+
+### OUTPUT — ONLY THIS JSON, nothing else:
+{{
+  "slides": [
+    {{"title": "...", "section_label": "...", "layout_type": "..."}}
+  ]
+}}""",
+                "description": "Content Outline v1.0 — Slide structure only (title/section/layout, no content)."
+            },
+            {
+                "key": "prompt_slide_content_v1",
+                "value": """### ROLE: STRATEGIC CONTENT WRITER — SINGLE SLIDE
+Write content for exactly ONE slide. Use COMPANY DATA as your primary source.
+
+### SLIDE CONTEXT:
+- Title: {slide_title}
+- Section: {section_label}
+- Layout: {layout_type}
+- Brand: {brand_name}
+- Language: {target_lang}
+
+### COMPANY DATA (ground every claim here — primary source):
+{rag_context}
+
+### RULES:
+1. Extract REAL metrics, figures, and dates from COMPANY DATA. If a specific figure is absent, write a strategic insight without inventing numbers.
+2. Maximum 4 bullets. Each: one specific insight or proven fact. No intro sentences.
+3. For data_grid_cards layout: include 3-4 metrics objects with real values from COMPANY DATA.
+4. For COVER section (section_label = COVER): populate metadata and subtitle — bullets can be empty.
+5. PLAIN TEXT ONLY — no Markdown: no **, no *, no _, no #, no backticks, no links.
+6. visual_intent: describe a corporate lifestyle photograph — NO charts, NO screens, NO text in image.
+
+### OUTPUT — ONLY THIS JSON, nothing else:
+{{
+  "bullets": ["Plain text insight", "Plain text insight"],
+  "subtitle": "Strategic tagline (COVER only, empty string otherwise)",
+  "metrics": [{{"label": "KPI Name", "value": "X%", "growth": "+Y%"}}],
+  "visual_intent": "Corporate photograph description without charts or screens",
+  "visual_tags": ["keyword1", "keyword2", "keyword3"],
+  "objective": "One sentence: what this slide achieves in the narrative",
+  "metadata": {{"prepared_for": "Client Name", "confidential": true, "date": "Month YYYY"}}
+}}""",
+                "description": "Slide Content v1.0 — Content for ONE slide given targeted RAG context."
+            },
+            {
+                "key": "content_pipeline_parallel_workers",
+                "value": "4",
+                "description": "ThreadPoolExecutor workers for parallel per-slide content generation (Option A pipeline)."
             }
 ]
 

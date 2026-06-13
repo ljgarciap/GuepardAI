@@ -53,13 +53,14 @@ def _generate_ai_asset(db: Session, job, visual_intent: str):
     return register_asset(db, job.brand_id, gen_path, category="lifestyle_photos")
 
 
-def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False, qa_feedback: str = None):
+def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False, qa_feedback=None):
     """
     STRATEGIC DESIGN ENGINE v4.0.
     Sequential flow: Analysis -> Asset Scoring -> Audited Execution.
 
-    qa_feedback (F1 fixes-resiliencia): rechazo del ciclo de QA anterior; se
-    inyecta en el prompt del Art Director para que el retry no repita a ciegas.
+    qa_feedback (Fix 1): Dict[int, str] mapping slide_number → rejection reason from previous
+    QA cycle. Per-slide feedback is injected only into the prompt for that specific slide.
+    Legacy callers may still pass a plain str; it will be injected into every slide prompt.
     """
     job = db.query(models.GenerationJob).get(job_id)
     if not job: return False
@@ -103,8 +104,10 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False,
         if logo_asset:
             logo_path = logo_asset.local_path
 
-    # v2 incluye instrucciones de perfil visual; fallback a v1 en BDs sin re-seedear
-    prompt_tpl = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_art_director_v2").first()
+    # v3→v2→v1 fallback: v3 fixes layout slug vocabulary (hero/split vs composition_*)
+    prompt_tpl = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_art_director_v3").first()
+    if not prompt_tpl:
+        prompt_tpl = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_art_director_v2").first()
     if not prompt_tpl:
         prompt_tpl = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_art_director_v1").first()
 
@@ -154,11 +157,16 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False,
         art_direction_note += f"\n\nCRITICAL BRAND SAFETY: If any asset in the 'found_assets' list belongs to a direct competitor (e.g., a competitor's logo or store), DO NOT select it under any circumstances. Always prioritize assets that belong specifically to the brand we are designing for."
 
         # F1 (fixes-resiliencia): Feedback del ciclo de QA anterior en los retries
-        if qa_feedback and str(qa_feedback).strip():
-            art_direction_note += f"\n\nPREVIOUS QA REJECTION (MUST ADDRESS IN THIS ATTEMPT): {str(qa_feedback)[:FEEDBACK_MAX]}"
+        # Per-slide qa_feedback (Fix 1): dict maps slide_number → feedback; legacy str applies globally
+        if isinstance(qa_feedback, dict):
+            slide_feedback = qa_feedback.get(slide.slide_number)
+        else:
+            slide_feedback = qa_feedback if qa_feedback and str(qa_feedback).strip() else None
+        if slide_feedback:
+            art_direction_note += f"\n\nPREVIOUS QA REJECTION (MUST ADDRESS IN THIS ATTEMPT): {str(slide_feedback)[:FEEDBACK_MAX]}"
         
         # v8.0: El Analista decide el grammar_type — el Art Director lo respeta
-        analyst_grammar_type = strategy.get("grammar_type", "composition_split")
+        analyst_grammar_type = strategy.get("grammar_type", "split")
 
         # Enriquecer content_json del slide con lo que detectó el Analista (v8.0)
         if strategy.get("metric_value") and not slide.content_json.get("metric"):
@@ -219,7 +227,7 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False,
         audit_metadata = {"considered": [], "rejected": []}
 
         # Obtener el layout sugerido por el analista para el filtro de resolución
-        suggested_layout = strategy.get("grammar_type", "strategic_split")
+        suggested_layout = strategy.get("grammar_type", "split")
         # Consideramos split también como hi-res requirements para evitar estiramientos
         requires_hi_res = _requires_hi_res(suggested_layout)
 

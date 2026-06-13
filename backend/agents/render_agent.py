@@ -9,19 +9,7 @@ import models
 from schemas.presentation import RenderManifest, PainterSlideData, PainterAgencyBranding, PainterFooterConfig
 from services.rendering.painter import GammaPainter
 from services.rendering.painter_bridge import GRAMMAR_TO_PAINTER
-
-
-def normalize_bullets(bullets_list) -> list[str]:
-    if not bullets_list:
-        return []
-    normalized = []
-    for b in bullets_list:
-        if isinstance(b, dict):
-            val = " - ".join(str(v) for v in b.values() if v)
-            normalized.append(val)
-        else:
-            normalized.append(str(b))
-    return normalized
+from utils.content_utils import normalize_bullets, normalize_metrics, sanitize_text_field
 
 
 class RenderPPTXArgs(BaseModel):
@@ -50,9 +38,8 @@ class RenderPPTXTool(BaseAgentTool):
 
             dna = db.query(models.BrandVisualDna).filter(models.BrandVisualDna.brand_id == job.brand_id).order_by(models.BrandVisualDna.created_at.desc()).first()
             
-            uploads_dir = os.path.abspath("uploads")
-            if not os.path.exists(uploads_dir):
-                uploads_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "uploads"))
+            from services.core.storage_service import brand_assets_dir as _brand_assets_dir
+            uploads_dir = str(_brand_assets_dir(job.brand_id))
 
             # 1. Recuperar los slides planeados
             saved_slides = db.query(models.PresentationSlide).filter(
@@ -108,8 +95,8 @@ class RenderPPTXTool(BaseAgentTool):
                             else: primary_path = str(s.assigned_image)
                             
                         slides_data.append({
-                            "title": s.title,
-                            "bullets": cjson.get("bullets", []),
+                            "title": sanitize_text_field(s.title or ""),
+                            "bullets": normalize_bullets(cjson.get("bullets", [])),
                             "background_color": dna.primary_color if hasattr(dna, 'primary_color') else "#002D62",
                             "text_color": "#FFFFFF",
                             "primary_image": primary_path,
@@ -219,9 +206,9 @@ class RenderPPTXTool(BaseAgentTool):
                 render_slides.append(PainterSlideData(
                     slide_number=s.slide_number,
                     layout_type=p_layout,
-                    title=s.title,
+                    title=sanitize_text_field(s.title or ""),
                     bullets=normalize_bullets(cjson.get("bullets", [])),
-                    metrics=cjson.get("metrics", []),
+                    metrics=normalize_metrics(cjson.get("metrics", [])),
                     metric=cjson.get("metric"),
                     label=cjson.get("label"),
                     tag=cjson.get("section_label") or "STRATEGY",

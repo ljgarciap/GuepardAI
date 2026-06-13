@@ -110,26 +110,52 @@ class TestQAFeedbackInjection:
         assert "MARKER_BEYOND_LIMIT" not in prompt
 
     def test_orchestrator_passes_feedback_on_retry(self):
-        """El segundo intento del Architect recibe las violations del determinista."""
+        """El segundo intento del Architect recibe las violations del determinista como Dict[int, str]."""
         from agents.orchestrator import AgentOrchestrator
+        from database import SessionLocal
 
-        orch = AgentOrchestrator()
-        orch.compose_layout = MagicMock(return_value={"success": True})
-        orch.validate_brand = MagicMock(side_effect=[
-            {"status": "failed", "violations": [{"rule": "HI_RES_BACKGROUND_VIOLATION", "slide_number": 1}]},
-            {"status": "passed", "violations": []},
-        ])
-        orch.score_fidelity = MagicMock(return_value={"score": 0.9, "needs_rework": False})
-        orch.render_pptx = MagicMock(return_value=None)
+        db = SessionLocal()
+        job = models.GenerationJob(
+            client_name="pytest_feedback_retry", brand_id=0,
+            status=models.GenerationJobStatus.PROCESSING, prompt="test",
+        )
+        db.add(job)
+        db.flush()
+        slide = models.PresentationSlide(
+            job_id=job.id, slide_number=1, title="Test Slide",
+            status=models.PresentationSlideStatus.PLANNED,
+            content_json={},
+        )
+        db.add(slide)
+        db.commit()
+        job_id = job.id
 
-        # Job inexistente: el bucle funciona igual (los updates de job son condicionales)
-        orch.run_design_and_render(99999999, {})
+        try:
+            orch = AgentOrchestrator()
+            orch.compose_layout = MagicMock(return_value={"success": True})
+            orch.validate_brand = MagicMock(side_effect=[
+                {"status": "failed", "violations": [{"rule": "HI_RES_BACKGROUND_VIOLATION", "slide_number": 1}]},
+                {"status": "passed", "violations": []},
+            ])
+            # score_fidelity only called on the second iteration (when brand validation passes)
+            orch.score_fidelity = MagicMock(return_value=[])  # no LLM failures — List[Dict] shape
+            orch.render_pptx = MagicMock(return_value=None)
 
-        assert orch.compose_layout.call_count == 2
-        first_kwargs = orch.compose_layout.call_args_list[0].kwargs
-        second_kwargs = orch.compose_layout.call_args_list[1].kwargs
-        assert first_kwargs.get("qa_feedback") is None
-        assert "HI_RES_BACKGROUND_VIOLATION" in second_kwargs.get("qa_feedback", "")
+            orch.run_design_and_render(job_id, {})
+
+            assert orch.compose_layout.call_count == 2
+            first_kwargs = orch.compose_layout.call_args_list[0].kwargs
+            second_kwargs = orch.compose_layout.call_args_list[1].kwargs
+            assert first_kwargs.get("qa_feedback") is None
+            # qa_feedback is now Dict[int, str] — keyed by slide_number
+            feedback = second_kwargs.get("qa_feedback", {})
+            assert isinstance(feedback, dict)
+            assert "HI_RES_BACKGROUND_VIOLATION" in feedback.get(1, "")
+        finally:
+            db.query(models.PresentationSlide).filter(models.PresentationSlide.job_id == job_id).delete()
+            db.query(models.GenerationJob).filter(models.GenerationJob.id == job_id).delete()
+            db.commit()
+            db.close()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -258,16 +284,25 @@ class TestQAForcedFlag:
             status=models.GenerationJobStatus.PROCESSING, prompt="test",
         )
         db.add(job)
+        db.flush()
+        # Need a real slide so the per-slide retry loop can find, increment, and force-accept it
+        slide = models.PresentationSlide(
+            job_id=job.id, slide_number=1, title="Test Slide",
+            status=models.PresentationSlideStatus.PLANNED,
+            content_json={},
+        )
+        db.add(slide)
         db.commit()
         job_id = job.id
 
         try:
             orch = AgentOrchestrator()
             orch.compose_layout = MagicMock(return_value={"success": True})
-            orch.validate_brand = MagicMock(return_value={
-                "status": "failed", "violations": [{"rule": "ALWAYS_FAILS"}]
-            })
-            orch.score_fidelity = MagicMock(return_value={"score": 0.1, "needs_rework": True})
+            # Deterministic QA passes; LLM judge always flags slide 1 — exhausts MAX_RETRIES
+            orch.validate_brand = MagicMock(return_value={"status": "passed", "violations": []})
+            orch.score_fidelity = MagicMock(return_value=[
+                {"slide_number": 1, "score": 0.1, "needs_rework": True, "reasoning": "Always fails"}
+            ])
             orch.render_pptx = MagicMock(return_value=None)
 
             orch.run_design_and_render(job_id, {})
@@ -275,9 +310,10 @@ class TestQAForcedFlag:
             db.expire_all()
             refreshed = db.query(models.GenerationJob).get(job_id)
             assert refreshed.qa_forced == 1
-            # Y el feedback siguió fluyendo en cada retry
+            # MAX_RETRIES=2 with > guard → 3 compose_layout calls (iterations 1, 2, 3)
             assert orch.compose_layout.call_count == orch.MAX_RETRIES + 1
         finally:
+            db.query(models.PresentationSlide).filter(models.PresentationSlide.job_id == job_id).delete()
             db.query(models.GenerationJob).filter(models.GenerationJob.id == job_id).delete()
             db.commit()
             db.close()

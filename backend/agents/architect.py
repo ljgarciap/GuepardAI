@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field
 from agents.base import BaseAgentTool
 
@@ -31,14 +31,14 @@ class GetSlideTypesTool(BaseAgentTool):
 class ComposeLayoutArgs(BaseModel):
     job_id: int = Field(..., description="ID del trabajo de generación")
     is_premium: bool = Field(False, description="Si es True, aplica lógica de diseño avanzada (Premium/Glassmorphism)")
-    qa_feedback: Optional[str] = Field(None, description="Rechazo del ciclo de QA anterior; se inyecta en el prompt del Art Director en los retries (F1 fixes-resiliencia)")
+    qa_feedback: Optional[Union[Dict[int, str], str]] = Field(None, description="Rechazo del ciclo de QA anterior; Dict[slide_number, feedback] en retries per-slide, o str para compatibilidad legada")
 
 class ComposeLayoutTool(BaseAgentTool):
     name = "compose_layout"
     description = "Aplica la dirección de arte a las diapositivas generadas: selecciona el layout, asigna imágenes de la librería y guarda el estado 'planned' en la BD."
     args_schema = ComposeLayoutArgs
 
-    def run(self, job_id: int, is_premium: bool = False, qa_feedback: str = None) -> Any:
+    def run(self, job_id: int, is_premium: bool = False, qa_feedback=None) -> Any:
         """
         Ejecuta el plan de diseño del director de arte.
         """

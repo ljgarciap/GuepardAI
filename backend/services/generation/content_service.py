@@ -196,7 +196,7 @@ def synthesize_presentation_outline(
         else str(architect_response)
     )
     # Truncated for per-slide context injection (strategic framing without full size)
-    strategic_context = polished_prompt[:400]
+    strategic_context = str(polished_prompt)[:400] if polished_prompt else ""
 
     # STEP 3: Outline Generator — structure only (no content)
     if not cfg_outline:

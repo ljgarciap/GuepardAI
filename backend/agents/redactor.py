@@ -104,7 +104,7 @@ class SlideContentTool(BaseAgentTool):
                 rag_context=targeted_rag or "No specific context available.",
                 brand_name=brand_name,
                 target_lang=region,
-                strategic_context=(strategic_context or "")[:400],
+                strategic_context=str(strategic_context or "")[:400],
             )
 
             try:

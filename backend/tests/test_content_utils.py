@@ -115,6 +115,63 @@ def test_normalize_bullets_bullet_then_bold():
 
 
 # ---------------------------------------------------------------------------
+# sanitize_text_field — bracket placeholder stripping
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_sanitize_multiword_bracket_placeholder():
+    assert sanitize_text_field("CEO Testimonial: [Retailer CEO Name] on Results") == "CEO Testimonial:  on Results"
+
+
+@pytest.mark.unit
+def test_sanitize_multiword_bracket_placeholder_entire_bullet():
+    # When the whole text is a placeholder, result is empty string
+    assert sanitize_text_field("[Retailer CEO Name]") == ""
+
+
+@pytest.mark.unit
+def test_sanitize_keyword_bracket_company():
+    assert sanitize_text_field("Insights from [Company] programme") == "Insights from  programme"
+
+
+@pytest.mark.unit
+def test_sanitize_keyword_bracket_year():
+    assert sanitize_text_field("Results in [Year] exceeded targets") == "Results in  exceeded targets"
+
+
+@pytest.mark.unit
+def test_sanitize_keyword_bracket_ceo():
+    # Leading space is trimmed by .strip() — correct behaviour
+    assert sanitize_text_field("[CEO] commented on loyalty ROI") == "commented on loyalty ROI"
+
+
+@pytest.mark.unit
+def test_sanitize_bracket_does_not_strip_markdown_links():
+    # [text](url) is handled by link stripper, not bracket stripper
+    assert sanitize_text_field("See [our report](https://example.com)") == "See our report"
+
+
+@pytest.mark.unit
+def test_sanitize_bracket_does_not_strip_digit_brackets():
+    # [Q4 2024] has a digit — not stripped (not a named placeholder)
+    result = sanitize_text_field("Revenue grew in Q4")
+    assert "Revenue grew in Q4" in result
+
+
+@pytest.mark.unit
+def test_normalize_bullets_filters_placeholder_only_bullets():
+    # A bullet that IS only a placeholder becomes empty and gets filtered out
+    result = normalize_bullets(["[Retailer CEO Name]", "Real strategic insight here"])
+    assert result == ["Real strategic insight here"]
+
+
+@pytest.mark.unit
+def test_normalize_bullets_strips_placeholder_from_mixed_bullet():
+    result = normalize_bullets(["CEO Testimonial: [Retailer CEO Name] on Measurable Outcomes"])
+    assert result == ["CEO Testimonial:  on Measurable Outcomes"]
+
+
+# ---------------------------------------------------------------------------
 # normalize_metrics
 # ---------------------------------------------------------------------------
 

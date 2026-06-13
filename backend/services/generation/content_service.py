@@ -6,9 +6,10 @@ from sqlalchemy.orm import Session
 from providers.llm_provider import generate_json, get_embedding
 from utils.content_utils import normalize_bullets, normalize_metrics, sanitize_text_field
 import psycopg
-from typing import List, Dict
+from typing import Optional
 
 DB_URL = os.getenv("DATABASE_URL", "postgresql://root:root@localhost:5432/ai_db").replace("+psycopg", "")
+
 
 def search_rag(query: str, knowledge_source: str, k: int = 15, brand_id=None) -> str:
     """Vector similarity search over corporate_knowledge, optionally scoped to a brand."""
@@ -54,56 +55,11 @@ def search_rag(query: str, knowledge_source: str, k: int = 15, brand_id=None) ->
     return "\n---\n".join(results)
 
 
-def _generate_slide_content(args):
-    """Thread worker: per-slide targeted RAG search + LLM content generation."""
-    idx, outline_slide, prompt_template, knowledge_source, brand_id, brand_name, region = args
-    slide_title = sanitize_text_field(outline_slide.get("title", "Untitled Slide"))
-    section_label = outline_slide.get("section_label", "STRATEGY")
-    layout_type = outline_slide.get("layout_type", "composition_split")
-
-    targeted_rag = search_rag(
-        f"{slide_title} {section_label}",
-        knowledge_source,
-        brand_id=brand_id,
-        k=10
-    )
-
-    slide_prompt = prompt_template.format(
-        slide_title=slide_title,
-        section_label=section_label,
-        layout_type=layout_type,
-        rag_context=targeted_rag or "No specific context available.",
-        brand_name=brand_name,
-        target_lang=region,
-    )
-
-    try:
-        content = generate_json(slide_prompt, specialization="general")
-        if not isinstance(content, dict):
-            content = {}
-    except Exception as e:
-        print(f"  [ContentService] Slide {idx+1} generation failed: {e}", flush=True)
-        content = {}
-
-    return idx, {
-        **outline_slide,
-        "title": slide_title,
-        "bullets": content.get("bullets", []),
-        "subtitle": content.get("subtitle"),
-        "metrics": content.get("metrics", []),
-        "visual_intent": content.get("visual_intent", ""),
-        "visual_tags": content.get("visual_tags", []),
-        "objective": content.get("objective", ""),
-        "metadata": content.get("metadata", {}),
-        "_rag_chars": len(targeted_rag),
-    }
-
-
-def _synthesize_monolithic(db: Session, job_id: int, polished_prompt: str, rag_context: str, region: str, knowledge_source: str):
-    """
-    Fallback: classic 2-step synthesizer used when new prompt keys are not yet seeded.
-    Produces all slide content in a single LLM call (no per-slide RAG).
-    """
+def _synthesize_monolithic(
+    db: Session, job_id: int, polished_prompt: str, rag_context: str,
+    region: str, knowledge_source: str
+):
+    """Fallback: classic single-call synthesizer when outline prompts are not yet seeded."""
     cfg_synthesizer = (
         db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_content_synthesizer_v3").first()
         or db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_content_synthesizer_v2").first()
@@ -117,10 +73,7 @@ def _synthesize_monolithic(db: Session, job_id: int, polished_prompt: str, rag_c
         target_lang=region
     )
     response = generate_json(final_prompt)
-    if isinstance(response, list):
-        slides_data = response
-    else:
-        slides_data = response.get("slides", [])
+    slides_data = response if isinstance(response, list) else response.get("slides", [])
 
     db.query(models.PresentationSlide).filter(models.PresentationSlide.job_id == job_id).delete()
     for i, s_data in enumerate(slides_data):
@@ -176,14 +129,23 @@ def _build_manifest(db: Session, job_id: int):
     return ContentManifest(job_id=job_id, slides=manifest_slides, client_name=None)
 
 
-def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict):
+def synthesize_presentation_outline(
+    db: Session,
+    job_id: int,
+    req_data: dict,
+    slide_generator=None,
+):
     """
-    3-Step Content Pipeline (Option A — Surgical per-slide RAG):
-      Step 1: Brand-scoped RAG (k=10) for structural context
+    3-Step Content Pipeline (Surgical RAG v2):
+      Step 1: Brand-scoped RAG (k=10) — structural context
       Step 2: Prompt Architect → polished_instruction
       Step 3: Outline Generator → [{title, section_label, layout_type}] (structure only)
-      Step 4: Parallel per-slide RAG (k=10) + LLM content (ThreadPoolExecutor)
+      Step 4: Parallel per-slide content via slide_generator (SlideContentTool factory)
       Step 5: Persist + build ContentManifest
+
+    slide_generator: a callable factory (e.g. SlideContentTool class) that creates a fresh
+    tool instance per slide. Receives keyword args matching SlideContentArgs and returns
+    (idx, slide_data_dict). When None, outline-only data is used (no per-slide LLM).
     """
     job = db.query(models.GenerationJob).get(job_id)
     if not job:
@@ -206,11 +168,17 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict):
     if dna and dna.raw_extraction:
         tone_guideline = dna.raw_extraction.get("tone_description", tone_guideline)
 
-    cfg_architect = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_architect_v1").first()
-    cfg_outline = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_content_outline_v1").first()
-    cfg_slide = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_slide_content_v1").first()
+    # Prompt configs — v2 preferred, v1 as fallback (seeder convention)
+    cfg_architect = (
+        db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_architect_v2").first()
+        or db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_architect_v1").first()
+    )
+    cfg_outline = (
+        db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_content_outline_v2").first()
+        or db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_content_outline_v1").first()
+    )
 
-    # STEP 1: Brand-scoped initial RAG (lighter — structure context only)
+    # STEP 1: Brand-scoped initial RAG (structure context, k=10)
     print(f"  [ContentService] Step 1/3: Initial RAG (brand_id={job.brand_id}, k=10)...", flush=True)
     initial_rag = search_rag(topic, knowledge_source, brand_id=job.brand_id, k=10)
 
@@ -222,23 +190,28 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict):
         tone_guideline=tone_guideline
     )
     architect_response = generate_json(architect_prompt, specialization="general")
-    if isinstance(architect_response, dict):
-        polished_prompt = architect_response.get("polished_instruction", str(architect_response))
-    else:
-        polished_prompt = str(architect_response)
+    polished_prompt = (
+        architect_response.get("polished_instruction", str(architect_response))
+        if isinstance(architect_response, dict)
+        else str(architect_response)
+    )
+    # Truncated for per-slide context injection (strategic framing without full size)
+    strategic_context = polished_prompt[:400]
 
     # STEP 3: Outline Generator — structure only (no content)
     if not cfg_outline:
-        print(f"  [ContentService] prompt_content_outline_v1 not seeded — monolithic fallback...", flush=True)
+        print(f"  [ContentService] Outline prompt not seeded — monolithic fallback...", flush=True)
         return _synthesize_monolithic(db, job_id, polished_prompt, initial_rag, region, knowledge_source)
 
     print(f"  [ContentService] Step 3/3: Outline Generator...", flush=True)
-    outline_prompt = cfg_outline.value.format(
-        polished_prompt=polished_prompt,
-        rag_context=initial_rag or "No specific context available.",
-        target_lang=region
+    outline_response = generate_json(
+        cfg_outline.value.format(
+            polished_prompt=polished_prompt,
+            rag_context=initial_rag or "No specific context available.",
+            target_lang=region
+        ),
+        specialization="general"
     )
-    outline_response = generate_json(outline_prompt, specialization="general")
     if isinstance(outline_response, list):
         outline_slides = outline_response
     elif isinstance(outline_response, dict):
@@ -247,32 +220,59 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict):
         outline_slides = []
 
     if not outline_slides:
-        print(f"  [ContentService] Outline returned empty — monolithic fallback...", flush=True)
+        print(f"  [ContentService] Outline empty — monolithic fallback...", flush=True)
         return _synthesize_monolithic(db, job_id, polished_prompt, initial_rag, region, knowledge_source)
 
     # STEP 4: Parallel per-slide content generation
-    if not cfg_slide:
-        print(f"  [ContentService] prompt_slide_content_v1 not seeded — using outline-only data...", flush=True)
-        slides_data = outline_slides
+    if not slide_generator:
+        print(f"  [ContentService] No slide_generator provided — using outline-only data...", flush=True)
+        slides_data = [
+            {**s, "title": sanitize_text_field(s.get("title", "Untitled Slide"))}
+            for s in outline_slides
+        ]
     else:
-        _workers_cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == "content_pipeline_parallel_workers").first()
+        _workers_cfg = db.query(models.SystemConfig).filter(
+            models.SystemConfig.key == "content_pipeline_parallel_workers"
+        ).first()
         try:
             max_workers = int(_workers_cfg.value) if _workers_cfg else 4
         except (AttributeError, ValueError):
             max_workers = 4
 
-        print(f"  [ContentService] Generating content for {len(outline_slides)} slides (max_workers={max_workers})...", flush=True)
-        worker_args = [
-            (idx, slide, cfg_slide.value, knowledge_source, job.brand_id, brand_name, region)
-            for idx, slide in enumerate(outline_slides)
-        ]
+        print(
+            f"  [ContentService] Generating content for {len(outline_slides)} slides "
+            f"via SlideContentTool (max_workers={max_workers})...",
+            flush=True
+        )
+
+        # Closure captures scope vars; each call creates a fresh tool instance (thread-safe)
+        def _dispatch(args):
+            idx, slide = args
+            s_title = sanitize_text_field(slide.get("title", "Untitled Slide"))
+            tool = slide_generator()
+            return tool(
+                job_id=job_id,
+                idx=idx,
+                slide_title=s_title,
+                section_label=slide.get("section_label", "STRATEGY"),
+                layout_type=slide.get("layout_type", "composition_split"),
+                knowledge_source=knowledge_source,
+                brand_id=job.brand_id,
+                brand_name=brand_name,
+                region=region,
+                strategic_context=strategic_context,
+            )
 
         results_by_idx = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-            for idx, slide_data in pool.map(_generate_slide_content, worker_args):
+            for idx, slide_data in pool.map(_dispatch, enumerate(outline_slides)):
                 rag_chars = slide_data.pop("_rag_chars", 0)
                 results_by_idx[idx] = slide_data
-                print(f"    Slide {idx+1}/{len(outline_slides)}: '{slide_data['title'][:45]}' (RAG: {rag_chars} chars)", flush=True)
+                print(
+                    f"    Slide {idx + 1}/{len(outline_slides)}: "
+                    f"'{slide_data['title'][:45]}' (RAG: {rag_chars} chars)",
+                    flush=True
+                )
 
         slides_data = [results_by_idx[i] for i in range(len(outline_slides))]
 
@@ -300,7 +300,7 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict):
             },
             planning_json={
                 "strategy": "Surgical RAG Pipeline v2",
-                "objective": s_data.get("objective", "Create strategic slide")
+                "objective": s_data.get("objective", "Create strategic slide"),
             },
             status=models.PresentationSlideStatus.CONTENT_READY
         ))

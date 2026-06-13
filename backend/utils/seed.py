@@ -561,6 +561,113 @@ Write content for exactly ONE slide. Use COMPANY DATA as your primary source.
                 "key": "content_pipeline_parallel_workers",
                 "value": "4",
                 "description": "ThreadPoolExecutor workers for parallel per-slide content generation (Option A pipeline)."
+            },
+            {
+                # v2 = v1 + evidence-conditioned amplification — never forces aspirational
+                # named slides (CEO quotes, testimonials) without RAG backing.
+                # Seeder skips existing keys — deployed DBs pick this up on next restart.
+                "key": "prompt_architect_v2",
+                "value": """### ROLE: ELITE PROMPT ENGINEER & STRATEGIC ARCHITECT
+### TASK: Transform the USER PROMPT into a precise MASTER INSTRUCTION.
+
+### CRITICAL RULES:
+1. EVIDENCE-FIRST: Preserve the user's strategic intent but DO NOT mandate specific named
+   testimonials, CEO quotes, or case studies unless they are evidenced in the company context.
+   Convert aspirational requests to evidence-types:
+   "CEO testimonial" → "Customer Success Evidence"
+   "Named case study" → "Implementation Results"
+2. NARRATIVE STRUCTURE: Expand the user's intent into a 15-20 slide flow.
+3. BRAND & TONE LOYALTY: Use the specific corporate tone of {brand_name}.
+4. DATA HUNGER: Extract real figures, dates, and programme names from context.
+   If data is absent, write strategic principles — no invented numbers.
+5. NO BRACKETS: The master instruction MUST NEVER contain [Name], [Company], [Year].
+   Use generic descriptors: "a retail CEO", "a leading UK retailer".
+
+### OUTPUT ONLY THIS JSON:
+{{
+  "polished_instruction": "You are a Senior Strategic Lead for {brand_name}. YOUR MISSION: {topic}.\\n\\nGUIDELINES:\\n- STRUCTURE: Generate exactly 15-20 slides.\\n- DATA: Use only figures and names present in the RAG context. If absent, write strategic principles — no bracket placeholders.\\n- TONE: {tone_guideline}.\\n- NO BRACKETS: Never write [Name], [Company] or [Year] in any field.",
+  "strategic_rationale": "Evidence-conditioned amplification for {brand_name}."
+}}""",
+                "description": "Prompt Architect v2.0 — Evidence-first amplification, no aspirational bracket placeholders."
+            },
+            {
+                # v2 = v1 + title char limit + anti-placeholder rule for aspirational slides.
+                "key": "prompt_content_outline_v2",
+                "value": """### ROLE: STRATEGIC PRESENTATION PLANNER
+Your only job is to create a slide-by-slide STRUCTURE. Do NOT write any content, bullets, or metrics.
+
+### MASTER INSTRUCTION:
+{polished_prompt}
+
+### INITIAL CONTEXT (use only to decide structure — do not use as content):
+{rag_context}
+
+### REQUIREMENTS:
+- Output Language: {target_lang}
+- Generate between 15 and 20 slides
+- Slide 1 MUST be the COVER (layout_type: composition_hero, section_label: COVER)
+- Last slide MUST be a closing/next-steps slide
+- Allowed layout_type values: [composition_hero, composition_split, composition_quote, data_grid_cards, composition_pillars]
+- Avoid using the same layout_type on two consecutive slides
+
+### CRITICAL CONSTRAINTS:
+- Title: MAXIMUM 55 characters. No ellipsis. NEVER use [X] or bracket notation.
+- NEVER create slides requiring named entities (CEO name, person name, company name)
+  UNLESS that exact name appears in INITIAL CONTEXT.
+- If a testimonial or case study is requested but no name exists in context,
+  use a generic equivalent: "Customer Success Evidence", "Implementation Results".
+
+### OUTPUT — ONLY THIS JSON, nothing else:
+{{
+  "slides": [
+    {{"title": "...", "section_label": "...", "layout_type": "..."}}
+  ]
+}}""",
+                "description": "Content Outline v2.0 — Anti-placeholder, 55-char title limit, no aspirational named slides."
+            },
+            {
+                # v2 = v1 + strategic_context slot + stricter anti-placeholder + char limits.
+                "key": "prompt_slide_content_v2",
+                "value": """### ROLE: STRATEGIC CONTENT WRITER — SINGLE SLIDE
+Write content for exactly ONE slide. Use COMPANY DATA as your primary source.
+
+### STRATEGIC FRAME (what this presentation achieves — do not repeat verbatim):
+{strategic_context}
+
+### SLIDE CONTEXT:
+- Title: {slide_title}
+- Section: {section_label}
+- Layout: {layout_type}
+- Brand: {brand_name}
+- Language: {target_lang}
+
+### COMPANY DATA (ground every claim here — primary source):
+{rag_context}
+
+### RULES:
+1. Extract REAL metrics, figures, and dates from COMPANY DATA. If absent, write a
+   strategic principle — do NOT invent numbers.
+2. Maximum 4 bullets. Each: one specific insight or proven fact. No intro sentences.
+3. For data_grid_cards layout: include 3-4 metrics with real values from COMPANY DATA.
+4. For COVER section (section_label = COVER): populate metadata and subtitle only.
+5. PLAIN TEXT — no Markdown: no **, no *, no _, no #, no backticks.
+6. ABSOLUTELY NO BRACKETS: never write [Name], [Company], [CEO], [Year] or any [X]
+   notation. If a specific person/company is absent from data, use a generic descriptor:
+   "a leading retail group", "the programme director". Never leave a placeholder.
+7. Each bullet: MAXIMUM 110 characters. Keep concise.
+8. visual_intent: corporate lifestyle photograph — NO charts, NO screens, NO text in image.
+
+### OUTPUT — ONLY THIS JSON, nothing else:
+{{
+  "bullets": ["Plain text insight under 110 chars", "Plain text insight under 110 chars"],
+  "subtitle": "Strategic tagline (COVER only, empty string otherwise)",
+  "metrics": [{{"label": "KPI Name", "value": "X%", "growth": "+Y%"}}],
+  "visual_intent": "Corporate photograph description without charts or screens",
+  "visual_tags": ["keyword1", "keyword2", "keyword3"],
+  "objective": "One sentence: what this slide achieves in the narrative",
+  "metadata": {{"prepared_for": "Client Name", "confidential": true, "date": "Month YYYY"}}
+}}""",
+                "description": "Slide Content v2.0 — Strategic context, anti-placeholder, 110-char bullet limit."
             }
 ]
 

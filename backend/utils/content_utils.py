@@ -4,8 +4,17 @@ import re
 _BULLET_PREFIX_RE = re.compile(r'^[\-\*\•\·\–\—\>]\s*')
 
 
+# Multi-word bracketed placeholders: [CEO Name], [Retailer CEO Name], [Company Name]
+_BRACKET_MULTIWORD_RE = re.compile(r'\[[A-Z][a-zA-Z]+(?:\s[A-Za-z]+)+\]')
+# Known single-word placeholder terms LLMs commonly produce
+_BRACKET_KEYWORD_RE = re.compile(
+    r'\[(?:Company|Year|Name|Date|City|Region|Client|CEO|Manager|Title'
+    r'|Person|Brand|Product|Location|Contact|Team|Leader|Director|President)\]'
+)
+
+
 def sanitize_text_field(text: str) -> str:
-    """Strip inline Markdown from a plain-text field (rendered by a non-Markdown engine)."""
+    """Strip inline Markdown and LLM-generated bracket placeholders from plain-text fields."""
     if not isinstance(text, str) or not text:
         return text or ""
     text = re.sub(r'\*{2}([^*]*)\*{2}', r'\1', text)        # **bold** → bold
@@ -15,6 +24,8 @@ def sanitize_text_field(text: str) -> str:
     text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)     # [text](url) → text
     text = re.sub(r'`([^`]+)`', r'\1', text)                 # `code` → code
     text = re.sub(r'^#{1,6}\s+', '', text)                   # # Heading → Heading
+    text = _BRACKET_MULTIWORD_RE.sub('', text)               # [CEO Name] → ''
+    text = _BRACKET_KEYWORD_RE.sub('', text)                 # [Company] → ''
     text = re.sub(r'\*+', '', text)                           # residual asterisks
     return text.strip()
 

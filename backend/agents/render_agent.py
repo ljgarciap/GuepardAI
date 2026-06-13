@@ -9,7 +9,7 @@ import models
 from schemas.presentation import RenderManifest, PainterSlideData, PainterAgencyBranding, PainterFooterConfig
 from services.rendering.painter import GammaPainter
 from services.rendering.painter_bridge import GRAMMAR_TO_PAINTER
-from utils.content_utils import normalize_bullets, normalize_metrics
+from utils.content_utils import normalize_bullets, normalize_metrics, sanitize_text_field
 
 
 class RenderPPTXArgs(BaseModel):
@@ -95,7 +95,7 @@ class RenderPPTXTool(BaseAgentTool):
                             else: primary_path = str(s.assigned_image)
                             
                         slides_data.append({
-                            "title": s.title,
+                            "title": sanitize_text_field(s.title or ""),
                             "bullets": normalize_bullets(cjson.get("bullets", [])),
                             "background_color": dna.primary_color if hasattr(dna, 'primary_color') else "#002D62",
                             "text_color": "#FFFFFF",
@@ -206,7 +206,7 @@ class RenderPPTXTool(BaseAgentTool):
                 render_slides.append(PainterSlideData(
                     slide_number=s.slide_number,
                     layout_type=p_layout,
-                    title=s.title,
+                    title=sanitize_text_field(s.title or ""),
                     bullets=normalize_bullets(cjson.get("bullets", [])),
                     metrics=normalize_metrics(cjson.get("metrics", [])),
                     metric=cjson.get("metric"),

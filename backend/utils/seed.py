@@ -202,6 +202,43 @@ OUTPUT JSON:
                 "description": "Content Synthesizer v2.1 — Strategic depth and RAG extraction."
             },
             {
+                # v3 = v2 + explicit plain-text enforcement (no markdown in any text field)
+                # Seeder skips existing keys — deployed DBs pick this up on next restart.
+                "key": "prompt_content_synthesizer_v3",
+                "value": """### MASTER INSTRUCTION:
+{polished_prompt}
+
+### ADDITIONAL CONTEXT (RAG):
+{rag_context}
+
+### OUTPUT SPECIFICATIONS:
+- Output Language: {target_lang}
+- Max Slides: 20
+- **Slide 1 (COVER)**: MUST have 'metadata' with 'prepared_for', 'confidential' (boolean), and 'date'.
+- **Layout Types**: [composition_hero, composition_split, composition_quote, data_grid_cards, composition_pillars]
+
+### CRITICAL PLAIN-TEXT RULE:
+ALL text in title, subtitle, bullets, and metric labels MUST be plain text.
+DO NOT use any Markdown formatting: no **, no *, no _, no #, no backticks, no [text](url).
+The rendering engine does not support Markdown — any formatting markers will appear as literal characters.
+
+### MANDATORY JSON FORMAT:
+{{
+  "slides": [
+    {{
+      "title": "Plain text title without asterisks",
+      "subtitle": "Plain text subtitle",
+      "layout_type": "composition_pillars",
+      "section_label": "STRATEGY",
+      "bullets": ["Plain text point with data", "Plain text point with detail", "Plain text point with outcome"],
+      "metrics": [ {{"label": "KPI Label", "value": "X%", "growth": "+Y%"}} ],
+      "metadata": {{ "prepared_for": "...", "confidential": true, "date": "..." }}
+    }}
+  ]
+}}""",
+                "description": "Content Synthesizer v3.0 — Strict plain-text enforcement (no Markdown)."
+            },
+            {
                 "key": "prompt_art_director_v1",
                 "value": """# ROLE: Senior Executive Art Director
 You are responsible for the VISUAL FIDELITY and BRAND ADHERENCE of a high-stakes presentation.

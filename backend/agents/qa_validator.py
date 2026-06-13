@@ -77,8 +77,13 @@ class ValidateBrandTool(BaseAgentTool):
                         })
 
                     # Regla Determinista 3 (Calidad Selección v2): acumular para
-                    # detección de imagen duplicada entre slides
-                    group_key = asset_rec.perceptual_hash or f"id:{asset_rec.id}"
+                    # detección de imagen duplicada entre slides.
+                    # Fallback: cuando perceptual_hash es NULL se agrupa por basename
+                    # del archivo (cubre el caso de un mismo asset con distintos IDs).
+                    group_key = (
+                        asset_rec.perceptual_hash
+                        or (os.path.basename(asset_rec.local_path) if asset_rec.local_path else f"id:{asset_rec.id}")
+                    )
                     duplicate_groups.setdefault(group_key, []).append(slide.slide_number)
 
             for group_key, slide_numbers in duplicate_groups.items():

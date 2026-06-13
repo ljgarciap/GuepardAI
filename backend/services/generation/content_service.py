@@ -3,7 +3,7 @@ import json
 import models
 from sqlalchemy.orm import Session
 from providers.llm_provider import generate_json, get_embedding
-from utils.content_utils import normalize_bullets, normalize_metrics
+from utils.content_utils import normalize_bullets, normalize_metrics, sanitize_text_field
 import psycopg
 from typing import List, Dict
 
@@ -67,7 +67,10 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
     
     # 3. Obtener Configs de Marca y Agencia (v24.0)
     cfg_architect = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_architect_v1").first()
-    cfg_synthesizer = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_content_synthesizer_v2").first()
+    cfg_synthesizer = (
+        db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_content_synthesizer_v3").first()
+        or db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_content_synthesizer_v2").first()
+    )
     agency_name = db.query(models.SystemConfig).filter(models.SystemConfig.key == "agency_name").first()
     
     brand_name = "Global Strategy"
@@ -114,7 +117,7 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
     
     for i, s_data in enumerate(slides_data):
         # RAG QUIRÚRGICO: Por cada slide, buscamos su contexto específico
-        slide_title = s_data.get("title", "Untitled Slide")
+        slide_title = sanitize_text_field(s_data.get("title", "Untitled Slide"))
         print(f"    [ContentService] Harvesting specific RAG for: {slide_title}...")
         specific_rag = search_rag(slide_title, knowledge_source, k=5)
 

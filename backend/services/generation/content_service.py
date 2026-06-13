@@ -3,6 +3,7 @@ import json
 import models
 from sqlalchemy.orm import Session
 from providers.llm_provider import generate_json, get_embedding
+from utils.content_utils import normalize_bullets, normalize_metrics
 import psycopg
 from typing import List, Dict
 
@@ -152,13 +153,12 @@ def synthesize_presentation_outline(db: Session, job_id: int, req_data: dict) ->
     for s in saved_slides:
         cjson = s.content_json or {}
         raw_bullets = cjson.get("bullets", [])
-        safe_bullets = [b.get("description", b.get("priority", str(b))) if isinstance(b, dict) else str(b) for b in raw_bullets]
         slides.append(ContentManifestSlide(
             slide_number=s.slide_number,
             title=s.title,
             subtitle=cjson.get("subtitle"),
-            bullets=safe_bullets,
-            metrics=cjson.get("metrics", []),
+            bullets=normalize_bullets(raw_bullets),
+            metrics=normalize_metrics(cjson.get("metrics", [])),
             metric=cjson.get("metric"),
             label=cjson.get("label"),
             layout_type=cjson.get("layout_type", "strategic_split"),

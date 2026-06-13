@@ -134,6 +134,7 @@ def synthesize_presentation_outline(
     job_id: int,
     req_data: dict,
     slide_generator=None,
+    narrator=None,
 ):
     """
     3-Step Content Pipeline (Surgical RAG v2):
@@ -275,6 +276,21 @@ def synthesize_presentation_outline(
                 )
 
         slides_data = [results_by_idx[i] for i in range(len(outline_slides))]
+
+    # STEP 4.5: Narrator — narrative cohesion pass (single LLM call over the full deck)
+    if narrator and slides_data:
+        print(f"  [ContentService] Step 4.5: Narrator cohesion pass ({len(slides_data)} slides)...", flush=True)
+        try:
+            narrator_tool = narrator()
+            slides_data = narrator_tool(
+                job_id=job_id,
+                slides_data=slides_data,
+                brand_name=brand_name,
+                region=region,
+                strategic_context=strategic_context,
+            )
+        except Exception as e:
+            print(f"  [ContentService] Narrator failed (non-blocking): {e}", flush=True)
 
     # STEP 5: Persist + build manifest
     print(f"  [ContentService] Saving {len(slides_data)} slides...", flush=True)

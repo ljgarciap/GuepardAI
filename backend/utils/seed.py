@@ -626,6 +626,57 @@ Your only job is to create a slide-by-slide STRUCTURE. Do NOT write any content,
                 "description": "Content Outline v2.0 — Anti-placeholder, 55-char title limit, no aspirational named slides."
             },
             {
+                # Narrator — post-generation narrative cohesion pass.
+                # Runs after all per-slide workers finish, before persist (STEP 4.5).
+                # One LLM call over the full deck; corrects subtitle/bullets/objective only.
+                # Seeder skips existing keys — deployed DBs pick this up on next restart.
+                "key": "prompt_narrator_v1",
+                "value": """### ROLE: NARRATIVE COHESION EDITOR
+You are reviewing a completed strategic presentation for {brand_name}.
+All slides have been drafted. Your ONLY job: identify narrative disconnects and produce
+targeted corrections so the deck reads as a coherent whole.
+
+### STRATEGIC FRAME (global intent — do not repeat verbatim):
+{strategic_context}
+
+### TARGET LANGUAGE: {target_lang}
+
+### FULL DECK — {slide_count} slides (compact view):
+{slides_json}
+
+### WHAT TO LOOK FOR:
+1. Section opener slides (layout_type: full_bleed_hero or composition_hero) with an empty
+   subtitle that leave the reader with no preview of what follows.
+2. Slides whose bullets do not connect logically to the slide title or to the previous
+   section opener's promise.
+3. A closing slide that does not resolve the narrative arc started at the opener.
+
+### CORRECTION RULES:
+- Only correct fields: "subtitle", "bullets", or "objective". NEVER change "title",
+  "layout_type", or "section_label".
+- Do NOT invent data. Reframe, reorder, or clarify using content already present in the deck.
+- Corrections must be in {target_lang}.
+- Correct at most 40% of slides. Prioritise the highest-impact gaps.
+- For "bullets": new_value must be an array of strings.
+- For "subtitle" or "objective": new_value must be a plain string.
+- If the deck is already cohesive, return an empty corrections array.
+
+### OUTPUT — valid JSON only, no markdown, no explanation outside the JSON:
+{{
+  "corrections": [
+    {{
+      "slide_index": <0-based integer>,
+      "field": "subtitle",
+      "new_value": "<plain text string>",
+      "reason": "<one-line explanation>"
+    }}
+  ],
+  "cohesion_score": <float 0.0-1.0>,
+  "gaps_found": ["<description of each gap identified>"]
+}}""",
+                "description": "Narrator v1.0 — Post-generation narrative cohesion pass (STEP 4.5). Corrects subtitle/bullets/objective only."
+            },
+            {
                 # v2 = v1 + strategic_context slot + stricter anti-placeholder + char limits.
                 "key": "prompt_slide_content_v2",
                 "value": """### ROLE: STRATEGIC CONTENT WRITER — SINGLE SLIDE

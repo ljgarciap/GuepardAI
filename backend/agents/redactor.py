@@ -2,6 +2,7 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 from agents.base import BaseAgentTool
 
+from agents.narrator import NarratorTool
 from services.generation.content_service import search_rag, synthesize_presentation_outline
 from providers.llm_provider import generate_json
 from database import SessionLocal
@@ -203,7 +204,9 @@ class GenerateTextTool(BaseAgentTool):
             # Pass SlideContentTool class as factory — content_service creates
             # one fresh instance per slide (thread-safe, full BaseAgentTool contract)
             content_manifest = synthesize_presentation_outline(
-                db, job_id, req_data, slide_generator=SlideContentTool
+                db, job_id, req_data,
+                slide_generator=SlideContentTool,
+                narrator=NarratorTool,
             )
 
             slide_count = len(content_manifest.slides) if hasattr(content_manifest, "slides") else 0

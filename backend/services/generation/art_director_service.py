@@ -20,7 +20,13 @@ def _resolve_asset_dims(asset):
     del archivo (compartido por el filtro de Fase B, la degradación elegante y
     la revalidación de layout_override).
     """
-    w, h = asset.width, asset.height
+    def _to_int(v):
+        try:
+            return int(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    w, h = _to_int(asset.width), _to_int(asset.height)
     if not w and asset.local_path:
         from services.core.storage_service import resolve as resolve_storage
         p = resolve_storage(asset.local_path, brand_id=asset.brand_id)

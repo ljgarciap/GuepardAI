@@ -49,7 +49,9 @@ jobs:
         run: |
           python -m pytest \
             --cov=agents \
-            --cov-report=term-missing \
+            --cov=services \
+            --cov=providers \
+            --cov-report=term-missing:skip-covered \
             --cov-report=xml:coverage.xml \
             --tb=short \
             -v \

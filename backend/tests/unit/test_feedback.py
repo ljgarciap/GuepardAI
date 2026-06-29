@@ -1,12 +1,13 @@
 import pytest
 from fastapi.testclient import TestClient
-from main import app
 import models
 
+
+@pytest.mark.integration
 def test_submit_and_get_feedback(db_session, sample_job):
-    from main import get_db
+    from main import app, get_db
     app.dependency_overrides[get_db] = lambda: db_session
-    
+
     try:
         client = TestClient(app)
         

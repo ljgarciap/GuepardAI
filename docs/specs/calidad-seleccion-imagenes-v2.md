@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-11
 **Requested by**: Luis
-**Status**: Approved — plan validado por Luis en daily con el Arquitecto (2026-06-11)
+**Status**: Done — implementado en PR #25 (commit 47641b1); validado en master 2026-06-29
 **Project**: GuepardAI
 
 ## Problem

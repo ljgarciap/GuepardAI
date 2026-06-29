@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 from pptx.dml.color import RGBColor
 import os
 
-from main import app
 import models
 from services.rendering.painter import GammaPainter
 
@@ -35,10 +34,11 @@ def test_footer_contrast_logic():
     assert get_contrast_text_color(dark_bg) == RGBColor(255, 255, 255) # White text
     assert get_contrast_text_color(light_bg) == RGBColor(20, 20, 20)     # Dark text
 
+@pytest.mark.integration
 def test_footer_api_endpoints(db_session):
-    from main import get_db
+    from main import app, get_db
     app.dependency_overrides[get_db] = lambda: db_session
-    
+
     try:
         client = TestClient(app)
         

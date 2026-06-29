@@ -14,7 +14,7 @@ GARANTÍA DE AISLAMIENTO DE PRODUCCIÓN:
 CÓMO USAR:
   1. Levanta la BD de test: `docker compose -f docker-compose.test.yml up -d`
   2. Crea el archivo `.env.test` con TEST_DATABASE_URL (ver .env.test.example)
-  3. Ejecuta: `pytest --cov=agents tests/`
+  3. Ejecuta: `pytest --cov=agents --cov=services --cov=providers tests/`
 """
 import os
 import pytest
@@ -40,6 +40,13 @@ TEST_DATABASE_URL = os.environ.get(
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Detectar disponibilidad de la BD de test EN TIEMPO DE CARGA
+# Sin esto, tests de integración fallan durante la colección cuando el
+# contenedor de test no está corriendo.
+# ─────────────────────────────────────────────────────────────────────────────
+DB_AVAILABLE = False
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Parchar database.py ANTES de que cualquier módulo del proyecto lo importe.
 # Esto redirige TODAS las conexiones de los agentes a la BD de test.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -60,9 +67,10 @@ try:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
         conn.commit()
         print("\n  [TEST DB] pgvector extension activated on test database.")
+    DB_AVAILABLE = True
 except Exception as e:
-    print(f"\n  [TEST DB] Warning: Could not activate pgvector on test DB: {e}")
-    print("  [TEST DB] Vector columns will be disabled for these tests.")
+    print(f"\n  [TEST DB] Warning: Test DB not reachable — integration tests will be skipped: {e}")
+    print("  [TEST DB] Start it with: docker compose -f docker-compose.test.yml up -d")
 
 # Session factory de TEST
 TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
@@ -76,9 +84,13 @@ def create_test_schema():
     """
     Crea todas las tablas del ORM en la BD de test al iniciar la sesión.
     Las destruye al final. Esto NO afecta la BD de producción.
+    Si la BD no está disponible, no hace nada (los tests de integración
+    se saltan por require_db).
     """
-    # Importamos Base y models DESPUÉS de que el engine de test ya está listo
-    # para que SQLAlchemy use el metadata correcto.
+    if not DB_AVAILABLE:
+        yield
+        return
+
     from database import Base
     import models  # noqa: F401 - necesario para registrar todos los modelos
 
@@ -89,17 +101,29 @@ def create_test_schema():
     Base.metadata.drop_all(bind=test_engine)
 
 
+@pytest.fixture()
+def require_db():
+    """
+    Salta el test con un mensaje claro si la BD de test no está corriendo.
+    Añadir este fixture a cualquier test que necesite conexión real a BD.
+    Los tests que usen db_session lo reciben automáticamente.
+    """
+    if not DB_AVAILABLE:
+        pytest.skip("Test DB not running — start with: docker compose -f docker-compose.test.yml up -d")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # FIXTURE DE BD: Scope=function → Cada test tiene su propia transacción
 # ─────────────────────────────────────────────────────────────────────────────
 @pytest.fixture()
-def db_session(create_test_schema):
+def db_session(create_test_schema, require_db):
     """
     Proporciona una sesión de BD que:
     1. Inicia una TRANSACCIÓN al comenzar el test.
     2. Hace ROLLBACK al finalizar, dejando la BD limpia para el siguiente test.
 
     GARANTÍA: Ningún test persiste datos en la BD de test → Sin efectos colaterales.
+    Requiere require_db: salta automáticamente si la BD de test no está corriendo.
     """
     connection = test_engine.connect()
     transaction = connection.begin()

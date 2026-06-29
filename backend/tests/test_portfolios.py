@@ -12,12 +12,12 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-from main import app, get_db
 import models
 
 
 @pytest.fixture()
 def client(db_session):
+    from main import app, get_db
     app.dependency_overrides[get_db] = lambda: db_session
     try:
         yield TestClient(app)

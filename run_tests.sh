@@ -117,7 +117,7 @@ run_backend_tests() {
     print_step "Ejecutando pytest con cobertura de código..."
     echo ""
 
-    PYTEST_ARGS="--cov=agents --cov-report=term-missing --cov-report=html:htmlcov -v"
+    PYTEST_ARGS="--cov=agents --cov=services --cov=providers --cov-report=term-missing:skip-covered --cov-report=html:htmlcov -v"
 
     if [ "$MODE" = "ci" ]; then
         # En CI: falla rápido, sin colores, con reporte XML para GitHub Actions

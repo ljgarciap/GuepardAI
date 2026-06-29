@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-12
 **Requested by**: Luis
-**Status**: Draft
+**Status**: Done — implementado en PR #29 (commit 0800547); validado en master 2026-06-29
 **Project**: GuepardAI
 
 ---

@@ -29,6 +29,9 @@ def _upsert_config(db_session, key, value):
         rec.value = value
     else:
         db_session.add(models.SystemConfig(key=key, value=value, description="test"))
+    # autoflush=False on the test session: flush explicitly so subsequent queries
+    # in the same transaction see the new/updated value.
+    db_session.flush()
 
 
 def _base_setup(db_session, sample_brand, sample_job, asset_w=1300, asset_h=1500):

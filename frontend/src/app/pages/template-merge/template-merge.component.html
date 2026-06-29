@@ -1,0 +1,209 @@
+<div class="page-container">
+
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <div class="control-toolbar glass-panel">
+    <div class="toolbar-header">
+      <div class="mode-badge-wrapper">
+        <span class="mode-badge">TEMPLATE MODE</span>
+        <h1 class="page-title">TEMPLATE MERGE STUDIO</h1>
+      </div>
+      <span class="page-subtitle">PRESERVE DESIGN · REPLACE CONTENT · FROM KNOWLEDGE</span>
+    </div>
+
+    <!-- Mode selector callout -->
+    <div class="mode-callout">
+      <div class="mode-option mode-active">
+        <span class="mode-icon">⬡</span>
+        <div>
+          <strong>Template Merge</strong>
+          <p>Keep visual structure. Generate content from your knowledge base.</p>
+        </div>
+      </div>
+      <div class="mode-divider">vs</div>
+      <a routerLink="/" class="mode-option mode-alt">
+        <span class="mode-icon">◈</span>
+        <div>
+          <strong>Synthesis Studio</strong>
+          <p>AI-designed slides. Full art direction. Brand-driven layout.</p>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  <!-- ── Main layout ──────────────────────────────────────────────────────── -->
+  <div class="workspace-grid">
+
+    <!-- ── Left: Configuration panel ─────────────────────────────────────── -->
+    <div class="config-panel glass-panel">
+
+      <!-- Step 1: Template -->
+      <div class="step-block">
+        <div class="step-header">
+          <span class="step-number">01</span>
+          <div>
+            <h3 class="step-title">SELECT TEMPLATE</h3>
+            <p class="step-desc">Choose the PPTX whose design you want to preserve</p>
+          </div>
+        </div>
+
+        <select [(ngModel)]="selectedTemplateId" class="enterprise-select">
+          <option [ngValue]="null" disabled>— choose template —</option>
+          <option *ngFor="let t of templates" [ngValue]="t.id">
+            {{ t.filename }}
+          </option>
+        </select>
+
+        <!-- Upload a new template -->
+        <div class="upload-zone" [class.has-file]="uploadFileName">
+          <label class="upload-label">
+            <span class="upload-icon">↑</span>
+            <span *ngIf="!uploadFileName">Upload new .pptx template</span>
+            <span *ngIf="uploadFileName" class="upload-filename">{{ uploadFileName }}</span>
+            <input type="file" accept=".pptx" (change)="onFileSelected($event)" class="hidden-input">
+          </label>
+          <button
+            *ngIf="uploadFile"
+            (click)="uploadTemplate()"
+            [disabled]="isUploading"
+            class="btn-secondary btn-sm">
+            {{ isUploading ? 'Uploading...' : 'Upload' }}
+          </button>
+        </div>
+        <p *ngIf="uploadError" class="field-error">{{ uploadError }}</p>
+      </div>
+
+      <!-- Step 2: Knowledge source -->
+      <div class="step-block">
+        <div class="step-header">
+          <span class="step-number">02</span>
+          <div>
+            <h3 class="step-title">KNOWLEDGE SOURCE</h3>
+            <p class="step-desc">Select the ingested document that provides the content</p>
+          </div>
+        </div>
+
+        <select [(ngModel)]="selectedKnowledge" class="enterprise-select">
+          <option value="" disabled>— choose knowledge file —</option>
+          <option *ngFor="let k of availableKnowledge" [value]="k">{{ k }}</option>
+        </select>
+      </div>
+
+      <!-- Step 3: Prompt -->
+      <div class="step-block">
+        <div class="step-header">
+          <span class="step-number">03</span>
+          <div>
+            <h3 class="step-title">CONTENT DIRECTIVE</h3>
+            <p class="step-desc">Describe what the presentation should communicate</p>
+          </div>
+        </div>
+
+        <textarea
+          [(ngModel)]="prompt"
+          class="enterprise-textarea"
+          rows="4"
+          placeholder="e.g. Create a presentation for the Tesco Annual Results highlighting financial performance, market position and sustainability initiatives.">
+        </textarea>
+      </div>
+
+      <!-- Step 4: Optional display name -->
+      <div class="step-block step-block--optional">
+        <div class="step-header">
+          <span class="step-number">04</span>
+          <div>
+            <h3 class="step-title">OUTPUT NAME <span class="optional-tag">optional</span></h3>
+            <p class="step-desc">Label for the generated file</p>
+          </div>
+        </div>
+        <input
+          type="text"
+          [(ngModel)]="displayName"
+          class="enterprise-input"
+          placeholder="e.g. Tesco Results — Harry Potter Template">
+      </div>
+
+      <!-- Submit -->
+      <div class="submit-area">
+        <button
+          (click)="submit()"
+          [disabled]="!canSubmit"
+          class="btn-primary btn-generate">
+          <span class="btn-icon">⬡</span>
+          {{ isSubmitting ? 'Launching...' : 'MERGE TEMPLATE' }}
+        </button>
+        <p *ngIf="submitError" class="field-error">{{ submitError }}</p>
+      </div>
+    </div>
+
+    <!-- ── Right: Status & results ─────────────────────────────────────── -->
+    <div class="results-panel">
+
+      <!-- Active job progress -->
+      <div *ngIf="activeJob" class="job-card glass-panel" [class.job-error]="activeJob.status === 'error'" [class.job-done]="activeJob.status === 'completed'">
+
+        <div class="job-card-header">
+          <span class="job-status-badge" [class]="'badge-' + activeJob.status">
+            {{ activeJob.status | uppercase }}
+          </span>
+          <span class="job-id">JOB #{{ activeJob.job_id }}</span>
+        </div>
+
+        <!-- Progress bar -->
+        <div *ngIf="isProcessing" class="progress-track">
+          <div class="progress-bar" [style.width]="progressWidth"></div>
+        </div>
+
+        <p class="job-step">{{ activeJob.current_step }}</p>
+
+        <!-- Completion actions -->
+        <div *ngIf="activeJob.status === 'completed'" class="job-actions">
+          <div class="job-success-msg">
+            <span class="success-icon">✓</span>
+            Presentation ready — visual structure preserved, content updated from knowledge base.
+          </div>
+          <button (click)="downloadResult(activeJob)" class="btn-primary btn-download">
+            <span class="btn-icon">↓</span> DOWNLOAD PPTX
+          </button>
+          <button (click)="resetForm()" class="btn-secondary">New merge</button>
+        </div>
+
+        <!-- Error state -->
+        <div *ngIf="activeJob.status === 'error'" class="job-error-msg">
+          <strong>Pipeline error:</strong> {{ activeJob.error_detail || 'Unknown error.' }}
+          <button (click)="resetForm()" class="btn-secondary btn-sm">Dismiss</button>
+        </div>
+      </div>
+
+      <!-- Empty state -->
+      <div *ngIf="!activeJob" class="empty-state glass-panel">
+        <div class="empty-icon">⬡</div>
+        <h3>Template Merge Engine</h3>
+        <p>
+          This mode takes your existing presentation template — fonts,
+          backgrounds, layouts, brand elements — and replaces only the text
+          content with material synthesised from your knowledge base.
+        </p>
+        <p class="empty-hint">
+          Use this when you have a polished design you love and just need to
+          fill it with new data.
+        </p>
+        <div class="empty-steps">
+          <div class="empty-step"><span>01</span> Pick a PPTX template</div>
+          <div class="empty-step"><span>02</span> Pick the knowledge source</div>
+          <div class="empty-step"><span>03</span> Write a content directive</div>
+          <div class="empty-step"><span>→</span> Download the merged file</div>
+        </div>
+      </div>
+
+      <!-- Previous completed jobs this session -->
+      <div *ngIf="completedJobs.length > 0" class="session-history glass-panel">
+        <h4 class="history-title">THIS SESSION</h4>
+        <div *ngFor="let job of completedJobs" class="history-item">
+          <span class="history-name">{{ job.display_name || 'Job #' + job.job_id }}</span>
+          <button (click)="downloadResult(job)" class="btn-secondary btn-sm">↓ Download</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>

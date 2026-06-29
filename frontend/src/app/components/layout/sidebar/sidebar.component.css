@@ -145,3 +145,41 @@
   color: #dc2626 !important;
 }
 
+/* Template Merge — distinct visual identity in sidebar */
+.nav-item-template-merge {
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  background: rgba(124, 58, 237, 0.04);
+}
+
+.nav-item-template-merge:hover {
+  background: rgba(124, 58, 237, 0.1) !important;
+  color: #7c3aed !important;
+  border-color: rgba(124, 58, 237, 0.4);
+}
+
+.nav-item-template-merge.active {
+  background: rgba(124, 58, 237, 0.15) !important;
+  color: #7c3aed !important;
+  border-color: rgba(124, 58, 237, 0.5);
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nav-badge {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  background: linear-gradient(135deg, #7c3aed, #4f46e5);
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 10px;
+}
+
+.nav-section-spacer {
+  height: 8px;
+}
+

@@ -69,3 +69,10 @@ def task_run_data_alignment(name: str):
     from services.core.data_alignment_service import run_alignment
     return run_alignment(name)
 
+
+@celery_app.task(name="tasks.celery_run_template_merge")
+def celery_run_template_merge(job_id: int):
+    logger.info(f"[Celery] Template Merge task started for job_id={job_id}")
+    from services.templates.template_merge_orchestrator import run_template_merge
+    run_template_merge(job_id)
+

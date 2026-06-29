@@ -451,6 +451,34 @@ class GenerationJobFeedback(Base):
     question = relationship("SurveyQuestion")
 
 
+class TemplateMergeJob(Base):
+    """
+    Template Merge Engine job tracker.
+    Takes an existing PPTX template (category='pptx_template') and a knowledge
+    document already ingested, generates content per slide via RAG+LLM, and
+    produces a new PPTX that preserves the template's visual structure exactly.
+    """
+    __tablename__ = "template_merge_jobs"
+
+    id                  = Column(Integer, primary_key=True, index=True)
+    brand_id            = Column(Integer, ForeignKey("brands.id"), nullable=True)
+    template_asset_id   = Column(Integer, ForeignKey("brand_assets.id"), nullable=False)
+    knowledge_filename  = Column(String(512), nullable=False)
+    prompt              = Column(Text, nullable=False)
+
+    status              = Column(String(30), default="pending")  # pending|processing|completed|error
+    current_step        = Column(Text, nullable=True)
+    progress            = Column(Integer, default=0)
+    output_path         = Column(String(1024), nullable=True)
+    error_detail        = Column(Text, nullable=True)
+
+    display_name        = Column(String(120), nullable=True)
+    created_at          = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at          = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    template_asset      = relationship("BrandAsset", foreign_keys=[template_asset_id])
+
+
 class FooterConfig(Base):
     __tablename__ = "footer_configs"
 

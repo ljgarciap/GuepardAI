@@ -21,6 +21,9 @@ venv/
 __pycache__/
 *.pyc
 
+# Client Input Assets (templates, reports — never committed)
+Insumos/
+
 # Project Data & Assets
 backend/storage/
 backend/uploads/*

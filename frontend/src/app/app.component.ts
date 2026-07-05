@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { SidebarComponent } from './components/layout/sidebar/sidebar.component';
+import { ThemeService } from './services/theme.service';
 
 @Component({
   selector: 'app-root',
@@ -11,4 +12,6 @@ import { SidebarComponent } from './components/layout/sidebar/sidebar.component'
 })
 export class AppComponent {
   title = 'frontend';
+
+  constructor(private themeService: ThemeService) {}
 }

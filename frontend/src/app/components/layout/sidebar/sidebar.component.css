@@ -3,7 +3,7 @@
   display: flex;
   flex-direction: column;
   padding: 32px 16px;
-  background: #ffffff;
+  background: var(--bg-sidebar);
 }
 
 .logo-area {
@@ -55,7 +55,7 @@
   text-decoration: none;
   padding: 12px 16px;
   border-radius: 8px;
-  color: #64748b;
+  color: var(--text-muted-2);
   font-weight: 500;
   font-size: 0.9rem;
   transition: all 0.2s ease;
@@ -66,13 +66,13 @@
 }
 
 .nav-item-elite:hover {
-  background: #f1f5f9;
-  color: var(--primary-blue);
+  background: var(--brand-accent-soft);
+  color: var(--brand-accent);
 }
 
 .nav-item-elite.active {
-  background: #e0e7ff; /* More visible blue */
-  color: #1e40af; /* Strong Proseguir Blue */
+  background: var(--brand-accent-soft);
+  color: var(--brand-accent);
   font-weight: 700;
 }
 
@@ -95,7 +95,7 @@
 
 /* User Profile Section from Reference */
 .user-profile-lite {
-  background: #f8fafc;
+  background: var(--bg-app);
   border: 1px solid var(--border-light);
   border-radius: 8px;
   padding: 12px;
@@ -145,22 +145,22 @@
   color: #dc2626 !important;
 }
 
-/* Template Merge — distinct visual identity in sidebar */
+/* Template Merge nav item — uses the brand accent, same as the rest of the app */
 .nav-item-template-merge {
-  border: 1px solid rgba(124, 58, 237, 0.2);
-  background: rgba(124, 58, 237, 0.04);
+  border: 1px solid rgba(224, 138, 52, 0.2);
+  background: var(--brand-accent-soft);
 }
 
 .nav-item-template-merge:hover {
-  background: rgba(124, 58, 237, 0.1) !important;
-  color: #7c3aed !important;
-  border-color: rgba(124, 58, 237, 0.4);
+  background: rgba(224, 138, 52, 0.18) !important;
+  color: var(--brand-accent) !important;
+  border-color: rgba(224, 138, 52, 0.4);
 }
 
 .nav-item-template-merge.active {
-  background: rgba(124, 58, 237, 0.15) !important;
-  color: #7c3aed !important;
-  border-color: rgba(124, 58, 237, 0.5);
+  background: rgba(224, 138, 52, 0.22) !important;
+  color: var(--brand-accent) !important;
+  border-color: rgba(224, 138, 52, 0.5);
 }
 
 .nav-link {
@@ -173,7 +173,7 @@
   font-size: 8px;
   font-weight: 800;
   letter-spacing: 1px;
-  background: linear-gradient(135deg, #7c3aed, #4f46e5);
+  background: linear-gradient(135deg, var(--brand-accent), #b8701f);
   color: #fff;
   padding: 2px 6px;
   border-radius: 10px;

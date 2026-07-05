@@ -1,21 +1,48 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-  /* Guepard AI - Proseguir Aesthetic */
-  --bg-app: #f8fafc; 
-  --bg-sidebar: #ffffff;
-  --bg-card: #ffffff;
-  
-  --primary-navy: #0f172a; /* Deep Navy for titles */
-  --primary-blue: #2563eb; /* Vibrant Blue for active/buttons */
-  
-  --text-main: #334155; 
-  --text-muted: #64748b;
-  --text-light: #94a3b8;
-  
-  --border-light: #e2e8f0;
+  /* Guepard AI brand identity — extracted from Logos/GUEPARD.AI_logo*.png
+     (docs/design/visual-identity-2026-07-04.md). Orange is the one constant
+     across light/dark; everything else flips. */
+  --brand-accent: #E08A34;
+  --brand-accent-soft: rgba(224, 138, 52, 0.12);
+
+  --bg-app: #ffffff;
+  --bg-surface: #ffffff;      /* cards, sidebar */
+  --text-title: #262626;
+  --text-body: #262626;
+  --text-muted-2: #6b6b6b;
+  --border-color: #e5e5e5;
+
+  /* Legacy names — aliased so existing components re-skin without edits.
+     New components should reference the tokens above directly. */
+  --bg-sidebar: var(--bg-surface);
+  --bg-card: var(--bg-surface);
+  --glass-bg: rgba(255, 255, 255, 0.92);
+  --danger-text: #c53030;
+  --danger-text-soft: #9b2c2c;
+  --primary-navy: var(--text-title);   /* Deep Navy for titles → charcoal */
+  --primary-blue: var(--brand-accent); /* Vibrant Blue for active/buttons → brand orange */
+  --text-main: var(--text-body);
+  --text-muted: var(--text-muted-2);
+  --text-light: var(--text-muted-2);
+  --border-light: var(--border-color);
   --card-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --radius-md: 8px;
+}
+
+:root[data-theme="dark"] {
+  --bg-app: #0a0a0a;
+  --bg-surface: #171717;
+  --text-title: #f5f5f5;
+  --text-body: #f5f5f5;
+  --text-muted-2: #a3a3a3;
+  --border-color: #2e2e2e;
+  --card-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --glass-bg: rgba(23, 23, 23, 0.88);
+  --danger-text: #ff8a8a;
+  --danger-text-soft: #e8a0a0;
+  /* --brand-accent stays constant in both themes — never override it here. */
 }
 
 * {

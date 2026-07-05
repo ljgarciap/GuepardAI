@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { BrandService } from '../../../services/brand.service';
+import { ThemeService } from '../../../services/theme.service';
 
 @Component({
   selector: 'app-sidebar',
@@ -10,7 +11,11 @@ import { BrandService } from '../../../services/brand.service';
   styleUrl: './sidebar.component.css'
 })
 export class SidebarComponent {
-  constructor(private brandService: BrandService) {}
+  constructor(private brandService: BrandService, public themeService: ThemeService) {}
+
+  get logoSrc(): string {
+    return this.themeService.theme() === 'dark' ? 'logo-dark.png' : 'logo-light.png';
+  }
 
   resetSystem(): void {
     if (confirm('¿Estás seguro de que deseas limpiar COMPLETAMENTE la base de datos y todos los archivos subidos (uploads)? Esta acción no se puede deshacer.')) {

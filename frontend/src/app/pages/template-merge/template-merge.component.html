@@ -57,18 +57,19 @@
         <div class="upload-zone" [class.has-file]="uploadFileName">
           <label class="upload-label">
             <span class="upload-icon">↑</span>
-            <span *ngIf="!uploadFileName">Upload new .pptx template</span>
+            <span *ngIf="!uploadFileName">Click to select a .pptx template file</span>
             <span *ngIf="uploadFileName" class="upload-filename">{{ uploadFileName }}</span>
             <input type="file" accept=".pptx" (change)="onFileSelected($event)" class="hidden-input">
           </label>
           <button
-            *ngIf="uploadFile"
+            *ngIf="uploadFile && !isUploading"
             (click)="uploadTemplate()"
-            [disabled]="isUploading"
-            class="btn-secondary btn-sm">
-            {{ isUploading ? 'Uploading...' : 'Upload' }}
+            class="btn-primary btn-sm">
+            Upload
           </button>
+          <span *ngIf="isUploading" style="font-size:11px;color:var(--brand-accent);font-weight:600;">Uploading...</span>
         </div>
+        <p *ngIf="!uploadFile && templates.length === 0" class="upload-hint">No templates yet — select a .pptx above and click Upload</p>
         <p *ngIf="uploadError" class="field-error">{{ uploadError }}</p>
       </div>
 

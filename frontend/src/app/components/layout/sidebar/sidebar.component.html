@@ -1,7 +1,7 @@
 <div class="sidebar">
   <div class="logo-area">
     <div class="logo-wrapper-elite">
-      <img src="logo.png" alt="Identity" class="brand-logo-elite">
+      <img [src]="logoSrc" alt="Guepard AI" class="brand-logo-elite">
     </div>
     <div class="logo-text-elite">
       <h2>GUEPARD</h2>
@@ -39,6 +39,10 @@
       <span class="nav-link">Intelligence Hub</span>
     </a>
     <div class="nav-section-label">SYSTEM</div>
+    <button (click)="themeService.toggle()" class="nav-item-elite theme-toggle-elite" style="background: none; border: none; width: 100%; cursor: pointer; text-align: left;">
+      <span class="nav-icon-elite">{{ themeService.theme() === 'dark' ? '☀' : '☾' }}</span>
+      <span class="nav-link">{{ themeService.theme() === 'dark' ? 'Modo claro' : 'Modo oscuro' }}</span>
+    </button>
     <button (click)="resetSystem()" class="nav-item-elite reset-button-elite" style="background: none; border: none; width: 100%; cursor: pointer; text-align: left;">
       <span class="nav-icon-elite">⚡</span>
       <span class="nav-link">Reset System</span>

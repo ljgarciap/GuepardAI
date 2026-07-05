@@ -13,6 +13,7 @@ from database import SessionLocal
 import models
 from services.core.storage_service import job_dir, to_relative, resolve as resolve_storage
 from services.templates.template_analyzer import analyze_template
+from services.templates.template_config import TemplateMergeConfig
 from services.templates.template_content import generate_slide_contents
 from services.templates.template_renderer import render_merged_pptx
 
@@ -33,6 +34,12 @@ def run_template_merge(job_id: int) -> None:
 
         _set_status(db, job, "processing", "Starting template merge pipeline...", 5)
 
+        # ── Load configuration from system_configs (once for the whole job) ─
+        config = TemplateMergeConfig.from_db()
+        logger.info(f"[TemplateMerge] Job {job_id}: config loaded — rag_k={config.rag_k}, "
+                    f"bg_threshold={config.shape_bg_area_threshold}, "
+                    f"min_area={config.shape_min_area_threshold}")
+
         # ── Step 1: resolve template file path ─────────────────────────────
         template_asset = db.query(models.BrandAsset).get(job.template_asset_id)
         if not template_asset:
@@ -47,7 +54,7 @@ def run_template_merge(job_id: int) -> None:
         _set_status(db, job, "processing", "Analyzing template structure...", 15)
 
         # ── Step 2: analyze template ────────────────────────────────────────
-        profiles = analyze_template(template_path)
+        profiles = analyze_template(template_path, config)
         logger.info(f"[TemplateMerge] Job {job_id}: {len(profiles)} slides analyzed.")
 
         _set_status(db, job, "processing", "Generating slide content from knowledge base...", 35)
@@ -58,6 +65,7 @@ def run_template_merge(job_id: int) -> None:
             knowledge_filename=job.knowledge_filename,
             brand_id=job.brand_id or 0,
             user_prompt=job.prompt,
+            config=config,
         )
 
         _set_status(db, job, "processing", "Assembling final presentation...", 75)

@@ -2,44 +2,49 @@
 template_analyzer.py — Parse a PPTX template into a list of TextSlots.
 
 Each TextSlot describes one text frame that the merge engine will overwrite.
-Shapes that are NOT text (images, backgrounds, decorative lines, logos) are
-never touched — the analyzer marks them as preserve=True and returns them
-as VisualPreserve objects for logging only.
+All thresholds and limits are read from TemplateMergeConfig (sourced from
+system_configs), never hardcoded.
 
 Role inference heuristic (no LLM):
-  - Placeholder type PP_PLACEHOLDER.TITLE / PP_PLACEHOLDER.CENTER_TITLE → "title"
-  - Placeholder type PP_PLACEHOLDER.SUBTITLE / PP_PLACEHOLDER.BODY → "body"
-  - Any other text box in the top 20% of the slide → "title"
-  - Any other text box → "body"
-  - Small boxes (area < 3% of slide) → "footnote"
+  - Placeholder type PP_PLACEHOLDER.TITLE / CENTER_TITLE → "title"
+  - Placeholder type PP_PLACEHOLDER.SUBTITLE / BODY → "body"
+  - Non-placeholder in top `config.title_top_fraction` of slide height → "title"
+  - Non-placeholder with area < `config.footnote_area_fraction` of slide → "footnote"
+  - Everything else → "body"
+
+Shape filtering (non-placeholder shapes only):
+  - Empty text frame → skip
+  - Existing text < config.shape_min_text_length → skip
+  - Area > config.shape_bg_area_threshold of slide → skip (background)
+  - Area < config.shape_min_area_threshold of slide → skip (decorative dot)
 """
 import logging
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from services.templates.template_config import TemplateMergeConfig
+
 logger = logging.getLogger(__name__)
 
 try:
     from pptx import Presentation
-    from pptx.util import Emu
-    from pptx.enum.text import PP_ALIGN
-    import pptx.oxml.ns as pns
     _PPTX_AVAILABLE = True
 except ImportError:
     _PPTX_AVAILABLE = False
-    logger.warning("[TemplateAnalyzer] python-pptx not available — analysis will be limited.")
+    logger.warning("[TemplateAnalyzer] python-pptx not available.")
 
 
 @dataclass
 class TextSlot:
-    slide_idx: int          # 0-based slide index
-    shape_id: int           # shape.shape_id
+    slide_idx: int
+    shape_id: int
     shape_name: str
     role: str               # "title" | "body" | "footnote"
-    char_limit: int         # estimated max characters for this box
-    hint: str               # existing text (used as topic hint for LLM)
-    is_placeholder: bool    # True if shape is a PPT placeholder
+    char_limit: int
+    hint: str               # existing text (topic hint for LLM)
+    is_placeholder: bool
     placeholder_type: Optional[str] = None
+    action: str = "rewrite" # "preserve" | "adapt" | "rewrite"
 
 
 @dataclass
@@ -48,19 +53,20 @@ class SlideProfile:
     slide_width_emu: int
     slide_height_emu: int
     slots: List[TextSlot] = field(default_factory=list)
-    # Count of non-text shapes (images, backgrounds) preserved untouched
     preserved_shapes: int = 0
 
     @property
     def hint(self) -> str:
-        """Combined text of all title slots — topic hint for content generation."""
         return " / ".join(s.hint for s in self.slots if s.role == "title" and s.hint)
 
 
-def analyze_template(pptx_path: str) -> List[SlideProfile]:
+def analyze_template(
+    pptx_path: str,
+    config: TemplateMergeConfig,
+) -> List[SlideProfile]:
     """
     Open pptx_path and return one SlideProfile per slide.
-    Safe: any per-shape errors are logged and skipped rather than raised.
+    All filtering thresholds come from `config` (loaded from system_configs).
     """
     if not _PPTX_AVAILABLE:
         raise RuntimeError("python-pptx is required for template analysis.")
@@ -88,8 +94,26 @@ def analyze_template(pptx_path: str) -> List[SlideProfile]:
                 tf = shape.text_frame
                 existing_text = tf.text.strip()
 
-                role = _infer_role(shape, slide_h, slide_area)
-                char_limit = _estimate_char_limit(shape, role)
+                if shape.is_placeholder:
+                    # Placeholder shapes are always content candidates
+                    pass
+                else:
+                    # Skip non-placeholder shapes without meaningful content
+                    if not existing_text:
+                        profile.preserved_shapes += 1
+                        continue
+
+                    if len(existing_text) < config.shape_min_text_length:
+                        profile.preserved_shapes += 1
+                        continue
+
+                    if not _should_include_shape(shape, int(slide_area), config):
+                        profile.preserved_shapes += 1
+                        continue
+
+                role = _infer_role(shape, slide_h, slide_area, config)
+                char_limit = _estimate_char_limit(shape, role, existing_text, config)
+                action = _infer_action(shape.is_placeholder, role, existing_text, config)
 
                 slot = TextSlot(
                     slide_idx=slide_idx,
@@ -97,14 +121,17 @@ def analyze_template(pptx_path: str) -> List[SlideProfile]:
                     shape_name=shape.name,
                     role=role,
                     char_limit=char_limit,
-                    hint=existing_text[:200],
+                    hint=existing_text[:config.hint_max_chars],
                     is_placeholder=shape.is_placeholder,
                     placeholder_type=_placeholder_type_str(shape),
+                    action=action,
                 )
                 profile.slots.append(slot)
+
             except Exception as exc:
                 logger.warning(
-                    f"[TemplateAnalyzer] slide {slide_idx} shape '{getattr(shape, 'name', '?')}' skipped: {exc}"
+                    f"[TemplateAnalyzer] slide {slide_idx} shape "
+                    f"'{getattr(shape, 'name', '?')}' skipped: {exc}"
                 )
                 profile.preserved_shapes += 1
 
@@ -117,15 +144,31 @@ def analyze_template(pptx_path: str) -> List[SlideProfile]:
     return profiles
 
 
-# ─── private helpers ──────────────────────────────────────────────────────────
+# ─── private ──────────────────────────────────────────────────────────────────
 
-def _infer_role(shape, slide_height_emu: int, slide_area_emu: int) -> str:
-    if not _PPTX_AVAILABLE:
-        return "body"
+def _should_include_shape(
+    shape, slide_area_emu: int, config: TemplateMergeConfig
+) -> bool:
+    try:
+        area = (shape.width or 0) * (shape.height or 0)
+        if slide_area_emu <= 0:
+            return True
+        ratio = area / slide_area_emu
+        if ratio > config.shape_bg_area_threshold:
+            return False
+        if ratio < config.shape_min_area_threshold:
+            return False
+    except Exception:
+        pass
+    return True
 
+
+def _infer_role(
+    shape, slide_height_emu: int, slide_area_emu: int, config: TemplateMergeConfig
+) -> str:
     if shape.is_placeholder:
-        from pptx.enum.shapes import PP_PLACEHOLDER
         try:
+            from pptx.enum.shapes import PP_PLACEHOLDER
             ph_type = shape.placeholder_format.type
             if ph_type in (PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE):
                 return "title"
@@ -136,13 +179,11 @@ def _infer_role(shape, slide_height_emu: int, slide_area_emu: int) -> str:
 
     try:
         top = shape.top or 0
-        width = shape.width or 0
-        height = shape.height or 0
-        area = width * height
+        area = (shape.width or 0) * (shape.height or 0)
 
-        if area < slide_area_emu * 0.03:
+        if area < slide_area_emu * config.footnote_area_fraction:
             return "footnote"
-        if top < slide_height_emu * 0.20:
+        if top < slide_height_emu * config.title_top_fraction:
             return "title"
     except Exception:
         pass
@@ -150,24 +191,30 @@ def _infer_role(shape, slide_height_emu: int, slide_area_emu: int) -> str:
     return "body"
 
 
-def _estimate_char_limit(shape, role: str) -> int:
-    """
-    Rough char limit derived from physical box size.
-    title → 80 chars max; footnote → 120; body → derived from area.
-    """
+def _estimate_char_limit(
+    shape, role: str, hint: str, config: TemplateMergeConfig
+) -> int:
+    hint_stripped = hint.strip()
+
     if role == "title":
-        return 80
+        if hint_stripped and len(hint_stripped) <= config.short_hint_threshold:
+            return max(len(hint_stripped) * config.short_hint_title_multiplier, 20)
+        return config.title_char_limit
+
     if role == "footnote":
-        return 120
+        return config.footnote_char_limit
+
+    # Body
+    if hint_stripped and len(hint_stripped) <= config.short_hint_threshold:
+        return max(len(hint_stripped) * config.short_hint_body_multiplier, 30)
 
     try:
-        # EMU → inches (914400 EMU per inch); ~30 chars per sq inch at 18pt
         w_in = (shape.width or 0) / 914400
         h_in = (shape.height or 0) / 914400
-        estimated = int(w_in * h_in * 30)
-        return max(80, min(estimated, 600))
+        estimated = int(w_in * h_in * config.chars_per_sq_inch)
+        return max(config.body_char_limit_min, min(estimated, config.body_char_limit_max))
     except Exception:
-        return 300
+        return config.body_char_limit_min
 
 
 def _placeholder_type_str(shape) -> Optional[str]:
@@ -177,3 +224,51 @@ def _placeholder_type_str(shape) -> Optional[str]:
         return str(shape.placeholder_format.type)
     except Exception:
         return None
+
+
+def _infer_action(
+    is_placeholder: bool,
+    role: str,
+    hint: str,
+    config: TemplateMergeConfig,
+) -> str:
+    """
+    Classify how the LLM should treat this slot:
+
+      PRESERVE — do not touch; the existing text IS the correct content.
+      ADAPT    — rewrite keeping the same semantic territory and approximate length.
+      REWRITE  — free replacement from the knowledge base (default for placeholders).
+
+    Priority order (first match wins):
+      1. Footnotes are always preserved (legal/confidential text).
+      2. Hints containing a preserve keyword are preserved regardless of length.
+      3. Placeholder shapes (TITLE/BODY/SUBTITLE) are always rewritten.
+      4. Non-placeholder with short hint → PRESERVE (structural label).
+      5. Non-placeholder with medium hint → ADAPT (data to replace, structure to keep).
+      6. Default → REWRITE.
+    """
+    # 1. Footnotes always preserved
+    if role == "footnote":
+        return "preserve"
+
+    # 2. Legal / confidential keywords
+    hint_lower = hint.lower()
+    for kw in config.preserve_keywords.split(","):
+        kw = kw.strip().lower()
+        if kw and kw in hint_lower:
+            return "preserve"
+
+    # 3. Placeholder shapes → full rewrite
+    if is_placeholder:
+        return "rewrite"
+
+    # 4. Short non-placeholder hint → structural label, preserve
+    if len(hint) <= config.preserve_max_hint_chars:
+        return "preserve"
+
+    # 5. Medium non-placeholder hint → adapt (keep structure, replace data)
+    if len(hint) <= config.adapt_max_hint_chars:
+        return "adapt"
+
+    # 6. Default
+    return "rewrite"

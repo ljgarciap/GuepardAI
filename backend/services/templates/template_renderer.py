@@ -7,14 +7,17 @@ content, and saves the result to output_path.
 
 Visual structure is fully preserved:
   - All images, backgrounds, shapes without text → untouched
-  - Font family, font size, bold/italic, color, alignment → preserved from
-    the first run of each paragraph (only the text string changes)
-  - If the slot has multiple paragraphs/runs, all content is collapsed into
-    a single paragraph with the first run's formatting, then the remaining
-    paragraphs are cleared.  This keeps the slide visually stable.
+  - Formatting is preserved by copying the <a:rPr> XML element from the first
+    non-empty run of each text frame into each replacement run.  This approach
+    preserves ALL formatting attributes — font name, size, bold, italic, color
+    (both explicit RGB and theme colors), character spacing, etc. — without
+    having to enumerate each attribute individually.
+  - Shapes not in content_map are never touched.
+  - Empty replacement strings are skipped — the original text is kept.
 """
 import logging
 import os
+import re
 import shutil
 from typing import Dict, List
 
@@ -25,6 +28,8 @@ logger = logging.getLogger(__name__)
 try:
     from pptx import Presentation
     from pptx.util import Pt
+    from pptx.oxml.ns import qn
+    from lxml import etree
     _PPTX_AVAILABLE = True
 except ImportError:
     _PPTX_AVAILABLE = False
@@ -81,8 +86,13 @@ def _inject_slide_content(slide, content_map: Dict[int, str], slide_idx: int) ->
         new_text = content_map.get(shape.shape_id)
         if new_text is None:
             continue
+        # Strip markdown defensively (belt-and-suspenders with template_content)
+        new_text = _strip_markdown(new_text.strip())
+        if not new_text:
+            # Empty replacement → keep original template text
+            continue
         try:
-            _replace_text_frame(shape.text_frame, str(new_text))
+            _replace_text_frame(shape.text_frame, new_text)
         except Exception as exc:
             logger.warning(
                 f"[TemplateMergeRenderer] slide {slide_idx} shape {shape.shape_id} "
@@ -92,107 +102,105 @@ def _inject_slide_content(slide, content_map: Dict[int, str], slide_idx: int) ->
 
 def _replace_text_frame(tf, new_text: str) -> None:
     """
-    Replace all text in tf with new_text while preserving the formatting of
-    the first run of the first non-empty paragraph.
+    Replace all text in tf with new_text while preserving ALL formatting.
 
     Strategy:
-      1. Capture formatting from the first available run (font name, size,
-         bold, italic, color).
-      2. Clear every paragraph's runs.
-      3. Write new_text into the first paragraph's first run.
-      4. Clear all remaining paragraphs (keep XML structure but empty text).
+      1. Capture <a:rPr> XML from the first non-empty run — this preserves
+         font, size, bold, italic, color (RGB and theme), character spacing, etc.
+      2. Clear every run from the first paragraph.
+      3. Add a single new run with the captured <a:rPr> and the new text.
+      4. Clear all remaining paragraphs (keep XML structure for slide geometry).
 
-    This avoids touching any XML attributes unrelated to text (geometry,
-    position, word-wrap settings, etc.).
+    If new_text contains newlines, each line becomes a separate run separated
+    by a soft line-break element (<a:br>) so the visual layout is preserved.
     """
     paragraphs = tf.paragraphs
     if not paragraphs:
         return
 
-    # Capture base formatting from the first run found anywhere in the frame
-    base_font = _capture_base_font(tf)
+    base_rpr = _capture_base_rpr(tf)
 
-    new_text = new_text.strip()
-
-    # Write the new text into the first paragraph
     first_para = paragraphs[0]
-    _set_paragraph_text(first_para, new_text, base_font)
 
-    # Clear remaining paragraphs (preserve them so slide geometry is stable)
+    # Build content: split on newlines → runs separated by <a:br>
+    lines = [l for l in new_text.split('\n') if l.strip()]
+    if not lines:
+        lines = [new_text]
+
+    _set_paragraph_text(first_para, lines, base_rpr)
+
+    # Clear remaining paragraphs — keep them so shape geometry stays stable
     for para in list(paragraphs)[1:]:
         _clear_paragraph(para)
 
 
-def _capture_base_font(tf):
-    """Return a dict of font attributes from the first non-empty run."""
+def _capture_base_rpr(tf):
+    """
+    Return a standalone copy of the <a:rPr> element from the first non-empty run.
+    Returns None if no explicit run properties are found (formatting then inherits
+    from the paragraph/shape theme, which is preserved automatically).
+    """
     for para in tf.paragraphs:
         for run in para.runs:
             if run.text.strip():
-                font = run.font
-                return {
-                    "name": font.name,
-                    "size": font.size,
-                    "bold": font.bold,
-                    "italic": font.italic,
-                    "color_rgb": _safe_color(font),
-                }
-    return {}
-
-
-def _safe_color(font):
-    try:
-        if font.color and font.color.type is not None:
-            return font.color.rgb
-    except Exception:
-        pass
+                rpr_elem = run._r.find(qn('a:rPr'))
+                if rpr_elem is not None:
+                    # etree.fromstring(tostring(...)) creates an orphan deep copy
+                    return etree.fromstring(etree.tostring(rpr_elem))
     return None
 
 
-def _set_paragraph_text(para, text: str, base_font: dict) -> None:
-    """Clear existing runs and add a single run with text + preserved formatting."""
-    # Remove all existing runs from XML
-    from pptx.oxml.ns import qn
+def _set_paragraph_text(para, lines: List[str], base_rpr) -> None:
+    """
+    Clear existing runs and write `lines` into `para`.
+
+    Each line becomes an <a:r> run; lines are separated by <a:br> (soft return)
+    so the vertical spacing stays compact within the original paragraph frame.
+    Each run gets a copy of `base_rpr` to preserve formatting.
+    """
     p_elem = para._p
-    for r in p_elem.findall(qn("a:r")):
-        p_elem.remove(r)
 
-    # Add a new run
-    run = para.add_run()
-    run.text = text
+    # Remove all existing runs and soft-breaks
+    for elem in p_elem.findall(qn('a:r')):
+        p_elem.remove(elem)
+    for elem in p_elem.findall(qn('a:br')):
+        p_elem.remove(elem)
 
-    if base_font:
-        font = run.font
-        if base_font.get("name"):
-            try:
-                font.name = base_font["name"]
-            except Exception:
-                pass
-        if base_font.get("size"):
-            try:
-                font.size = base_font["size"]
-            except Exception:
-                pass
-        if base_font.get("bold") is not None:
-            try:
-                font.bold = base_font["bold"]
-            except Exception:
-                pass
-        if base_font.get("italic") is not None:
-            try:
-                font.italic = base_font["italic"]
-            except Exception:
-                pass
-        if base_font.get("color_rgb"):
-            try:
-                from pptx.dml.color import RGBColor
-                font.color.rgb = base_font["color_rgb"]
-            except Exception:
-                pass
+    for i, line_text in enumerate(lines):
+        if i > 0:
+            # Insert a soft line-break before subsequent lines
+            br_elem = etree.SubElement(p_elem, qn('a:br'))
+            if base_rpr is not None:
+                br_elem.append(etree.fromstring(etree.tostring(base_rpr)))
+
+        run = para.add_run()
+        run.text = line_text
+
+        if base_rpr is not None:
+            r_elem = run._r
+            existing_rpr = r_elem.find(qn('a:rPr'))
+            if existing_rpr is not None:
+                r_elem.remove(existing_rpr)
+            r_elem.insert(0, etree.fromstring(etree.tostring(base_rpr)))
 
 
 def _clear_paragraph(para) -> None:
-    """Remove all runs from a paragraph, leaving an empty paragraph element."""
-    from pptx.oxml.ns import qn
+    """Remove all runs and soft-breaks from a paragraph, leaving it empty."""
     p_elem = para._p
-    for r in p_elem.findall(qn("a:r")):
-        p_elem.remove(r)
+    for elem in p_elem.findall(qn('a:r')):
+        p_elem.remove(elem)
+    for elem in p_elem.findall(qn('a:br')):
+        p_elem.remove(elem)
+
+
+def _strip_markdown(text: str) -> str:
+    """Defensive strip of markdown formatting in case LLM ignored instructions."""
+    if not text:
+        return text
+    text = re.sub(r'\*{1,3}(.+?)\*{1,3}', r'\1', text, flags=re.DOTALL)
+    text = re.sub(r'_{1,2}(.+?)_{1,2}', r'\1', text, flags=re.DOTALL)
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^[\-\*\+]\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+    return text.strip()

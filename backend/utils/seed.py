@@ -719,6 +719,114 @@ Write content for exactly ONE slide. Use COMPANY DATA as your primary source.
   "metadata": {{"prepared_for": "Client Name", "confidential": true, "date": "Month YYYY"}}
 }}""",
                 "description": "Slide Content v2.0 — Strategic context, anti-placeholder, 110-char bullet limit."
+            },
+
+            # ─────────────────────────────────────────────────────
+            # TEMPLATE MERGE ENGINE
+            # All parameters are read once at job start via
+            # TemplateMergeConfig.from_db() and passed to the
+            # analyzer, content generator, and renderer.
+            # To tune without redeploying: UPDATE system_configs SET value=... WHERE key=...
+            # ─────────────────────────────────────────────────────
+            {
+                "key": "tm_shape_bg_area_threshold",
+                "value": "0.80",
+                "description": "Template Merge: non-placeholder shapes covering more than this fraction of slide area are treated as backgrounds and skipped."
+            },
+            {
+                "key": "tm_shape_min_area_threshold",
+                "value": "0.005",
+                "description": "Template Merge: non-placeholder shapes smaller than this fraction of slide area are treated as decorative elements and skipped."
+            },
+            {
+                "key": "tm_shape_min_text_length",
+                "value": "3",
+                "description": "Template Merge: non-placeholder shapes with existing text shorter than this (chars) are skipped."
+            },
+            {
+                "key": "tm_hint_max_chars",
+                "value": "200",
+                "description": "Template Merge: maximum characters captured from a shape's existing text to use as content hint."
+            },
+            {
+                "key": "tm_title_char_limit",
+                "value": "80",
+                "description": "Template Merge: default character limit for title slots."
+            },
+            {
+                "key": "tm_footnote_char_limit",
+                "value": "120",
+                "description": "Template Merge: character limit for footnote/caption slots."
+            },
+            {
+                "key": "tm_body_char_limit_min",
+                "value": "80",
+                "description": "Template Merge: minimum character limit for body slots (floor of the area-based estimate)."
+            },
+            {
+                "key": "tm_body_char_limit_max",
+                "value": "600",
+                "description": "Template Merge: maximum character limit for body slots (ceiling of the area-based estimate)."
+            },
+            {
+                "key": "tm_short_hint_threshold",
+                "value": "15",
+                "description": "Template Merge: hints shorter than this indicate a key-metric placeholder (e.g. '$45', '23%'); a tight char limit is applied."
+            },
+            {
+                "key": "tm_short_hint_title_multiplier",
+                "value": "3",
+                "description": "Template Merge: char_limit = len(hint) × this multiplier for short-hint title slots."
+            },
+            {
+                "key": "tm_short_hint_body_multiplier",
+                "value": "4",
+                "description": "Template Merge: char_limit = len(hint) × this multiplier for short-hint body slots."
+            },
+            {
+                "key": "tm_chars_per_sq_inch",
+                "value": "30",
+                "description": "Template Merge: estimated characters per square inch used for body slot char_limit calculation."
+            },
+            {
+                "key": "tm_footnote_area_fraction",
+                "value": "0.03",
+                "description": "Template Merge: shapes smaller than this fraction of slide area are classified as footnotes."
+            },
+            {
+                "key": "tm_title_top_fraction",
+                "value": "0.20",
+                "description": "Template Merge: non-placeholder shapes in the top fraction of slide height are classified as titles."
+            },
+            {
+                "key": "tm_rag_k",
+                "value": "6",
+                "description": "Template Merge: number of RAG chunks retrieved per slide."
+            },
+            {
+                "key": "tm_rag_context_max_chars",
+                "value": "3000",
+                "description": "Template Merge: maximum characters of RAG context passed to the LLM per slide."
+            },
+            {
+                "key": "tm_max_bullet_items",
+                "value": "6",
+                "description": "Template Merge: maximum bullet items when the LLM returns a list for a body slot."
+            },
+            {
+                "key": "tm_preserve_max_hint_chars",
+                "value": "50",
+                "description": "Template Merge: non-placeholder shapes whose existing text is shorter than or equal to this (chars) are classified as PRESERVE — structural labels the LLM must not touch."
+            },
+            {
+                "key": "tm_adapt_max_hint_chars",
+                "value": "150",
+                "description": "Template Merge: non-placeholder shapes with hint length between preserve_max and this value are classified as ADAPT — the LLM rewrites the data but keeps the same semantic territory and length."
+            },
+            {
+                "key": "tm_preserve_keywords",
+                "value": "confidential,proprietary,©,for reference only,preparado exclusivamente",
+                "description": "Template Merge: comma-separated substrings; any match in a shape's existing text forces PRESERVE regardless of hint length (legal/confidential text)."
             }
 ]
 

@@ -70,7 +70,7 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
   // ── Data loading ─────────────────────────────────────────────────────────
 
   loadTemplates(): void {
-    this.http.get<TemplateAsset[]>(`${environment.apiUrl}/api/template-merge/templates`)
+    this.http.get<TemplateAsset[]>(`${environment.apiUrl}/template-merge/templates`)
       .subscribe({
         next: (data) => this.templates = data,
         error: () => this.templates = [],
@@ -78,9 +78,10 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
   }
 
   loadKnowledgeSources(): void {
-    this.http.get<string[]>(`${environment.apiUrl}/api/available-knowledge`)
+    // brand_id=-1 → superuser visibility (same as Synthesis Studio default)
+    this.http.get<any>(`${environment.apiUrl}/available-knowledge?brand_id=-1`)
       .subscribe({
-        next: (data) => this.availableKnowledge = Array.isArray(data) ? data : [],
+        next: (data) => this.availableKnowledge = data?.sources || [],
         error: () => this.availableKnowledge = [],
       });
   }
@@ -109,14 +110,23 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
     const form = new FormData();
     form.append('file', this.uploadFile);
 
-    this.http.post<any>(`${environment.apiUrl}/api/template-merge/upload-template`, form)
+    this.http.post<any>(`${environment.apiUrl}/template-merge/upload-template`, form)
       .subscribe({
         next: (res) => {
           this.isUploading = false;
           this.uploadFile = null;
           this.uploadFileName = '';
-          this.loadTemplates();
-          this.selectedTemplateId = res.asset_id;
+          // Reload templates list, then select the newly uploaded one
+          this.http.get<TemplateAsset[]>(`${environment.apiUrl}/template-merge/templates`)
+            .subscribe({
+              next: (data) => {
+                this.templates = data;
+                this.selectedTemplateId = res.asset_id;
+              },
+              error: () => {
+                this.selectedTemplateId = res.asset_id;
+              }
+            });
         },
         error: (err) => {
           this.isUploading = false;
@@ -149,7 +159,7 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
       display_name: this.displayName.trim() || null,
     };
 
-    this.http.post<any>(`${environment.apiUrl}/api/template-merge/jobs`, payload)
+    this.http.post<any>(`${environment.apiUrl}/template-merge/jobs`, payload)
       .subscribe({
         next: (res) => {
           this.isSubmitting = false;
@@ -178,7 +188,7 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
     this.pollSub = interval(2500)
       .pipe(
         switchMap(() =>
-          this.http.get<MergeJobStatus>(`${environment.apiUrl}/api/template-merge/jobs/${jobId}`)
+          this.http.get<MergeJobStatus>(`${environment.apiUrl}/template-merge/jobs/${jobId}`)
         ),
         takeWhile((job) => !['completed', 'error'].includes(job.status), true)
       )
@@ -197,7 +207,7 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
 
   downloadResult(job: MergeJobStatus): void {
     window.open(
-      `${environment.apiUrl}/api/template-merge/jobs/${job.job_id}/download`,
+      `${environment.apiUrl}/template-merge/jobs/${job.job_id}/download`,
       '_blank'
     );
   }

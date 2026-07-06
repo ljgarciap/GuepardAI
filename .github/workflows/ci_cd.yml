@@ -26,6 +26,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis_test:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: "📥 Checkout Code"
@@ -60,6 +69,8 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql+psycopg://root:root@localhost:5433/ai_db_test
           DATABASE_URL: postgresql+psycopg://root:root@localhost:5433/ai_db_test
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET_KEY: "test-only-insecure-secret-do-not-use-in-prod"
           ANTHROPIC_API_KEY: "sk-test-fake-key"
           OPENAI_API_KEY: "sk-test-fake-key"
           MISTRAL_API_KEY: "fake-key"

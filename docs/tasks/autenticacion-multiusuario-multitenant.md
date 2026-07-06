@@ -3,7 +3,7 @@
 **Date**: 2026-07-05
 **PM**: desglose del diseño `docs/designs/autenticacion-multitenant-design.md`
 **Spec**: `docs/specs/autenticacion-multiusuario-multitenant.md`
-**Status**: B1-B9 completadas y validadas; Senior Reviewer encontró 2 blockers de seguridad (timing side-channel en login, `JWT_SECRET_KEY` sin guard) — ambos cerrados + 2 suggestions (rotación atómica de refresh, race de email duplicado). Suite completa 424 passed/1 skipped (2026-07-05). **Urgente para D1**: `JWT_SECRET_KEY` ahora es obligatorio (el backend no arranca sin él) — agregar a `docker-compose.yml` y a los secrets de EC2 antes del próximo deploy o el arranque en producción va a crashear. Frontend (F1-F4), DevOps (D1-D2) y Tech Writer (T1) pendientes.
+**Status**: B1-B9 completadas y validadas; Senior Reviewer encontró 2 blockers de seguridad (timing side-channel en login, `JWT_SECRET_KEY` sin guard) — ambos cerrados + 2 suggestions (rotación atómica de refresh, race de email duplicado). Suite completa 424 passed/1 skipped (2026-07-05). **D1 parcial** (2026-07-06): `passlib[bcrypt]`/`python-jose` en `requirements.txt`, vars JWT en `.env.example`/`docker-compose.yml` y `JWT_SECRET_KEY` real seteado en el `.env` de producción EC2 (backend + celery_worker reiniciados y verificados arriba) — **falta**: `SUPERADMIN_EMAIL`/`SUPERADMIN_PASSWORD` en `.env.example`/`docker-compose.yml`/EC2 y el script `utils/seed_superadmin.py` (ninguno existe todavía — sin esto no hay forma de loguearse en producción tras el deploy). Frontend (F1-F4), resto de DevOps (D1 restante + D2) y Tech Writer (T1) pendientes.
 **Rama**: `feature/auth-multitenant` (no existe rama activa hoy — crear al arrancar B1)
 
 ## Orden de ejecución

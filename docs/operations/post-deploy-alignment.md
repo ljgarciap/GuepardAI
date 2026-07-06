@@ -42,6 +42,9 @@ cuando el guard esté apagado (ejecución manual con los scripts de `utils/`).
 - `brands.tenant_id` queda **nullable** intencionalmente en esta iteración — no se enforcea `NOT NULL` hasta un release posterior, para evitar una carrera entre la alineación y tráfico de rutas ya scopeadas por tenant (ver `docs/designs/autenticacion-multitenant-design.md` §2.3).
 - El scoping por tenant en las rutas de la API todavía no está activo en esta tarea (B1) — llega en B6-B8 del desglose (`docs/tasks/autenticacion-multiusuario-multitenant.md`). Hasta entonces, `tenant_id` existe en el esquema pero no se usa para filtrar.
 
+**Comando manual ejecutado (D1 parcial, 2026-07-06)**: `JWT_SECRET_KEY` es una variable obligatoria nueva (el backend no arranca sin ella) y **no** se resuelve por alineación automática — vive únicamente en el `.env` físico de EC2 (`/home/ubuntu/GuepardAI/.env`, gitignored). Se generó con `openssl rand -hex 32` y se agregó manualmente por SSH (backup previo `.env.bak.<timestamp>` en el mismo directorio), seguido de `docker compose up -d --no-deps backend celery_worker` para recrear ambos contenedores. Verificado: `docker exec guepard-backend printenv | grep JWT_SECRET_KEY` y `GET /docs` → 200.
+**Pendiente**: `SUPERADMIN_EMAIL`/`SUPERADMIN_PASSWORD` (env vars) y `utils/seed_superadmin.py` no existen aún — sin ese script, ningún usuario puede loguearse en producción una vez que el login (F1-F4) esté deployado. Debe resolverse antes de D2.
+
 ---
 
 ## Iteración 6 — Calidad de Selección de Imágenes v2 (2026-06-11)

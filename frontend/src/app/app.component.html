@@ -1,4 +1,4 @@
-<div class="app-layout">
+<div class="app-layout" *ngIf="showShell(); else noShell">
   <!-- El panel de cristal izquierdo -->
   <aside class="sidebar-container glass-panel">
     <app-sidebar></app-sidebar>
@@ -9,3 +9,8 @@
     <router-outlet></router-outlet>
   </main>
 </div>
+
+<!-- Login/registro: sin sidebar -->
+<ng-template #noShell>
+  <router-outlet></router-outlet>
+</ng-template>

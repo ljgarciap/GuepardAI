@@ -44,11 +44,11 @@ def storage_tree(tmp_path, monkeypatch):
 
 
 @pytest.fixture()
-def client(db_session):
+def client(db_session, superadmin_headers):
     from main import app, get_db
     app.dependency_overrides[get_db] = lambda: db_session
     try:
-        yield TestClient(app)
+        yield TestClient(app, headers=superadmin_headers)
     finally:
         app.dependency_overrides.clear()
 

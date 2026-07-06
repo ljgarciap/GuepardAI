@@ -42,6 +42,8 @@ def reorg_db(create_test_schema):
         db.query(models.GenerationJob).filter(models.GenerationJob.id == job_id).delete()
     for brand_id in created["brands"]:
         db.query(models.Brand).filter(models.Brand.id == brand_id).delete()
+    for user_id in created.get("users", []):
+        db.query(models.User).filter(models.User.id == user_id).delete()
     db.query(models.DataAlignment).filter(models.DataAlignment.name.like("file_reorg%")).delete()
     db.commit()
     db.close()
@@ -224,6 +226,27 @@ class TestBrandDirectoryLogoUrl:
     # Árbol REAL (sin isolated_storage): importar main bajo monkeypatch dejaría
     # el mount /files apuntando al tmp y rompería los tests de seguridad.
 
+    def _superadmin_headers_for_real_session(self, db, created):
+        """
+        reorg_db no overridea get_db (SessionLocal real): el usuario debe
+        crearse y comprometerse en la MISMA sesión real que verá la request
+        HTTP, no en el fixture db_session (rollback-wrapped, invisible para
+        una conexión sin override). Se registra en `created` para limpieza.
+        """
+        from auth import security
+        user = models.User(
+            email=f"superadmin_{os.urandom(4).hex()}@example.com",
+            hashed_password=security.hash_password("irrelevant-password"),
+            role=models.UserRole.SUPERADMIN.value,
+            tenant_id=None,
+            is_active=1,
+        )
+        db.add(user)
+        db.commit()
+        created.setdefault("users", []).append(user.id)
+        token = security.create_access_token(user.id, user.role, user.tenant_id)
+        return {"Authorization": f"Bearer {token}"}
+
     def test_list_brands_resolves_stale_logo_ref(self, reorg_db):
         from main import app
         db, created = reorg_db
@@ -233,6 +256,7 @@ class TestBrandDirectoryLogoUrl:
         )
         db.add(brand); db.commit()
         created["brands"].append(brand.id)
+        headers = self._superadmin_headers_for_real_session(db, created)
 
         # El físico ya vive en el árbol nuevo
         target = os.path.join(st.brand_assets_dir(brand.id), "dir_logo_test_only.png")
@@ -240,7 +264,7 @@ class TestBrandDirectoryLogoUrl:
             f.write(b"logo")
 
         try:
-            client = TestClient(app)
+            client = TestClient(app, headers=headers)
             res = client.get("/api/brands")
             assert res.status_code == 200
             row = next(b for b in res.json() if b["id"] == brand.id)
@@ -257,8 +281,9 @@ class TestBrandDirectoryLogoUrl:
         )
         db.add(brand); db.commit()
         created["brands"].append(brand.id)
+        headers = self._superadmin_headers_for_real_session(db, created)
 
-        client = TestClient(app)
+        client = TestClient(app, headers=headers)
         res = client.get("/api/brands")
         row = next(b for b in res.json() if b["id"] == brand.id)
         # Mejor avatar con inicial que <img> rota: el serializador devuelve None

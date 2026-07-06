@@ -5,6 +5,7 @@
 !backend/.env.test.example
 backend/.env
 frontend/.env
+*.pem
 
 # Development Support Tools (Scratch scripts & logs)
 tools/

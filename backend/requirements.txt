@@ -29,6 +29,16 @@ loguru
 weasyprint
 playwright
 pydantic
+
+# Auth (Autenticación / Multi-tenant)
+# bcrypt fijado <4.1: passlib 1.7.4 hace un self-test interno con un secret
+# largo al cargar el backend; bcrypt>=4.1 empezó a lanzar ValueError ahí en
+# vez de truncar en silencio (comportamiento pre-4.1), rompiendo el hashing.
+passlib[bcrypt]
+bcrypt<4.1
+python-jose[cryptography]
+email-validator
+
 # Templating
 jinja2
 json-repair

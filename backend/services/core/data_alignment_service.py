@@ -191,10 +191,38 @@ def _run_perceptual_hash_backfill() -> dict:
         db.close()
 
 
+def _run_tenant_backfill() -> dict:
+    """
+    Crea un Tenant "legacy" por cada Brand sin tenant_id (pre-Iteración Auth).
+    Idempotente: solo procesa Brand.tenant_id IS NULL.
+    Spec: docs/specs/autenticacion-multiusuario-multitenant.md
+    """
+    summary = {"tenants_created": 0, "brands_assigned": 0, "failed": 0}
+    db = SessionLocal()
+    try:
+        brands = db.query(models.Brand).filter(models.Brand.tenant_id.is_(None)).all()
+        for brand in brands:
+            try:
+                tenant = models.Tenant(name=f"{brand.name} (legacy)")
+                db.add(tenant)
+                db.flush()  # asigna tenant.id sin cerrar la transacción
+                brand.tenant_id = tenant.id
+                summary["tenants_created"] += 1
+                summary["brands_assigned"] += 1
+            except Exception as e:
+                summary["failed"] += 1
+                logger.warning(f"[TenantBackfill] Brand {brand.id} failed: {e}")
+        db.commit()
+        return summary
+    finally:
+        db.close()
+
+
 ALIGNMENT_REGISTRY: Dict[str, Callable[[], dict]] = {
     "visual_profile_backfill_v1": _run_visual_profile_backfill,
     "file_reorganization_v1": _run_file_reorganization,
     "perceptual_hash_backfill_v1": _run_perceptual_hash_backfill,
+    "tenant_backfill_v1": _run_tenant_backfill,
 }
 
 

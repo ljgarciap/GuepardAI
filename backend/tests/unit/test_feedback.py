@@ -4,12 +4,12 @@ import models
 
 
 @pytest.mark.integration
-def test_submit_and_get_feedback(db_session, sample_job):
+def test_submit_and_get_feedback(db_session, sample_job, superadmin_headers):
     from main import app, get_db
     app.dependency_overrides[get_db] = lambda: db_session
 
     try:
-        client = TestClient(app)
+        client = TestClient(app, headers=superadmin_headers)
         
         # Check that initially get feedback returns empty list
         response = client.get(f"/api/presentations/{sample_job.id}/feedback")

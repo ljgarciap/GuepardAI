@@ -121,18 +121,40 @@
 .user-info-elite {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  flex: 1;
 }
 
 .user-name-elite {
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--primary-navy);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .user-role-elite {
   font-size: 0.65rem;
   color: var(--text-muted);
   font-weight: 600;
+  text-transform: capitalize;
+}
+
+.logout-button-elite {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logout-button-elite:hover {
+  color: var(--danger-text);
 }
 
 .reset-button-elite {

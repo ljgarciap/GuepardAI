@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 import models
-from database import SessionLocal, engine, Base, reconcile_additive_columns
+from database import SessionLocal, engine, Base, reconcile_additive_columns, get_db
 from tasks import (
     celery_extract_full_brand_style,
     celery_ingest_knowledge,
@@ -21,6 +21,14 @@ from tasks import (
     celery_resume_generation_pipeline
 )
 from services.core.brand_service import create_brand_logic, update_brand_logic
+from auth.dependencies import (
+    get_current_user,
+    require_role,
+    require_tenant_access,
+    check_brand_tenant_access,
+    check_job_tenant_access,
+    tenant_brand_ids_filter,
+)
 import uuid
 from datetime import datetime, date
 from sqlalchemy import JSON
@@ -61,6 +69,11 @@ try:
     seed_data()
 except Exception as e:
     print(f"  [System] Warning: Seeding failed: {e}")
+try:
+    from utils.seed_superadmin import seed_superadmin
+    seed_superadmin()
+except Exception as e:
+    print(f"  [System] Warning: Superadmin seeding failed: {e}")
 
 # Alineaciones de datos (tercera capa, junto a esquema y config) — nunca bloquea el boot
 try:
@@ -109,6 +122,12 @@ os.makedirs(STORAGE_PUBLIC_ROOT, exist_ok=True)
 app.mount("/files", CORSStaticFiles(directory=STORAGE_PUBLIC_ROOT), name="files")
 cleanup_tmp()  # housekeeping de temporales >24h (tolerante, nunca bloquea)
 
+# Autenticación / Multi-tenant (B4-B5) — routers propios, no inline en este archivo.
+from routers.auth import router as auth_router
+from routers.users import router as users_router
+app.include_router(auth_router)
+app.include_router(users_router)
+
 
 # ──────────────────────────────────────────────
 # MODELOS PYDANTIC
@@ -133,15 +152,12 @@ class PresentationRequest(BaseModel):
 
 
 # ──────────────────────────────────────────────
-# DB HELPER
+# DB HELPER — importado de database.py (get_db), no redefinido acá.
+# Antes de Autenticación/Multi-tenant (B4-B6) este archivo tenía su propia
+# copia local de get_db(); al tener dos objetos de función distintos con el
+# mismo comportamiento, un test que overridea uno no afecta al otro, y las
+# nuevas dependencias de auth (auth/dependencies.py) usan la de database.py.
 # ──────────────────────────────────────────────
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 # ──────────────────────────────────────────────
@@ -207,9 +223,12 @@ def _serialize_brand(brand: models.Brand) -> dict:
 
 
 @app.get("/api/brands", tags=["Governance"])
-def list_brands(db: Session = Depends(get_db)):
-    """Lista el Directorio Oficial de Marcas."""
-    return [_serialize_brand(b) for b in db.query(models.Brand).all()]
+def list_brands(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Lista el Directorio Oficial de Marcas (scopeado al tenant del usuario; superadmin ve todas)."""
+    query = db.query(models.Brand)
+    if current_user.role != models.UserRole.SUPERADMIN.value:
+        query = query.filter(models.Brand.tenant_id == current_user.tenant_id)
+    return [_serialize_brand(b) for b in query.all()]
 
 @app.post("/api/brands", tags=["Governance"])
 async def create_brand(
@@ -217,14 +236,23 @@ async def create_brand(
     about: Optional[str] = Form(None),
     core_value: Optional[str] = Form(None),
     logo: Optional[UploadFile] = File(None),
-    db: Session = Depends(get_db)
+    tenant_id: Optional[int] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
-    """Registra una nueva marca (Delegado a BrandService)."""
+    """Registra una nueva marca (Delegado a BrandService). Se asigna al tenant del usuario
+    (admin/cliente); `tenant_id` explícito solo lo honra un superadmin."""
     existing = db.query(models.Brand).filter(models.Brand.name == name).first()
     if existing:
         raise HTTPException(status_code=400, detail="Brand already exists.")
-    
+
     brand = await create_brand_logic(db, name, about, core_value, logo)
+    if current_user.role == models.UserRole.SUPERADMIN.value:
+        brand.tenant_id = tenant_id
+    else:
+        brand.tenant_id = current_user.tenant_id
+    db.commit()
+    db.refresh(brand)
     return _serialize_brand(brand)
 
 @app.put("/api/brands/{brand_id}", tags=["Governance"])
@@ -234,7 +262,8 @@ async def update_brand(
     about: Optional[str] = Form(None),
     core_value: Optional[str] = Form(None),
     logo: Optional[UploadFile] = File(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_tenant_access)
 ):
     """Actualiza una marca (Delegado a BrandService)."""
     brand = await update_brand_logic(db, brand_id, name, about, core_value, logo)
@@ -245,7 +274,7 @@ async def update_brand(
 
 
 @app.get("/api/footers", tags=["Governance"])
-def list_footers(db: Session = Depends(get_db)):
+def list_footers(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Lista todas las configuraciones de footer."""
     is_enabled_config = db.query(models.SystemConfig).filter(models.SystemConfig.key == "is_footer_enabled").first()
     is_enabled = (is_enabled_config.value == "true") if is_enabled_config else True
@@ -264,7 +293,8 @@ async def create_footer(
     disclaimer: Optional[str] = Form(None),
     logo_light: Optional[UploadFile] = File(None),
     logo_dark: Optional[UploadFile] = File(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
     """Crea o actualiza una configuración de footer y procesa logos opcionales."""
     logo_light_path = None
@@ -326,7 +356,7 @@ async def create_footer(
     return footer
 
 @app.put("/api/footers/{footer_id}/select", tags=["Governance"])
-def select_footer(footer_id: int, db: Session = Depends(get_db)):
+def select_footer(footer_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Selecciona un footer específico (desmarcando los demás)."""
     # Si footer_id es 0, deseleccionamos todos (sin footer)
     if footer_id == 0:
@@ -345,7 +375,7 @@ def select_footer(footer_id: int, db: Session = Depends(get_db)):
     return footer
 
 @app.delete("/api/footers/{footer_id}", tags=["Governance"])
-def delete_footer(footer_id: int, db: Session = Depends(get_db)):
+def delete_footer(footer_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Elimina una configuración de footer."""
     footer = db.query(models.FooterConfig).get(footer_id)
     if not footer:
@@ -356,7 +386,7 @@ def delete_footer(footer_id: int, db: Session = Depends(get_db)):
     return {"status": "success", "message": "Footer deleted"}
 
 @app.put("/api/footers/toggle", tags=["Governance"])
-def toggle_footer_global(enabled: bool, db: Session = Depends(get_db)):
+def toggle_footer_global(enabled: bool, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Habilita o deshabilita globalmente el footer."""
     cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == "is_footer_enabled").first()
     val_str = "true" if enabled else "false"
@@ -373,12 +403,18 @@ def toggle_footer_global(enabled: bool, db: Session = Depends(get_db)):
 # WORKER TASKS (background)
 # ──────────────────────────────────────────────
 @app.get("/api/library/images", tags=["Library"])
-def list_images(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
+def list_images(brand_id: Optional[int] = None, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Lista activos excluyendo datos binarios/vectores para evitar errores de serialización."""
+    if brand_id:
+        check_brand_tenant_access(db, current_user, brand_id)
     query = db.query(models.BrandAsset)
     if brand_id:
         query = query.filter(models.BrandAsset.brand_id == brand_id)
-    
+    else:
+        tenant_ids = tenant_brand_ids_filter(db, current_user)
+        if tenant_ids is not None:
+            query = query.filter(models.BrandAsset.brand_id.in_(tenant_ids))
+
     assets = query.all()
     # v21.5: Conversión manual para evitar fallos con pgvector/embeddings
     from services.core.storage_service import resolve as resolve_storage, public_url
@@ -401,9 +437,9 @@ def list_images(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
     return safe_assets
 
 @app.get("/api/generation/status/{job_id}", tags=["Generation"])
-def get_generation_status(job_id: int, db: Session = Depends(get_db)):
+def get_generation_status(job_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     job = db.query(models.GenerationJob).get(job_id)
-    if not job: raise HTTPException(status_code=404, detail="Job not found.")
+    check_job_tenant_access(db, current_user, job)
     return {
         "id": job.id, "status": job.status, "progress": job.progress,
         "current_step": job.current_step,
@@ -412,9 +448,10 @@ def get_generation_status(job_id: int, db: Session = Depends(get_db)):
     }
 
 @app.get("/api/generation/download/{job_id}", tags=["Generation"])
-def download_presentation(job_id: int, db: Session = Depends(get_db)):
+def download_presentation(job_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     job = db.query(models.GenerationJob).get(job_id)
-    if not job or job.status != models.GenerationJobStatus.COMPLETED: raise HTTPException(status_code=404, detail="File not ready.")
+    check_job_tenant_access(db, current_user, job)
+    if job.status != models.GenerationJobStatus.COMPLETED: raise HTTPException(status_code=404, detail="File not ready.")
     from services.core.storage_service import resolve as resolve_storage
     physical = resolve_storage(job.pptx_path)
     if not physical: raise HTTPException(status_code=404, detail="File not found on disk.")
@@ -427,14 +464,18 @@ def download_presentation(job_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/brand/upload", tags=["Ingestion"])
 async def upload_asset(
-    ingestion_type: str = Form(...),   
-    visibility_scope: str = Form("exclusive"), 
-    brand_id: Optional[int] = Form(None),       
-    manual_tags: Optional[str] = Form(None),    
-    document_type: str = Form("company_knowledge"), 
-    file: UploadFile = File(...)
+    ingestion_type: str = Form(...),
+    visibility_scope: str = Form("exclusive"),
+    brand_id: Optional[int] = Form(None),
+    manual_tags: Optional[str] = Form(None),
+    document_type: str = Form("company_knowledge"),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
     """Punto de entrada para la ingesta de conocimiento y estilo."""
+    if brand_id:
+        check_brand_tenant_access(db, current_user, brand_id)
     job_key = file.filename
     safe_tags = [t.strip() for t in manual_tags.split(",")] if manual_tags else []
 
@@ -479,7 +520,7 @@ async def upload_asset(
     return {"status": models.IngestionJobStatus.PROCESSING, "job_key": job_key}
 
 @app.get("/api/ingestion/status/{job_key}", tags=["Ingestion"])
-def get_ingestion_status(job_key: str, ingestion_type: str = "brand_style", db: Session = Depends(get_db)):
+def get_ingestion_status(job_key: str, ingestion_type: str = "brand_style", db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Consulta el progreso de una tarea de ingesta."""
     job = db.query(models.IngestionJob).filter(
         models.IngestionJob.client_name == job_key,
@@ -493,28 +534,40 @@ def get_ingestion_status(job_key: str, ingestion_type: str = "brand_style", db: 
     }
 
 @app.get("/api/library/blueprints", tags=["Library"])
-def list_library_blueprints(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
+def list_library_blueprints(brand_id: Optional[int] = None, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Lista los blueprints de estilo en la librería (usando BrandVisualDna)."""
+    if brand_id:
+        check_brand_tenant_access(db, current_user, brand_id)
     query = db.query(models.BrandVisualDna)
     if brand_id:
         query = query.filter(models.BrandVisualDna.brand_id == brand_id)
-    
+    else:
+        tenant_ids = tenant_brand_ids_filter(db, current_user)
+        if tenant_ids is not None:
+            query = query.filter(models.BrandVisualDna.brand_id.in_(tenant_ids))
+
     blueprints = query.all()
     return [{"id": b.id, "source_filename": b.source_filename, "brand_id": b.brand_id} for b in blueprints]
 
 @app.get("/api/library/knowledge", tags=["Library"])
-def list_library_knowledge(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
+def list_library_knowledge(brand_id: Optional[int] = None, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Lista los documentos de conocimiento procesados en la librería, agrupados por archivo."""
+    if brand_id:
+        check_brand_tenant_access(db, current_user, brand_id)
     # Usamos DISTINCT ON o GROUP BY para devolver solo una entrada por archivo
     query = db.query(
         models.CorporateKnowledge.source_filename,
         models.CorporateKnowledge.brand_id,
         models.CorporateKnowledge.is_public
     ).distinct(models.CorporateKnowledge.source_filename)
-    
+
     if brand_id:
         query = query.filter(models.CorporateKnowledge.brand_id == brand_id)
-    
+    else:
+        tenant_ids = tenant_brand_ids_filter(db, current_user)
+        if tenant_ids is not None:
+            query = query.filter(models.CorporateKnowledge.brand_id.in_(tenant_ids))
+
     knowledge = query.all()
     return [{
         "id": i, # Usamos el índice como ID temporal para el frontend
@@ -546,6 +599,7 @@ def list_library_portfolios(
     page: int = 1,
     page_size: int = 12,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     """Lista paginada de presentaciones generadas (más reciente primero)."""
     from sqlalchemy import or_
@@ -555,9 +609,16 @@ def list_library_portfolios(
     if date_from and date_to and date_from > date_to:
         raise HTTPException(status_code=422, detail="date_from must be earlier than or equal to date_to.")
 
+    if brand_id:
+        check_brand_tenant_access(db, current_user, brand_id)
+
     query = db.query(models.GenerationJob).filter(models.GenerationJob.status == models.GenerationJobStatus.COMPLETED)
     if brand_id:
         query = query.filter(models.GenerationJob.brand_id == brand_id)
+    else:
+        tenant_ids = tenant_brand_ids_filter(db, current_user)
+        if tenant_ids is not None:
+            query = query.filter(models.GenerationJob.brand_id.in_(tenant_ids))
     if search and search.strip():
         pattern = f"%{_escape_like(search.strip())}%"
         query = query.filter(or_(
@@ -604,11 +665,10 @@ class PortfolioRenameRequest(BaseModel):
 
 
 @app.patch("/api/library/portfolios/{job_id}", tags=["Library"])
-def rename_library_portfolio(job_id: int, payload: PortfolioRenameRequest, db: Session = Depends(get_db)):
+def rename_library_portfolio(job_id: int, payload: PortfolioRenameRequest, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Renombra la etiqueta visible de una presentación (no toca el archivo físico)."""
     job = db.query(models.GenerationJob).get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Presentation not found.")
+    check_job_tenant_access(db, current_user, job)
 
     name = (payload.display_name or "").strip()
     if not name or len(name) > 120:
@@ -621,15 +681,14 @@ def rename_library_portfolio(job_id: int, payload: PortfolioRenameRequest, db: S
 
 
 @app.delete("/api/library/portfolios/{job_id}", tags=["Library"])
-def delete_library_portfolio(job_id: int, db: Session = Depends(get_db)):
+def delete_library_portfolio(job_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """
     Elimina una presentación: job + slides (cascade) + feedback + decisiones de
     arte + archivo físico (tolerante). Solo estados terminales — un job en
     proceso devolvería el pipeline Celery escribiendo sobre un job borrado.
     """
     job = db.query(models.GenerationJob).get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Presentation not found.")
+    check_job_tenant_access(db, current_user, job)
     if job.status not in [models.GenerationJobStatus.COMPLETED, models.GenerationJobStatus.ERROR]:
         raise HTTPException(status_code=409, detail=f"Cannot delete a presentation while its pipeline is active (status: {job.status}).")
 
@@ -671,43 +730,46 @@ def delete_library_portfolio(job_id: int, db: Session = Depends(get_db)):
 # ──────────────────────────────────────────────
 
 @app.get("/api/available-styles", tags=["Generation"])
-def list_available_styles(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
+def list_available_styles(brand_id: Optional[int] = None, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Lista los blueprints de estilo con lógica de visibilidad escalonada."""
     query = db.query(models.BrandVisualDna)
-    
-    if brand_id == -1:
-        # SUPERUSER: Ver todo
+
+    if current_user.role == models.UserRole.SUPERADMIN.value:
+        # superadmin: ver todo (reemplaza el sentinel legacy brand_id=-1,
+        # que dejaba "ver todo" a cualquier caller sin chequeo de rol real)
         pass
     elif brand_id is None:
         # PUBLIC: Ver solo lo público
         query = query.filter(models.BrandVisualDna.is_public == 1)
     else:
-        # BRAND: Ver lo de la marca + lo público
+        # BRAND: Ver lo de la marca (propia del tenant) + lo público
+        check_brand_tenant_access(db, current_user, brand_id)
         query = query.filter((models.BrandVisualDna.brand_id == brand_id) | (models.BrandVisualDna.is_public == 1))
-    
+
     blueprints = query.all()
     return {"styles": [{"id": b.id, "filename": b.source_filename} for b in blueprints]}
 
 @app.get("/api/available-knowledge", tags=["Generation"])
-def list_available_knowledge(brand_id: Optional[int] = None, db: Session = Depends(get_db)):
+def list_available_knowledge(brand_id: Optional[int] = None, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Lista los paquetes de conocimiento con lógica de visibilidad escalonada."""
     query = db.query(models.CorporateKnowledge.source_filename).distinct()
-    
-    if brand_id == -1:
-        # SUPERUSER: Ver todo
+
+    if current_user.role == models.UserRole.SUPERADMIN.value:
+        # superadmin: ver todo (reemplaza el sentinel legacy brand_id=-1)
         pass
     elif brand_id is None:
         # PUBLIC: Ver solo lo público
         query = query.filter(models.CorporateKnowledge.is_public == 1)
     else:
-        # BRAND: Ver lo de la marca + lo público
+        # BRAND: Ver lo de la marca (propia del tenant) + lo público
+        check_brand_tenant_access(db, current_user, brand_id)
         query = query.filter((models.CorporateKnowledge.brand_id == brand_id) | (models.CorporateKnowledge.is_public == 1))
-    
+
     sources = query.all()
     return {"sources": [s[0] for s in sources]}
 
 @app.get("/api/available-dialects", tags=["Generation"])
-def list_dialects(db: Session = Depends(get_db)):
+def list_dialects(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Lista las regiones/idiomas disponibles (antes llamados dialectos)."""
     languages = db.query(models.Language).filter(models.Language.is_active == True).all()
     return [{"id": l.id, "code": l.code, "name": l.name} for l in languages]
@@ -715,9 +777,12 @@ def list_dialects(db: Session = Depends(get_db)):
 @app.post("/api/presentations/generate", tags=["Generation"])
 async def generate_presentation(
     request: PresentationRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
     """Dispara el motor de síntesis para generar una nueva presentación."""
+    if request.brand_id:
+        check_brand_tenant_access(db, current_user, request.brand_id)
     # Buscar el ID del Style (Blueprint) para la jerarquía de activos v23.0
     style_dna = db.query(models.BrandVisualDna).filter(
         models.BrandVisualDna.source_filename == request.style_filename
@@ -765,20 +830,23 @@ class ResumeRequest(BaseModel):
     output_format: Optional[str] = "pptx"
 
 @app.get("/api/presentations/{job_id}/slides", tags=["Generation"])
-def get_presentation_slides(job_id: int, db: Session = Depends(get_db)):
+def get_presentation_slides(job_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Retorna los slides asociados a un job de generación."""
     job = db.query(models.GenerationJob).get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
+    check_job_tenant_access(db, current_user, job)
+
+
     slides = db.query(models.PresentationSlide).filter(
         models.PresentationSlide.job_id == job_id
     ).order_by(models.PresentationSlide.slide_number.asc()).all()
     return slides
 
 @app.put("/api/presentations/{job_id}/slides/{slide_id}", tags=["Generation"])
-def update_presentation_slide(job_id: int, slide_id: int, request: SlideUpdate, db: Session = Depends(get_db)):
+def update_presentation_slide(job_id: int, slide_id: int, request: SlideUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Permite a un usuario editar el contenido de un slide antes de reanudar el diseño."""
+    job = db.query(models.GenerationJob).get(job_id)
+    check_job_tenant_access(db, current_user, job)
+
     slide = db.query(models.PresentationSlide).filter(
         models.PresentationSlide.job_id == job_id,
         models.PresentationSlide.id == slide_id
@@ -803,12 +871,11 @@ def update_presentation_slide(job_id: int, slide_id: int, request: SlideUpdate, 
     return slide
 
 @app.post("/api/presentations/{job_id}/resume", tags=["Generation"])
-def resume_presentation(job_id: int, request: ResumeRequest, db: Session = Depends(get_db)):
+def resume_presentation(job_id: int, request: ResumeRequest, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Reanuda un job que estaba pausado en el checkpoint de revisión humana (CONTENT_READY)."""
     job = db.query(models.GenerationJob).get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
+    check_job_tenant_access(db, current_user, job)
+
     if job.status != models.GenerationJobStatus.CONTENT_READY:
         raise HTTPException(status_code=400, detail=f"Job cannot be resumed from status: {job.status}")
     
@@ -842,11 +909,10 @@ class FeedbackSubmitRequest(BaseModel):
 
 
 @app.post("/api/presentations/{job_id}/feedback", tags=["Generation"])
-def submit_presentation_feedback(job_id: int, request: FeedbackSubmitRequest, db: Session = Depends(get_db)):
+def submit_presentation_feedback(job_id: int, request: FeedbackSubmitRequest, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Guarda o actualiza la calificación y observaciones del usuario para una diapositiva/job."""
     job = db.query(models.GenerationJob).get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    check_job_tenant_access(db, current_user, job)
 
     if request.rating < 1 or request.rating > 5:
         raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
@@ -885,8 +951,11 @@ def submit_presentation_feedback(job_id: int, request: FeedbackSubmitRequest, db
 
 
 @app.get("/api/presentations/{job_id}/feedback", tags=["Generation"])
-def get_presentation_feedback(job_id: int, db: Session = Depends(get_db)):
+def get_presentation_feedback(job_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Retorna todas las calificaciones y comentarios asociados a un job."""
+    job = db.query(models.GenerationJob).get(job_id)
+    check_job_tenant_access(db, current_user, job)
+
     feedbacks = db.query(models.GenerationJobFeedback).filter(
         models.GenerationJobFeedback.job_id == job_id
     ).all()
@@ -903,7 +972,7 @@ def get_presentation_feedback(job_id: int, db: Session = Depends(get_db)):
     ]
 
 @app.get("/api/admin/metrics", tags=["Admin"])
-def get_performance_metrics(limit: int = 100, db: Session = Depends(get_db)):
+def get_performance_metrics(limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(require_role(models.UserRole.SUPERADMIN.value))):
     """
     Exposes the recorded performance metrics from the database.
     Returns the last `limit` recorded metrics.
@@ -924,7 +993,7 @@ def get_performance_metrics(limit: int = 100, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Failed to query metrics: {e}")
 
 @app.delete("/api/admin/reset-db", tags=["Admin"])
-def reset_database(admin_token: str = None, db: Session = Depends(get_db)):
+def reset_database(admin_token: str = None, db: Session = Depends(get_db), current_user: models.User = Depends(require_role(models.UserRole.SUPERADMIN.value))):
     """HARD RESET: Limpia toda la base de datos, borra archivos temporales y vuelve a sembrar las configuraciones."""
     from fastapi import HTTPException
     import os
@@ -990,11 +1059,14 @@ async def upload_pptx_template(
     file: UploadFile = File(...),
     brand_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     """
     Upload a PPTX file as a reusable template asset (category='pptx_template').
     The file is stored in the brand's assets directory and registered in BrandAsset.
     """
+    if brand_id is not None:
+        check_brand_tenant_access(db, current_user, brand_id)
     if not file.filename or not file.filename.lower().endswith(".pptx"):
         raise HTTPException(status_code=400, detail="Only .pptx files are accepted as templates.")
 
@@ -1039,12 +1111,15 @@ async def upload_pptx_template(
 def create_template_merge_job(
     req: TemplateMergeRequest,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     """
     Create and enqueue a Template Merge job.
     The template (a BrandAsset with category='pptx_template') and an already-
     ingested knowledge filename are combined to generate a new PPTX.
     """
+    if req.brand_id is not None:
+        check_brand_tenant_access(db, current_user, req.brand_id)
     from tasks import celery_run_template_merge
 
     asset = db.query(models.BrandAsset).filter(
@@ -1056,6 +1131,10 @@ def create_template_merge_job(
             status_code=404,
             detail=f"Template asset {req.template_asset_id} not found or not a pptx_template.",
         )
+    if asset.brand_id is not None:
+        # El template puede pertenecer a un brand distinto del job (ej. un
+        # template compartido) — igual debe validarse contra el tenant.
+        check_brand_tenant_access(db, current_user, asset.brand_id)
 
     job = models.TemplateMergeJob(
         brand_id=req.brand_id,
@@ -1080,11 +1159,10 @@ def create_template_merge_job(
 
 
 @app.get("/api/template-merge/jobs/{job_id}", tags=["Template Merge"])
-def get_template_merge_job_status(job_id: int, db: Session = Depends(get_db)):
+def get_template_merge_job_status(job_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Poll status, progress and current step of a Template Merge job."""
     job = db.query(models.TemplateMergeJob).get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found.")
+    check_job_tenant_access(db, current_user, job)
 
     from services.core.storage_service import public_url, resolve as resolve_storage
     output_url = None
@@ -1107,11 +1185,10 @@ def get_template_merge_job_status(job_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/api/template-merge/jobs/{job_id}/download", tags=["Template Merge"])
-def download_template_merge_result(job_id: int, db: Session = Depends(get_db)):
+def download_template_merge_result(job_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Download the merged PPTX once the job is completed."""
     job = db.query(models.TemplateMergeJob).get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found.")
+    check_job_tenant_access(db, current_user, job)
     if job.status != "completed":
         raise HTTPException(status_code=409, detail=f"Job is not completed yet (status={job.status}).")
     if not job.output_path:
@@ -1137,9 +1214,13 @@ def download_template_merge_result(job_id: int, db: Session = Depends(get_db)):
 def list_template_assets(
     brand_id: Optional[int] = None,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     """List all uploaded PPTX templates (category='pptx_template')."""
     from services.core.storage_service import public_url, resolve as resolve_storage
+
+    if brand_id is not None:
+        check_brand_tenant_access(db, current_user, brand_id)
 
     q = db.query(models.BrandAsset).filter(models.BrandAsset.category == "pptx_template")
     if brand_id is not None:

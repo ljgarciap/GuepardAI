@@ -1,0 +1,56 @@
+<div class="auth-page">
+  <form class="auth-card glass-panel" (ngSubmit)="submit()" #registerForm="ngForm">
+    <div class="auth-header">
+      <img [src]="logoSrc" alt="Guepard AI — Make your ideas come to life" class="auth-logo">
+      <p class="auth-subtitle">Create your organization</p>
+    </div>
+
+    <div class="form-field">
+      <label for="tenantName">Organization name</label>
+      <input
+        id="tenantName"
+        type="text"
+        name="tenantName"
+        [(ngModel)]="tenantName"
+        placeholder="My Company (optional)"
+      />
+    </div>
+
+    <div class="form-field">
+      <label for="email">Email</label>
+      <input
+        id="email"
+        type="email"
+        name="email"
+        [(ngModel)]="email"
+        required
+        autocomplete="username"
+        placeholder="you@company.com"
+      />
+    </div>
+
+    <div class="form-field">
+      <label for="password">Password</label>
+      <input
+        id="password"
+        type="password"
+        name="password"
+        [(ngModel)]="password"
+        required
+        minlength="8"
+        autocomplete="new-password"
+        placeholder="Minimum 8 characters"
+      />
+    </div>
+
+    <p class="auth-error" *ngIf="errorMessage">{{ errorMessage }}</p>
+
+    <button type="submit" class="auth-submit" [disabled]="registerForm.invalid || isLoading">
+      {{ isLoading ? 'Creating…' : 'Create account & organization' }}
+    </button>
+
+    <p class="auth-footer-link">
+      Already have an account? <a routerLink="/login">Sign in</a>
+    </p>
+  </form>
+</div>

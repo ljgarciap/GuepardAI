@@ -2,6 +2,7 @@ import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BrandService } from '../../services/brand.service';
+import { AuthService } from '../../services/auth.service';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { interval, switchMap, takeWhile } from 'rxjs';
 import { environment } from '../../../environments/environment';
@@ -15,7 +16,12 @@ import { environment } from '../../../environments/environment';
 })
 export class GeneratorComponent implements OnInit {
   brandService = inject(BrandService);
+  authService = inject(AuthService);
   sanitizer = inject(DomSanitizer);
+
+  get isSuperadmin(): boolean {
+    return this.authService.currentUser?.role === 'superadmin';
+  }
 
   // --- FORM DATA ---
   selectedBrandId: number | null = null;

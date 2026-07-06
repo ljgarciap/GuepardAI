@@ -28,6 +28,10 @@ export class SidebarComponent {
     return email ? email.charAt(0).toUpperCase() : '?';
   }
 
+  get isSuperadmin(): boolean {
+    return this.authService.currentUser?.role === 'superadmin';
+  }
+
   logout(): void {
     this.authService.logout();
   }

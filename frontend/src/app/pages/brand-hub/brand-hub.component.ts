@@ -2,6 +2,7 @@ import { Component, inject, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BrandService } from '../../services/brand.service';
+import { AuthService } from '../../services/auth.service';
 import { interval, Subscription, switchMap, takeWhile } from 'rxjs';
 
 interface JobState {
@@ -27,6 +28,11 @@ interface JobState {
 })
 export class BrandHubComponent implements OnInit, OnDestroy {
   brandService = inject(BrandService);
+  authService = inject(AuthService);
+
+  get isSuperadmin(): boolean {
+    return this.authService.currentUser?.role === 'superadmin';
+  }
 
   identityState: JobState = this.initialState();
   knowledgeState: JobState = this.initialState();

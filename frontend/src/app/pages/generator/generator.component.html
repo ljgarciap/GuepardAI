@@ -10,7 +10,7 @@
       <div class="control-group">
         <label>IDENTITY</label>
         <select [(ngModel)]="selectedBrandId" (ngModelChange)="onBrandChange()" class="enterprise-select">
-          <option [ngValue]="-1" class="admin-opt">★ SUPERUSER / ALL ACCESS</option>
+          <option *ngIf="isSuperadmin" [ngValue]="-1" class="admin-opt">★ SUPERUSER / ALL ACCESS</option>
           <option [ngValue]="null">Public / Generic</option>
           <option *ngFor="let brand of brands" [ngValue]="brand.id">
             {{ brand.name }}

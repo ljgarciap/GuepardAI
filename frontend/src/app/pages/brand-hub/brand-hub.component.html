@@ -409,8 +409,8 @@
     </div>
   </div>
 
-  <!-- System Override Zone -->
-  <div class="reset-zone-elite">
+  <!-- System Override Zone (superadmin only) -->
+  <div class="reset-zone-elite" *ngIf="isSuperadmin">
     <div class="reset-info">
       <span class="reset-label">SYSTEM OVERRIDE</span>
       <p class="reset-desc">Clear all official brands, neural profiles, and knowledge vectors.</p>

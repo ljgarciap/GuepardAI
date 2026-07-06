@@ -74,6 +74,11 @@ try:
     seed_superadmin()
 except Exception as e:
     print(f"  [System] Warning: Superadmin seeding failed: {e}")
+try:
+    from utils.seed_test_users import seed_test_users
+    seed_test_users()
+except Exception as e:
+    print(f"  [System] Warning: Test user seeding failed: {e}")
 
 # Alineaciones de datos (tercera capa, junto a esquema y config) — nunca bloquea el boot
 try:

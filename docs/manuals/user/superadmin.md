@@ -94,10 +94,8 @@ use Strategic Assets → Portfolios for a durable history of downloads.
 - **System Reset** (⚡ "Reset System" in the sidebar, or "FACTORY RESET" in
   Intelligence Hub): wipes the **entire** database and all uploaded files,
   then reseeds default configuration. This is irreversible and affects every
-  tenant, not just one. Only you (`superadmin`) can actually run it — the
-  button is currently visible to all roles in the UI, but `admin`/`cliente`
-  accounts will get an error if they try; this is a known gap, not something
-  you need to explain to them.
+  tenant, not just one. Only visible to you (`superadmin`) — `admin`/`cliente`
+  accounts don't see this control at all.
 - **User management** (create accounts, list users, deactivate users): there
   is no screen for this yet. It's done via API — see
   `docs/api/auth-and-users.md` (`POST /api/users`, `GET /api/users`,

@@ -23,9 +23,7 @@ lifetime). Use the logout icon in the sidebar to end it explicitly.
 
 The main presentation-generation workflow:
 1. Pick a brand in **IDENTITY** (or "Public / Generic" for no specific
-   brand). **Do not select "★ SUPERUSER / ALL ACCESS"** — that option is
-   reserved for the platform superadmin and will fail with an error for
-   your account.
+   brand).
 2. Pick a **BLUEPRINT** (visual style) and a **KNOWLEDGE** source — both
    scoped to the brand you picked.
 3. Pick **TARGET REGION** (language/dialect), **DELIVERY FORMAT** (editable
@@ -88,10 +86,8 @@ your organization) can also list (`GET /api/users`) and deactivate
 (`PATCH /api/users/{id}/deactivate`) accounts in your own organization the
 same way.
 
-## Things you'll see but shouldn't use
+## What you won't see
 
-- **"★ SUPERUSER / ALL ACCESS"** in Identity dropdowns — superadmin-only,
-  will error for you.
-- **"Reset System"** (sidebar) / **"FACTORY RESET"** (Intelligence Hub) —
-  wipes the entire platform database; superadmin-only. If you click it,
-  you'll get an error — this is expected, not a bug you need to report.
+A few actions (wiping the entire platform database, and a cross-tenant
+"see everything" view) are reserved for the platform superadmin — those
+controls simply don't appear in your UI, so there's nothing to avoid here.

@@ -22,9 +22,7 @@ lifetime). Use the logout icon in the sidebar to end it explicitly.
 
 The main presentation-generation workflow:
 1. Pick a brand in **IDENTITY** (or "Public / Generic" for no specific
-   brand). **Do not select "★ SUPERUSER / ALL ACCESS"** — that option is
-   reserved for the platform superadmin and will fail with an error for
-   your account.
+   brand).
 2. Pick a **BLUEPRINT** (visual style) and a **KNOWLEDGE** source — both
    scoped to the brand you picked.
 3. Pick **TARGET REGION** (language/dialect), **DELIVERY FORMAT** (editable
@@ -70,7 +68,6 @@ knowledge source, write a content directive, and download the result.
 ## What only an admin/superadmin can do
 
 - Add, list, or deactivate teammates — ask your admin.
-- **"★ SUPERUSER / ALL ACCESS"** in Identity dropdowns and **"Reset
-  System"**/**"Factory Reset"** buttons are visible to you in the UI but
-  will fail with an error if you use them — they're restricted to other
-  roles. This is expected; you don't need to report it.
+- A few actions (wiping the entire platform database, a cross-tenant "see
+  everything" view) are reserved for the platform superadmin — those
+  controls simply don't appear in your UI.

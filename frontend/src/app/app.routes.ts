@@ -9,8 +9,8 @@ import { RegisterComponent } from './pages/register/register.component';
 import { authGuard } from './guards/auth.guard';
 
 export const routes: Routes = [
-  { path: 'login', component: LoginComponent, title: 'Iniciar sesión' },
-  { path: 'register', component: RegisterComponent, title: 'Crear cuenta' },
+  { path: 'login', component: LoginComponent, title: 'Sign In' },
+  { path: 'register', component: RegisterComponent, title: 'Create Account' },
   { path: '', component: GeneratorComponent, title: 'AI Generator Studio', canActivate: [authGuard] },
   { path: 'template-merge', component: TemplateMergeComponent, title: 'Template Merge Studio', canActivate: [authGuard] },
   { path: 'brands', component: BrandHubComponent, title: 'Intelligence Hub', canActivate: [authGuard] },

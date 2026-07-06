@@ -37,15 +37,15 @@ export class SidebarComponent {
   }
 
   resetSystem(): void {
-    if (confirm('¿Estás seguro de que deseas limpiar COMPLETAMENTE la base de datos y todos los archivos subidos (uploads)? Esta acción no se puede deshacer.')) {
+    if (confirm('Are you sure you want to COMPLETELY wipe the database and all uploaded files? This action cannot be undone.')) {
       this.brandService.resetDatabase().subscribe({
         next: (res) => {
-          alert('Sistema limpiado y restablecido con éxito.');
+          alert('System successfully wiped and reset.');
           window.location.reload();
         },
         error: (err) => {
           console.error(err);
-          alert('Error al intentar limpiar el sistema.');
+          alert('Error while trying to reset the system.');
         }
       });
     }

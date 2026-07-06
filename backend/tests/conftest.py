@@ -137,6 +137,35 @@ def db_session(create_test_schema, require_db):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# FIXTURE DE AUTH: header Bearer de un superadmin real para tests de rutas
+# HTTP pre-existentes (B6: toda la API ahora exige auth). superadmin bypassa
+# el scoping por tenant (B7-B8), así que sirve para cualquier ruta sin
+# necesitar fixtures de Tenant/Brand específicas por test.
+# ─────────────────────────────────────────────────────────────────────────────
+def make_superadmin_headers(db_session):
+    import os as _os
+    import models as _models
+    from auth import security as _security
+
+    user = _models.User(
+        email=f"superadmin_{_os.urandom(4).hex()}@example.com",
+        hashed_password=_security.hash_password("irrelevant-password"),
+        role=_models.UserRole.SUPERADMIN.value,
+        tenant_id=None,
+        is_active=1,
+    )
+    db_session.add(user)
+    db_session.commit()  # no solo flush(): algunos tests abren su propia sesión sin override de get_db
+    token = _security.create_access_token(user.id, user.role, user.tenant_id)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture()
+def superadmin_headers(db_session):
+    return make_superadmin_headers(db_session)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # FIXTURE DE MOCK LLM: Previene consumo de tokens reales en todos los tests
 # ─────────────────────────────────────────────────────────────────────────────
 @pytest.fixture(autouse=True)

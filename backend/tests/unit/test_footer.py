@@ -35,12 +35,12 @@ def test_footer_contrast_logic():
     assert get_contrast_text_color(light_bg) == RGBColor(20, 20, 20)     # Dark text
 
 @pytest.mark.integration
-def test_footer_api_endpoints(db_session):
+def test_footer_api_endpoints(db_session, superadmin_headers):
     from main import app, get_db
     app.dependency_overrides[get_db] = lambda: db_session
 
     try:
-        client = TestClient(app)
+        client = TestClient(app, headers=superadmin_headers)
         
         # 1. List footers (should contain default seeded config)
         response = client.get("/api/footers")

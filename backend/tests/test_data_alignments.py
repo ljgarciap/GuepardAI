@@ -7,6 +7,7 @@ alineación huérfana, y la alineación v1 (backfill de perfiles) mockeada.
 
 Spec: docs/specs/alineaciones-de-datos.md
 """
+import os
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -197,3 +198,83 @@ class TestRunAlignment:
         assert result["status"] == "done"
         assert result["result"] == fake_summary
         assert _get_row(alignment_db, "visual_profile_backfill_v1").status == "done"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# tenant_backfill_v1 (Autenticación / Multi-tenant — B1)
+# ─────────────────────────────────────────────────────────────────────────────
+@pytest.fixture()
+def tenant_backfill_db(create_test_schema):
+    """Sesión real (la alineación usa SessionLocal); limpia las filas que crea."""
+    from database import SessionLocal
+    db = SessionLocal()
+    created = {"brands": [], "tenants": []}
+
+    yield db, created
+
+    for brand_id in created["brands"]:
+        db.query(models.Brand).filter(models.Brand.id == brand_id).delete()
+    for tenant_id in created["tenants"]:
+        db.query(models.Tenant).filter(models.Tenant.id == tenant_id).delete()
+    db.query(models.DataAlignment).filter(models.DataAlignment.name == "tenant_backfill_v1").delete()
+    db.commit()
+    db.close()
+
+
+@pytest.mark.integration
+class TestTenantBackfill:
+
+    def _run(self):
+        from services.core.data_alignment_service import _run_tenant_backfill
+        return _run_tenant_backfill()
+
+    def test_creates_legacy_tenant_and_assigns_brand(self, tenant_backfill_db):
+        db, created = tenant_backfill_db
+        brand = models.Brand(name=f"NoTenantBrand_{os.urandom(3).hex()}")
+        db.add(brand)
+        db.commit()
+        created["brands"].append(brand.id)
+
+        summary = self._run()
+
+        assert summary["brands_assigned"] >= 1
+        db.expire_all()
+        refreshed = db.query(models.Brand).get(brand.id)
+        assert refreshed.tenant_id is not None
+        tenant = db.query(models.Tenant).get(refreshed.tenant_id)
+        created["tenants"].append(tenant.id)
+        assert tenant.name == f"{brand.name} (legacy)"
+
+    def test_idempotent_second_run_skips_assigned_brands(self, tenant_backfill_db):
+        db, created = tenant_backfill_db
+        brand = models.Brand(name=f"IdempotentBrand_{os.urandom(3).hex()}")
+        db.add(brand)
+        db.commit()
+        created["brands"].append(brand.id)
+
+        self._run()
+        db.expire_all()
+        tenant_id_after_first_run = db.query(models.Brand).get(brand.id).tenant_id
+        created["tenants"].append(tenant_id_after_first_run)
+
+        self._run()
+
+        db.expire_all()
+        assert db.query(models.Brand).get(brand.id).tenant_id == tenant_id_after_first_run
+
+    def test_leaves_already_tenant_scoped_brands_untouched(self, tenant_backfill_db):
+        db, created = tenant_backfill_db
+        tenant = models.Tenant(name="Pre-existing Tenant")
+        db.add(tenant)
+        db.commit()
+        created["tenants"].append(tenant.id)
+
+        brand = models.Brand(name=f"AlreadyScopedBrand_{os.urandom(3).hex()}", tenant_id=tenant.id)
+        db.add(brand)
+        db.commit()
+        created["brands"].append(brand.id)
+
+        self._run()
+
+        db.expire_all()
+        assert db.query(models.Brand).get(brand.id).tenant_id == tenant.id

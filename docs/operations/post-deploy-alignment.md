@@ -30,6 +30,20 @@ cuando el guard esté apagado (ejecución manual con los scripts de `utils/`).
 
 ---
 
+## Iteración 7 — Autenticación, Roles Multi-Usuario y Base Multi-Tenant (2026-07-05)
+
+**Sin comandos manuales.** Alineación automática al arrancar:
+- Tablas nuevas `tenants` y `users` → creadas por `Base.metadata.create_all()` (tablas nuevas, no requieren ALTER).
+- Columna `brands.tenant_id` (nullable) → auto-ALTER genérico vía `reconcile_additive_columns()` en `database.py`.
+- Alineación `tenant_backfill_v1` — crea un `Tenant` "{brand.name} (legacy)" por cada `Brand` existente con `tenant_id IS NULL` y lo asigna. **No consume tokens LLM**, kill switch no necesario.
+
+**Atención post-deploy**:
+- Verificar `SELECT name, status, detail FROM data_alignments WHERE name='tenant_backfill_v1';` — el `detail` reporta `{tenants_created, brands_assigned, failed}`.
+- `brands.tenant_id` queda **nullable** intencionalmente en esta iteración — no se enforcea `NOT NULL` hasta un release posterior, para evitar una carrera entre la alineación y tráfico de rutas ya scopeadas por tenant (ver `docs/designs/autenticacion-multitenant-design.md` §2.3).
+- El scoping por tenant en las rutas de la API todavía no está activo en esta tarea (B1) — llega en B6-B8 del desglose (`docs/tasks/autenticacion-multiusuario-multitenant.md`). Hasta entonces, `tenant_id` existe en el esquema pero no se usa para filtrar.
+
+---
+
 ## Iteración 6 — Calidad de Selección de Imágenes v2 (2026-06-11)
 
 **Sin comandos manuales.** Alineación automática al arrancar:

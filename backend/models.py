@@ -38,6 +38,43 @@ class PresentationSlideStatus(str, Enum):
     RENDERED = "rendered"
 
 
+class UserRole(str, Enum):
+    SUPERADMIN = "superadmin"
+    ADMIN = "admin"
+    CLIENTE = "cliente"
+
+
+# ============================================================
+# Autenticación, Roles Multi-Usuario y Base Multi-Tenant
+# Tenant = límite de propiedad por encima de Brand (1 tenant -> N brands).
+# Spec: docs/specs/autenticacion-multiusuario-multitenant.md
+# Design: docs/designs/autenticacion-multitenant-design.md
+# ============================================================
+class Tenant(Base):
+    __tablename__ = "tenants"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    name       = Column(String, nullable=False)
+    is_active  = Column(Integer, default=1)  # 0/1, convención del proyecto
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    users  = relationship("User", back_populates="tenant")
+    brands = relationship("Brand", back_populates="tenant")
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    email           = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    role            = Column(String, nullable=False)  # valor de UserRole
+    tenant_id       = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)  # null solo para superadmin
+    is_active       = Column(Integer, default=1)
+    created_at      = Column(DateTime, default=datetime.datetime.utcnow)
+
+    tenant = relationship("Tenant", back_populates="users")
+
 
 class Brand(Base):
     """
@@ -51,10 +88,12 @@ class Brand(Base):
     logo_path   = Column(String, nullable=True) # Logo oficial de referencia
     about       = Column(Text, nullable=True)      # Resumen estratégico / Quiénes somos
     core_value  = Column(String, nullable=True)  # Valor central / Slogan
-    
+    tenant_id   = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)  # Autenticación/Multi-tenant
+
     created_at  = Column(DateTime, default=datetime.datetime.utcnow)
 
     # Relaciones
+    tenant     = relationship("Tenant", back_populates="brands")
     visual_dna = relationship("BrandVisualDna", back_populates="brand")
     artistic_essence = relationship("BrandArtisticEssence", back_populates="brand")
     assets     = relationship("BrandAsset", back_populates="brand")

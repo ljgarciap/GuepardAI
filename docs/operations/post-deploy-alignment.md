@@ -42,8 +42,22 @@ cuando el guard esté apagado (ejecución manual con los scripts de `utils/`).
 - `brands.tenant_id` queda **nullable** intencionalmente en esta iteración — no se enforcea `NOT NULL` hasta un release posterior, para evitar una carrera entre la alineación y tráfico de rutas ya scopeadas por tenant (ver `docs/designs/autenticacion-multitenant-design.md` §2.3).
 - El scoping por tenant en las rutas de la API todavía no está activo en esta tarea (B1) — llega en B6-B8 del desglose (`docs/tasks/autenticacion-multiusuario-multitenant.md`). Hasta entonces, `tenant_id` existe en el esquema pero no se usa para filtrar.
 
-**Comando manual ejecutado (D1 parcial, 2026-07-06)**: `JWT_SECRET_KEY` es una variable obligatoria nueva (el backend no arranca sin ella) y **no** se resuelve por alineación automática — vive únicamente en el `.env` físico de EC2 (`/home/ubuntu/GuepardAI/.env`, gitignored). Se generó con `openssl rand -hex 32` y se agregó manualmente por SSH (backup previo `.env.bak.<timestamp>` en el mismo directorio), seguido de `docker compose up -d --no-deps backend celery_worker` para recrear ambos contenedores. Verificado: `docker exec guepard-backend printenv | grep JWT_SECRET_KEY` y `GET /docs` → 200.
-**Pendiente**: `SUPERADMIN_EMAIL`/`SUPERADMIN_PASSWORD` (env vars) y `utils/seed_superadmin.py` no existen aún — sin ese script, ningún usuario puede loguearse en producción una vez que el login (F1-F4) esté deployado. Debe resolverse antes de D2.
+**Comando manual ejecutado (D1, 2026-07-06)**: `JWT_SECRET_KEY` y `SUPERADMIN_EMAIL`/`SUPERADMIN_PASSWORD` son variables obligatorias/semi-obligatorias que **no** se resuelven por alineación automática — viven únicamente en el `.env` físico de EC2 (`/home/ubuntu/GuepardAI/.env`, gitignored). Se generaron y agregaron manualmente por SSH (backups `.env.bak.<timestamp>` en el mismo directorio) antes del merge a `master`, quedando listas para cuando el feature se desplegara.
+
+### D2 — Verificación post-merge (2026-07-06)
+
+Merge de `feature/auth-multitenant` a `master` (commit `5fcc1bd`), desplegado a EC2 vía CI/CD tras un fix necesario al workflow (`4ccee30` — el job de backend tests no provisionaba Redis, requerido por los tests de login/refresh/logout; se agregó el servicio `redis_test` y `REDIS_URL` al step de pytest).
+
+**Incidente durante el deploy**: el primer intento de "Deploy to EC2" falló con `dial tcp ***:22: i/o timeout` — el secret de GitHub Actions `EC2_HOST` apuntaba a una IP vieja de la instancia (la IP pública cambió tras un stop/start sin Elastic IP, mismo problema que ya había afectado el acceso SSH manual en D1). Luis actualizó el secret manualmente en GitHub; el siguiente run del job de deploy completó con éxito.
+
+**Checklist verificado**:
+- CI en verde: backend pytest (417+ tests) y frontend Karma (46 specs) — ambos jobs pasaron tras el fix de Redis.
+- `tenants`/`users` existen en EC2 (`information_schema.tables`); `brands.tenant_id` existe (nullable).
+- `tenant_backfill_v1`: `status=done`, `{"tenants_created": 1, "brands_assigned": 1, "failed": 0}`.
+- Login real contra producción con el superadmin sembrado (`superadmin@guepardai.com`) → `200` con `access_token`/`refresh_token`.
+- Contenedor `guepard-backend` corriendo la imagen recién construida (ID de imagen verificado, coincide con el tag `guepardai-backend:latest` post-build); `/api/auth/me` sin token → `401` (no `404`, confirma que las rutas nuevas están activas); frontend `/` y `/login` → `200`.
+
+**Nota de seguridad recurrente**: la instancia EC2 no tiene Elastic IP — cada stop/start le asigna una IP pública nueva, lo que rompe tanto el acceso SSH manual (ver [[project-d1-jwt-ec2-pending]]) como el secret `EC2_HOST` de GitHub Actions. Vale la pena evaluar asignar una Elastic IP para evitar que esto se repita en cada reinicio de la instancia.
 
 ---
 

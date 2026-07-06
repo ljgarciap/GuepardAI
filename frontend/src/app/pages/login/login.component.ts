@@ -20,7 +20,7 @@ export class LoginComponent {
   themeService = inject(ThemeService);
 
   get logoSrc(): string {
-    return this.themeService.theme() === 'dark' ? 'logo-dark.png' : 'logo-light.png';
+    return this.themeService.theme() === 'dark' ? 'logo-dark-transparent.png' : 'logo-light-transparent.png';
   }
 
   email = '';
@@ -42,8 +42,8 @@ export class LoginComponent {
       error: (err: HttpErrorResponse) => {
         this.isLoading = false;
         this.errorMessage = err.status === 429
-          ? 'Demasiados intentos. Intenta de nuevo en unos minutos.'
-          : 'Email o contraseña incorrectos.';
+          ? 'Too many attempts. Please try again in a few minutes.'
+          : 'Incorrect email or password.';
       },
     });
   }

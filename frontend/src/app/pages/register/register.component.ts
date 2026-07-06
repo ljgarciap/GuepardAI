@@ -19,7 +19,7 @@ export class RegisterComponent {
   themeService = inject(ThemeService);
 
   get logoSrc(): string {
-    return this.themeService.theme() === 'dark' ? 'logo-dark.png' : 'logo-light.png';
+    return this.themeService.theme() === 'dark' ? 'logo-dark-transparent.png' : 'logo-light-transparent.png';
   }
 
   email = '';
@@ -39,8 +39,8 @@ export class RegisterComponent {
       error: (err: HttpErrorResponse) => {
         this.isLoading = false;
         this.errorMessage = err.status === 409
-          ? 'Ya existe una cuenta con ese email.'
-          : 'No se pudo crear la cuenta. Revisa los datos ingresados.';
+          ? 'An account with that email already exists.'
+          : 'Could not create the account. Please check your details.';
       },
     });
   }

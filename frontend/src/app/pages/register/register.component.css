@@ -9,7 +9,7 @@
 
 .auth-card {
   width: 100%;
-  max-width: 380px;
+  max-width: 420px;
   padding: 40px 32px;
   display: flex;
   flex-direction: column;
@@ -22,22 +22,15 @@
 }
 
 .auth-logo {
-  width: 56px;
-  height: 56px;
+  width: 220px;
+  max-width: 100%;
+  height: auto;
   object-fit: contain;
-  margin-bottom: 8px;
 }
 
-.auth-header h1 {
-  font-size: 1.6rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  color: var(--text-title);
-}
-
-.auth-header p {
+.auth-subtitle {
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   margin-top: 4px;
 }
 

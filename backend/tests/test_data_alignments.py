@@ -280,3 +280,60 @@ class TestTenantBackfill:
 
         db.expire_all()
         assert db.query(models.Brand).get(brand.id).tenant_id == tenant.id
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ALINEACIÓN: stale_fallback_model_fix_v1 (Template Merge v2 Fase 2)
+# ─────────────────────────────────────────────────────────────────────────────
+@pytest.mark.integration
+class TestStaleFallbackModelFix:
+
+    STALE = "claude-3-5-sonnet-20241022"
+    KEYS = ["extraction_synthesis_model", "global_fallback_model"]
+
+    @pytest.fixture()
+    def config_db(self, create_test_schema, require_db):
+        from database import SessionLocal
+        db = SessionLocal()
+
+        def _clean():
+            db.query(models.SystemConfig).filter(
+                models.SystemConfig.key.in_(self.KEYS)
+            ).delete(synchronize_session=False)
+            db.commit()
+
+        _clean()
+        yield db
+        _clean()
+        db.close()
+
+    def _run(self):
+        from services.core.data_alignment_service import _run_stale_fallback_model_fix
+        return _run_stale_fallback_model_fix()
+
+    def test_replaces_stale_slug_in_both_chains(self, config_db):
+        chain = f"mistral/mistral-large-latest,gemini-flash-latest,{self.STALE}"
+        for key in self.KEYS:
+            config_db.add(models.SystemConfig(key=key, value=chain, description="test"))
+        config_db.commit()
+
+        summary = self._run()
+
+        assert sorted(summary["updated_keys"]) == sorted(self.KEYS)
+        config_db.expire_all()
+        for key in self.KEYS:
+            value = config_db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first().value
+            assert self.STALE not in value
+            assert "anthropic/claude-sonnet-4.6" in value
+
+    def test_idempotent_and_leaves_clean_values_untouched(self, config_db):
+        clean = "mistral/mistral-large-latest,anthropic/claude-sonnet-4.6"
+        config_db.add(models.SystemConfig(key=self.KEYS[0], value=clean, description="test"))
+        config_db.commit()
+
+        summary = self._run()
+        assert summary["updated_keys"] == []
+
+        config_db.expire_all()
+        row = config_db.query(models.SystemConfig).filter(models.SystemConfig.key == self.KEYS[0]).first()
+        assert row.value == clean

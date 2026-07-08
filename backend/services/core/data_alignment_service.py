@@ -218,11 +218,45 @@ def _run_tenant_backfill() -> dict:
         db.close()
 
 
+def _run_stale_fallback_model_fix() -> dict:
+    """
+    Reemplaza el último eslabón obsoleto 'claude-3-5-sonnet-20241022' de las
+    cadenas de modelos por el slug OpenRouter vigente 'anthropic/claude-sonnet-4.6'.
+    El id pelado cae en la rama OpenRouter de llm_provider y devuelve 400
+    ('not a valid model ID') — el fallback de emergencia llevaba roto desde que
+    OpenRouter retiró ese alias (detectado 2026-07-07 en test-ai-request de
+    Template Merge v2 Fase 2). El seeder no re-escribe claves existentes, por
+    eso esto es una alineación de datos y no un seed. Idempotente: solo toca
+    filas que aún contengan el id obsoleto. No consume tokens LLM.
+    """
+    STALE = "claude-3-5-sonnet-20241022"
+    REPLACEMENT = "anthropic/claude-sonnet-4.6"
+    summary = {"updated_keys": [], "failed": 0}
+    db = SessionLocal()
+    try:
+        rows = db.query(models.SystemConfig).filter(
+            models.SystemConfig.key.in_(["extraction_synthesis_model", "global_fallback_model"]),
+            models.SystemConfig.value.like(f"%{STALE}%"),
+        ).all()
+        for row in rows:
+            try:
+                row.value = row.value.replace(STALE, REPLACEMENT)
+                summary["updated_keys"].append(row.key)
+            except Exception as e:
+                summary["failed"] += 1
+                logger.warning(f"[FallbackModelFix] {row.key} failed: {e}")
+        db.commit()
+        return summary
+    finally:
+        db.close()
+
+
 ALIGNMENT_REGISTRY: Dict[str, Callable[[], dict]] = {
     "visual_profile_backfill_v1": _run_visual_profile_backfill,
     "file_reorganization_v1": _run_file_reorganization,
     "perceptual_hash_backfill_v1": _run_perceptual_hash_backfill,
     "tenant_backfill_v1": _run_tenant_backfill,
+    "stale_fallback_model_fix_v1": _run_stale_fallback_model_fix,
 }
 
 

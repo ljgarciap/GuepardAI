@@ -40,7 +40,10 @@ def log_audit(category: str, data: str):
     """Saves a detailed record de las AI decisions para aesthetic audit."""
     log_path = os.path.join(os.path.dirname(__file__), "llm_audit.log")
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    with open(log_path, "a") as f:
+    # encoding explícito: sin él, Windows abre en cp1252 y cualquier carácter
+    # fuera de ese charset en el prompt (p. ej. "→" en hints de templates)
+    # revienta la llamada LLM completa, no solo el log.
+    with open(log_path, "a", encoding="utf-8", errors="replace") as f:
         f.write(f"\n{'='*80}\n")
         f.write(f"[{timestamp}] CATEGORY: {category}\n")
         f.write(f"{data}\n")

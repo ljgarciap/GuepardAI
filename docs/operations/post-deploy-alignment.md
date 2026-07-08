@@ -30,6 +30,27 @@ cuando el guard esté apagado (ejecución manual con los scripts de `utils/`).
 
 ---
 
+## Iteración 8 — Template Merge v2 Fase 1+2 (2026-07-07)
+
+**Sin comandos manuales.** Convergencia automática al arrancar:
+- Columna `template_merge_jobs.merge_report` (JSON) → auto-ALTER genérico vía `reconcile_additive_columns()`.
+- Claves nuevas `tm_group_max_depth`, `tm_empty_rewrite_policy`, `tm_outline_enabled`, `tm_outline_rag_k`, `tm_outline_context_max_chars` (seeds).
+- Alineación `stale_fallback_model_fix_v1` — reemplaza el eslabón obsoleto
+  `claude-3-5-sonnet-20241022` por `anthropic/claude-sonnet-4.6` en
+  `extraction_synthesis_model` y `global_fallback_model` (el id pelado caía en
+  la rama OpenRouter con 400: **el fallback de emergencia llevaba roto** en
+  toda BD desplegada; detectado en el `test-ai-request` del outline de Fase 2).
+  **No consume tokens LLM**. Idempotente: solo toca valores que aún contengan
+  el id obsoleto — respeta overrides posteriores.
+
+Verificación: `SELECT value FROM system_configs WHERE key IN ('extraction_synthesis_model','global_fallback_model');`
+y `SELECT name, status FROM data_alignments WHERE name='stale_fallback_model_fix_v1';`
+
+Kill switch del plan narrativo (gasta 1 llamada LLM por merge):
+`UPDATE system_configs SET value='false' WHERE key='tm_outline_enabled';`
+
+---
+
 ## Iteración 7 — Autenticación, Roles Multi-Usuario y Base Multi-Tenant (2026-07-05)
 
 **Sin comandos manuales.** Alineación automática al arrancar:

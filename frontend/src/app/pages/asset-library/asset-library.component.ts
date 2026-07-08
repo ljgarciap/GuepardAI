@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Subject, Subscription, debounceTime, distinctUntilChanged } from 'rxjs';
 import { BrandService, PortfolioItem } from '../../services/brand.service';
 import { environment } from '../../../environments/environment';
+import { triggerBlobDownload } from '../../utils/download.util';
 
 @Component({
   selector: 'app-asset-library',
@@ -212,6 +213,13 @@ export class AssetLibraryComponent implements OnInit, OnDestroy {
         this.cancelDeletePortfolio();
         this.loadPortfolios();
       }
+    });
+  }
+
+  downloadPortfolio(p: PortfolioItem) {
+    this.brandService.downloadPortfolio(p.id).subscribe({
+      next: (blob) => triggerBlobDownload(blob, p.filename),
+      error: (err) => console.error('[AssetLibrary] Error downloading portfolio:', err)
     });
   }
 

@@ -137,7 +137,7 @@
         </div>
         <div class="item-actions">
           <button *ngIf="!p.rating" class="btn-mini btn-rate" (click)="openRatingModal(p.id)">★ RATE IT</button>
-          <a [href]="baseUrl + '/api/generation/download/' + p.id" class="btn-mini" download>DOWNLOAD</a>
+          <button class="btn-mini" (click)="downloadPortfolio(p)">DOWNLOAD</button>
           <button class="btn-mini btn-delete" (click)="askDeletePortfolio(p)" title="Delete presentation">🗑️</button>
         </div>
       </div>

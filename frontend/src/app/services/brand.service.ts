@@ -28,6 +28,21 @@ export interface PortfolioFilters {
   pageSize?: number;
 }
 
+export interface TemplateMergeHistoryItem {
+  id: number;
+  filename: string;
+  display_name: string;
+  created_at: string;
+  brand_id: number | null;
+}
+
+export interface TemplateMergeHistoryPage {
+  items: TemplateMergeHistoryItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -144,6 +159,32 @@ export class BrandService {
     tier?: string
   }): Observable<any> {
     return this.http.post(`${this.apiUrl}/presentations/generate`, req);
+  }
+
+  downloadPortfolio(jobId: number): Observable<Blob> {
+    return this.http.get(`${this.apiUrl}/generation/download/${jobId}`, { responseType: 'blob' });
+  }
+
+  getTemplateMergeHistory(brandId?: number, filters?: PortfolioFilters): Observable<TemplateMergeHistoryPage> {
+    let params = new HttpParams();
+    if (brandId) params = params.set('brand_id', brandId);
+    if (filters?.search?.trim()) params = params.set('search', filters.search.trim());
+    if (filters?.dateFrom) params = params.set('date_from', filters.dateFrom);
+    if (filters?.dateTo) params = params.set('date_to', filters.dateTo);
+    params = params.set('page', filters?.page ?? 1);
+    params = params.set('page_size', filters?.pageSize ?? 12);
+    return this.http.get<TemplateMergeHistoryPage>(`${this.apiUrl}/template-merge/jobs`, { params });
+  }
+
+  renameTemplateMergeJob(jobId: number, displayName: string): Observable<{ id: number; display_name: string; filename: string }> {
+    return this.http.patch<{ id: number; display_name: string; filename: string }>(
+      `${this.apiUrl}/template-merge/jobs/${jobId}`,
+      { display_name: displayName }
+    );
+  }
+
+  deleteTemplateMergeJob(jobId: number): Observable<{ deleted: boolean; id: number }> {
+    return this.http.delete<{ deleted: boolean; id: number }>(`${this.apiUrl}/template-merge/jobs/${jobId}`);
   }
 
   resetDatabase(): Observable<any> {

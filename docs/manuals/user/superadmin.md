@@ -85,9 +85,11 @@ An alternative to Synthesis Studio: instead of an AI-designed layout, you
 keep an existing PPTX's visual structure and only replace its text, driven
 by a knowledge-base document. Upload a `.pptx` template (or reuse one already
 uploaded), pick a knowledge source, write a content directive, and download
-the merged file. Session history (bottom of the results panel) only lists
-jobs from the current browser session — it's not persisted across reloads;
-use Strategic Assets → Portfolios for a durable history of downloads.
+the merged file. The "THIS SESSION" list only covers jobs launched in the
+current browser session and resets on reload; switch to the **HISTORY** tab
+for a durable, searchable list of every completed merge across sessions
+(search by name, filter by date, rename, delete) — separate from Strategic
+Assets → Portfolios, which only lists Synthesis Studio output.
 
 ## Superadmin-only actions
 

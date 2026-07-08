@@ -63,7 +63,9 @@ past presentations, with search-by-name and date-range filters.
 
 Keeps an existing PPTX's visual design and only replaces its text content
 from a knowledge-base document. Upload or reuse a `.pptx` template, pick a
-knowledge source, write a content directive, and download the result.
+knowledge source, write a content directive, and download the result. Switch
+to the **HISTORY** tab to find, search, or download any merge you completed
+in a previous session — the "THIS SESSION" list only covers the current one.
 
 ## What only an admin/superadmin can do
 

@@ -408,6 +408,77 @@ describe('BrandService', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Tests de Histórico de Template Merge (búsqueda, paginación, rename, delete)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('Template Merge history', () => {
+    const emptyPage = { items: [], total: 0, page: 1, page_size: 12 };
+
+    it('getTemplateMergeHistory() should GET with default pagination params', () => {
+      service.getTemplateMergeHistory().subscribe((res) => {
+        expect(res.items).toEqual([]);
+        expect(res.total).toBe(0);
+      });
+      const req = httpMock.expectOne(r => r.url === `${API}/template-merge/jobs`);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.params.get('page')).toBe('1');
+      expect(req.request.params.get('page_size')).toBe('12');
+      expect(req.request.params.has('search')).toBeFalse();
+      req.flush(emptyPage);
+    });
+
+    it('getTemplateMergeHistory() should pass search, dates, page and brand_id as params', () => {
+      service.getTemplateMergeHistory(5, {
+        search: 'Tesco',
+        dateFrom: '2026-06-01',
+        dateTo: '2026-06-11',
+        page: 3,
+        pageSize: 24
+      }).subscribe();
+
+      const req = httpMock.expectOne(r => r.url === `${API}/template-merge/jobs`);
+      expect(req.request.params.get('brand_id')).toBe('5');
+      expect(req.request.params.get('search')).toBe('Tesco');
+      expect(req.request.params.get('date_from')).toBe('2026-06-01');
+      expect(req.request.params.get('date_to')).toBe('2026-06-11');
+      expect(req.request.params.get('page')).toBe('3');
+      expect(req.request.params.get('page_size')).toBe('24');
+      req.flush(emptyPage);
+    });
+
+    it('getTemplateMergeHistory() should omit blank search', () => {
+      service.getTemplateMergeHistory(undefined, { search: '   ' }).subscribe();
+      const req = httpMock.expectOne(r => r.url === `${API}/template-merge/jobs`);
+      expect(req.request.params.has('search')).toBeFalse();
+      req.flush(emptyPage);
+    });
+
+    it('renameTemplateMergeJob() should PATCH the display_name', () => {
+      const mockResponse = { id: 7, display_name: 'Tesco Merge', filename: 'Merge_7.pptx' };
+
+      service.renameTemplateMergeJob(7, 'Tesco Merge').subscribe((res) => {
+        expect(res.display_name).toBe('Tesco Merge');
+      });
+
+      const req = httpMock.expectOne(`${API}/template-merge/jobs/7`);
+      expect(req.request.method).toBe('PATCH');
+      expect(req.request.body).toEqual({ display_name: 'Tesco Merge' });
+      req.flush(mockResponse);
+    });
+
+    it('deleteTemplateMergeJob() should DELETE the job', () => {
+      service.deleteTemplateMergeJob(7).subscribe((res) => {
+        expect(res.deleted).toBeTrue();
+        expect(res.id).toBe(7);
+      });
+
+      const req = httpMock.expectOne(`${API}/template-merge/jobs/7`);
+      expect(req.request.method).toBe('DELETE');
+      req.flush({ deleted: true, id: 7 });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Test de sanity check del servicio
   // ─────────────────────────────────────────────────────────────────────────
 

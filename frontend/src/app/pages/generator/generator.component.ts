@@ -6,6 +6,7 @@ import { AuthService } from '../../services/auth.service';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { interval, switchMap, takeWhile } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { triggerBlobDownload } from '../../utils/download.util';
 
 @Component({
   selector: 'app-generator',
@@ -227,7 +228,13 @@ export class GeneratorComponent implements OnInit {
   }
 
   onDownloadClick() {
-    if (this.currentJobId && !this.feedbackSubmitted) {
+    if (!this.currentJobId) return;
+    const extension = this.selectedFormat === 'pdf_artistic' ? 'pdf' : 'pptx';
+    this.brandService.downloadPortfolio(this.currentJobId).subscribe({
+      next: (blob) => triggerBlobDownload(blob, `presentation_${this.currentJobId}.${extension}`),
+      error: () => { this.errorMessage = 'Download failed. Please try again.'; }
+    });
+    if (!this.feedbackSubmitted) {
       this.showFeedbackModal = true;
     }
   }

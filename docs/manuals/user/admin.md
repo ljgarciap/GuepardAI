@@ -71,9 +71,11 @@ presentations, with search-by-name and date-range filters plus pagination.
 Keeps an existing PPTX's visual design and only replaces its text content
 from a knowledge-base document — an alternative to the fully AI-designed
 Synthesis Studio flow. Upload or reuse a `.pptx` template, pick a knowledge
-source, write a content directive, and download the result. The "session
-history" list at the bottom only covers the current browser session; use
-Strategic Assets → Portfolios for a durable history.
+source, write a content directive, and download the result. The "THIS
+SESSION" list only covers jobs launched in the current browser session; switch
+to the **HISTORY** tab for a durable, searchable list of every completed merge
+(search by name, filter by date, rename, delete) — this is separate from
+Strategic Assets → Portfolios, which only lists Synthesis Studio output.
 
 ## Adding teammates to your organization
 

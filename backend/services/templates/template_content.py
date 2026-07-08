@@ -1,19 +1,30 @@
 """
 template_content.py — Generate text content for each slide of a template.
 
-One LLM call per slide, returning a JSON dict keyed by shape_id → text string.
+One LLM call per slide, returning a JSON dict keyed by slot_key → text string.
 All tunables (RAG k, context window, bullet cap, etc.) come from TemplateMergeConfig.
+
+v2 Phase 2 (ADR: default-llm-template-merge-content-adr-v2.md): when a DeckPlan
+is available, each slide's prompt carries the plan's topic/key points/tone, a
+one-line summary of every previously generated slide (anti-repetition), and a
+pinned output language; the RAG query comes from the plan instead of the old
+template's hints, and chunks already used verbatim by previous slides are
+de-prioritized in the context.
 """
 import logging
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from providers.llm_provider import generate_json
 from services.generation.content_service import search_rag
 from services.templates.template_analyzer import SlideProfile, TextSlot
 from services.templates.template_config import TemplateMergeConfig
+from services.templates.template_plan import DeckPlan, SlidePlan
 
 logger = logging.getLogger(__name__)
+
+_CHUNK_SEPARATOR = "\n---\n"   # how search_rag joins chunks
+_PREV_SUMMARY_MAX_CHARS = 100
 
 
 def generate_slide_contents(
@@ -22,15 +33,20 @@ def generate_slide_contents(
     brand_id: int,
     user_prompt: str,
     config: TemplateMergeConfig,
+    plan: Optional[DeckPlan] = None,
 ) -> List[Optional[Dict[str, str]]]:
     """
     Returns a list parallel to `profiles`: each element maps slot_key → content
     string. A slide whose generation failed entirely (LLM exception) yields
     None instead of a dict — the renderer keeps that slide's original text and
     reports its slots as `failed`, rather than blanking them.
+
+    `plan` is the deck-level narrative plan (or None → v1 behavior).
     """
     results: List[Optional[Dict[str, str]]] = []
     total = len(profiles)
+    prev_summaries: List[str] = []
+    used_chunks: Set[str] = set()
 
     for profile in profiles:
         slide_num = profile.slide_idx + 1
@@ -47,7 +63,15 @@ def generate_slide_contents(
                 slide_num=slide_num,
                 total_slides=total,
                 config=config,
+                plan_slide=plan.for_slide(profile.slide_idx) if plan else None,
+                language=plan.language if plan else "",
+                tone=plan.tone if plan else "",
+                prev_summaries=prev_summaries,
+                used_chunks=used_chunks,
             )
+            summary = _summarize_slide(profile, content_map)
+            if summary:
+                prev_summaries.append(f"Slide {slide_num}: {summary}")
         except Exception as exc:
             logger.error(
                 f"[TemplateMergeContent] slide {slide_num} failed: {exc}"
@@ -69,6 +93,11 @@ def _generate_for_slide(
     slide_num: int,
     total_slides: int,
     config: TemplateMergeConfig,
+    plan_slide: Optional[SlidePlan] = None,
+    language: str = "",
+    tone: str = "",
+    prev_summaries: Optional[List[str]] = None,
+    used_chunks: Optional[Set[str]] = None,
 ) -> Dict[str, str]:
 
     # Split slots by action — PRESERVE slots never reach the LLM
@@ -78,7 +107,13 @@ def _generate_for_slide(
         logger.info(f"[TemplateMergeContent] slide {slide_num}: all slots preserved, skipping LLM call.")
         return {}
 
-    rag_query = profile.hint or f"slide {slide_num} of {total_slides}: {user_prompt}"
+    # RAG query: the plan's per-slide query targets the NEW content; the v1
+    # fallback (old template hints) only applies when there is no plan.
+    if plan_slide:
+        rag_query = plan_slide.rag_query
+    else:
+        rag_query = profile.hint or f"slide {slide_num} of {total_slides}: {user_prompt}"
+
     rag_context = ""
     try:
         rag_results = search_rag(
@@ -87,10 +122,13 @@ def _generate_for_slide(
             k=config.rag_k,
             brand_id=brand_id,
         )
-        rag_context = (
+        raw_context = (
             "\n\n".join(str(r) for r in rag_results)
             if isinstance(rag_results, list)
             else str(rag_results)
+        )
+        rag_context = _deprioritize_used_chunks(
+            raw_context, used_chunks, config.rag_context_max_chars
         )
     except Exception as exc:
         logger.warning(f"[TemplateMergeContent] RAG failed for slide {slide_num}: {exc}")
@@ -101,8 +139,12 @@ def _generate_for_slide(
         total_slides=total_slides,
         topic_hint=profile.hint or f"slide {slide_num}",
         user_prompt=user_prompt,
-        rag_context=rag_context[:config.rag_context_max_chars],
+        rag_context=rag_context,
         slots_desc=slots_desc,
+        plan_slide=plan_slide,
+        language=language,
+        tone=tone,
+        prev_summaries=prev_summaries or [],
     )
 
     raw = generate_json(prompt)
@@ -128,6 +170,60 @@ def _generate_for_slide(
         content_map[slot.slot_key] = value
 
     return content_map
+
+
+def _deprioritize_used_chunks(
+    raw_context: str, used_chunks: Optional[Set[str]], max_chars: int
+) -> str:
+    """
+    Reorder RAG chunks so the ones already used verbatim by previous slides go
+    LAST (the char cap drops them first). Chunks that survive into the final
+    context are registered in `used_chunks` for the following slides.
+    """
+    if not raw_context:
+        return raw_context
+    if used_chunks is None:
+        used_chunks = set()
+
+    chunks = [c.strip() for c in raw_context.split(_CHUNK_SEPARATOR) if c.strip()]
+    if not chunks:
+        return raw_context[:max_chars]
+
+    fresh = [c for c in chunks if c not in used_chunks]
+    stale = [c for c in chunks if c in used_chunks]
+
+    final_chunks: List[str] = []
+    budget = max_chars
+    for chunk in fresh + stale:
+        cost = len(chunk) + (len(_CHUNK_SEPARATOR) if final_chunks else 0)
+        if cost > budget:
+            break
+        final_chunks.append(chunk)
+        budget -= cost
+
+    if not final_chunks and chunks:
+        # A single oversized chunk: keep its head rather than sending nothing
+        final_chunks = [chunks[0][:max_chars]]
+
+    for chunk in final_chunks:
+        used_chunks.add(chunk)
+    return _CHUNK_SEPARATOR.join(final_chunks)
+
+
+def _summarize_slide(profile: SlideProfile, content_map: Optional[Dict[str, str]]) -> str:
+    """One-line summary of what a slide ended up saying (for anti-repetition)."""
+    if not content_map:
+        return ""
+    by_key = {s.slot_key: s for s in profile.slots}
+    # Prefer the generated title; fall back to the first non-empty value
+    candidates = sorted(
+        ((k, v) for k, v in content_map.items() if v and v.strip()),
+        key=lambda kv: 0 if getattr(by_key.get(kv[0]), "role", "") == "title" else 1,
+    )
+    if not candidates:
+        return ""
+    text = candidates[0][1].strip().replace("\n", " · ")
+    return text[:_PREV_SUMMARY_MAX_CHARS]
 
 
 def _unwrap_value(value, max_bullet_items: int) -> str:
@@ -192,13 +288,41 @@ def _build_prompt(
     user_prompt: str,
     rag_context: str,
     slots_desc: str,
+    plan_slide: Optional[SlidePlan] = None,
+    language: str = "",
+    tone: str = "",
+    prev_summaries: Optional[List[str]] = None,
 ) -> str:
+    plan_section = ""
+    if plan_slide:
+        points = "\n".join(f"  - {p}" for p in plan_slide.key_points) or "  (planner gave no key points)"
+        tone_line = f"Deck tone: {tone}\n" if tone else ""
+        plan_section = f"""
+DECK PLAN (follow it — this slide's assignment in the deck's narrative):
+{tone_line}This slide's topic: {plan_slide.topic}
+Key points to communicate:
+{points}
+"""
+
+    prev_section = ""
+    if prev_summaries:
+        lines = "\n".join(f"  {s}" for s in prev_summaries)
+        prev_section = f"""
+PREVIOUS SLIDES (already written — do NOT repeat their points):
+{lines}
+"""
+
+    if language:
+        language_rule = f'12. LANGUAGE: write ALL content in "{language}" — every slot, no exceptions'
+    else:
+        language_rule = "12. LANGUAGE: write ALL content in the same language as the USER INTENT"
+
     return f"""You are a corporate presentation writer. Write content for slide {slide_num} of {total_slides}.
 
 USER INTENT: {user_prompt}
 
 SLIDE TOPIC HINT (from template): {topic_hint}
-
+{plan_section}{prev_section}
 KNOWLEDGE CONTEXT (from document):
 {rag_context}
 
@@ -218,5 +342,6 @@ STRICT FORMAT RULES — follow exactly or the output will be broken:
 10. Use only slot_ids listed in SLIDE SLOTS; do not add extra keys
 11. For action="adapt" slots: rewrite the hint with data from the knowledge context but keep
     the same semantic territory (same type of information) and stay within char_limit
+{language_rule}
 
 Respond with ONLY valid JSON — no markdown fences, no extra text."""

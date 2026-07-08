@@ -837,6 +837,21 @@ Write content for exactly ONE slide. Use COMPANY DATA as your primary source.
                 "key": "tm_empty_rewrite_policy",
                 "value": "blank",
                 "description": "Template Merge v2: what to do when the LLM returns an empty string for a rewrite slot — 'blank' clears the template text (reported as unfilled), 'keep' leaves the original text in place."
+            },
+            {
+                "key": "tm_outline_enabled",
+                "value": "true",
+                "description": "Template Merge v2 Fase 2: kill switch for the deck-level narrative plan call (1 LLM call per job, spends tokens). 'false' degrades to v1 behavior (hint-based RAG queries, no outline context)."
+            },
+            {
+                "key": "tm_outline_rag_k",
+                "value": "8",
+                "description": "Template Merge v2 Fase 2: RAG chunks sampled (query = user prompt) as the knowledge overview for the outline planning call."
+            },
+            {
+                "key": "tm_outline_context_max_chars",
+                "value": "4000",
+                "description": "Template Merge v2 Fase 2: maximum characters of RAG sample passed to the outline planning call."
             }
 ]
 

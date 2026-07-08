@@ -348,10 +348,17 @@ class TestFullPipeline:
         job = _make_job(db_session, asset.id, brand_id=sample_brand.id)
         db_session.commit()  # orchestrator opens its own SessionLocal, must see committed data
 
-        # template_content importa generate_json por nombre, así que el mock
-        # global de conftest (que patchea providers.llm_provider) NO lo cubre —
-        # sin este patch explícito el test hace una llamada LLM REAL.
-        with patch("services.templates.template_content.generate_json", return_value={}), \
+        # template_content y template_plan importan generate_json/search_rag
+        # por NOMBRE, así que el mock global de conftest (que patchea
+        # providers.llm_provider) NO los cubre — sin estos patches explícitos
+        # el test hace llamadas LLM REALES.
+        outline = {
+            "language": "en", "tone": "crisp",
+            "slides": [{"slide": 1, "topic": "Q2 results", "key_points": ["12% growth"], "rag_query": "Q2 revenue"}],
+        }
+        with patch("services.templates.template_plan.generate_json", return_value=outline), \
+             patch("services.templates.template_plan.search_rag", return_value="Revenue grew 12% in Q2."), \
+             patch("services.templates.template_content.generate_json", return_value={}), \
              patch("services.templates.template_content.search_rag", return_value=["Revenue grew 12% in Q2."]), \
              patch("services.templates.template_merge_orchestrator.SessionLocal", return_value=db_session), \
              patch.object(db_session, "close", lambda: None):

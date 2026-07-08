@@ -87,18 +87,20 @@ from Luis after 1–3 land. The classic generation pipeline is untouched.
 - [ ] Integration: full pipeline over a synthetic PPTX containing a group,
       a table and a bulleted body; merged output verified shape-by-shape.
 
-### Phase 2 — Narrative & grounding (new/changed AI touchpoints)
+### Phase 2 — Narrative & grounding (new/changed AI touchpoints) — DONE 2026-07-07
 
-- [ ] One deck-level plan call (default routing) produces per-slide topic,
+- [x] One deck-level plan call (default routing) produces per-slide topic,
       key points, RAG query and target language; failure degrades to v1
-      behavior without aborting the job.
-- [ ] Per-slide generation receives the outline + 1-line summaries of
+      behavior without aborting the job (`template_plan.py`, gated by
+      `tm_outline_enabled`).
+- [x] Per-slide generation receives the outline + 1-line summaries of
       previous slides; RAG queries come from the plan, not template hints.
-- [ ] RAG chunks already used verbatim by a previous slide are de-prioritized.
-- [ ] Output language is pinned (from plan; fallback: language of the user
+- [x] RAG chunks already used verbatim by a previous slide are de-prioritized
+      (`_deprioritize_used_chunks`).
+- [x] Output language is pinned (from plan; fallback: language of the user
       prompt).
-- [ ] ADRs exist BEFORE code merges: new outline ADR (validated with a live
-      `test-ai-request` run) + content ADR v2 superseding
+- [x] ADRs exist BEFORE code merges: new outline ADR (validated with a live
+      `test-ai-request` run, 2026-07-07) + content ADR v2 superseding
       `default-llm-template-merge-content-adr.md`.
 
 ### Phase 3 — Typographic fidelity

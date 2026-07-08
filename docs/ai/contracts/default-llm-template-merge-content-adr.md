@@ -2,7 +2,7 @@
 
 **Date validated**: 2026-07-04 (backfill — touchpoint has been live in production since 2026-06-29, commit `8e481ab`, without a prior ADR)
 **Validated by**: AI Architect (retroactive code + test-suite review — no fresh live API call; see Validation note below)
-**Status**: DOCUMENTED — matches an already-shipped, already-working call site
+**Status**: SUPERSEDED (2026-07-07) by `default-llm-template-merge-content-adr-v2.md` — the v2 Phase 2 prompt adds deck-plan context, previous-slide summaries, language pinning and plan-derived RAG queries
 **Used in**: Template Merge Engine — `services/templates/template_content.py:106`
 
 ---

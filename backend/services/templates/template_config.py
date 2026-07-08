@@ -47,6 +47,13 @@ class TemplateMergeConfig:
     rag_context_max_chars: int = 3000  # max chars of RAG context passed to LLM
     max_bullet_items: int = 6          # max items when LLM returns a list for a body slot
 
+    # ── Narrative plan (v2 Fase 2) ────────────────────────────────────────────
+    # One deck-level LLM call before slide generation (spends tokens → kill
+    # switch). Failure always degrades to v1 behavior, never aborts the job.
+    outline_enabled: bool = True
+    outline_rag_k: int = 8              # chunks sampled for the whole-doc outline
+    outline_context_max_chars: int = 4000  # cap for the outline prompt's RAG sample
+
     # ── Slot action classification ─────────────────────────────────────────────
     # Non-placeholder shapes are classified into PRESERVE / ADAPT / REWRITE based
     # on the length of their existing hint text.  Placeholder shapes always REWRITE.
@@ -103,4 +110,7 @@ class TemplateMergeConfig:
             ),
             group_max_depth=_i("tm_group_max_depth", "3"),
             empty_rewrite_policy=str(get_system_config("tm_empty_rewrite_policy", "blank")).strip().lower(),
+            outline_enabled=str(get_system_config("tm_outline_enabled", "true")).strip().lower() == "true",
+            outline_rag_k=_i("tm_outline_rag_k", "8"),
+            outline_context_max_chars=_i("tm_outline_context_max_chars", "4000"),
         )

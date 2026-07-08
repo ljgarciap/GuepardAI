@@ -15,6 +15,7 @@ from services.core.storage_service import job_dir, to_relative, resolve as resol
 from services.templates.template_analyzer import analyze_template
 from services.templates.template_config import TemplateMergeConfig
 from services.templates.template_content import generate_slide_contents
+from services.templates.template_plan import plan_deck
 from services.templates.template_renderer import render_merged_pptx
 
 logger = logging.getLogger(__name__)
@@ -57,20 +58,34 @@ def run_template_merge(job_id: int) -> None:
         profiles = analyze_template(template_path, config)
         logger.info(f"[TemplateMerge] Job {job_id}: {len(profiles)} slides analyzed.")
 
-        _set_status(db, job, "processing", "Generating slide content from knowledge base...", 35)
+        _set_status(db, job, "processing", "Planning deck narrative...", 25)
 
-        # ── Step 3: generate content per slide ─────────────────────────────
-        slide_contents = generate_slide_contents(
+        # ── Step 3: deck-level narrative plan (v2 Fase 2) ───────────────────
+        # plan_deck nunca lanza: None degrada a comportamiento v1.
+        plan = plan_deck(
             profiles=profiles,
             knowledge_filename=job.knowledge_filename,
             brand_id=job.brand_id or 0,
             user_prompt=job.prompt,
             config=config,
         )
+        logger.info(f"[TemplateMerge] Job {job_id}: narrative plan {'ready' if plan else 'unavailable — v1 behavior'}.")
+
+        _set_status(db, job, "processing", "Generating slide content from knowledge base...", 35)
+
+        # ── Step 4: generate content per slide ─────────────────────────────
+        slide_contents = generate_slide_contents(
+            profiles=profiles,
+            knowledge_filename=job.knowledge_filename,
+            brand_id=job.brand_id or 0,
+            user_prompt=job.prompt,
+            config=config,
+            plan=plan,
+        )
 
         _set_status(db, job, "processing", "Assembling final presentation...", 75)
 
-        # ── Step 4: render merged PPTX ─────────────────────────────────────
+        # ── Step 5: render merged PPTX ─────────────────────────────────────
         out_dir = job_dir(f"tm_{job_id}")
         template_basename = os.path.basename(template_asset.local_path or "output.pptx")
         stem, _ = os.path.splitext(template_basename)
@@ -85,7 +100,7 @@ def run_template_merge(job_id: int) -> None:
             config=config,
         )
 
-        # ── Step 5: persist result ──────────────────────────────────────────
+        # ── Step 6: persist result ──────────────────────────────────────────
         job.output_path = to_relative(output_path)
         job.merge_report = merge_report
         job.display_name = job.display_name or f"{stem} (merged)"

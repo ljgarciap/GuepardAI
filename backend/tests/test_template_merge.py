@@ -495,6 +495,218 @@ def test_generate_slide_contents_per_slide_error_yields_none():
 
 
 # ---------------------------------------------------------------------------
+# template_plan — plan_deck (v2 Fase 2, mocked LLM + RAG)
+# ---------------------------------------------------------------------------
+
+from services.templates import template_plan as plan_mod
+from services.templates.template_plan import DeckPlan, SlidePlan
+
+
+def _two_profiles():
+    p0 = make_profile([make_slot(slot_key="1", action="rewrite", hint="Old title one")])
+    p1 = analyzer_mod.SlideProfile(slide_idx=1, slide_width_emu=1, slide_height_emu=1)
+    p1.slots = [make_slot(slot_key="2", action="adapt", hint="Old metric text")]
+    return [p0, p1]
+
+
+def _valid_plan_json():
+    return {
+        "language": "es",
+        "tone": "profesional y directo",
+        "slides": [
+            {"slide": 1, "topic": "Apertura", "key_points": ["quiénes somos"], "rag_query": "empresa historia equipo"},
+            {"slide": 2, "topic": "Métricas", "key_points": ["ingresos", "clientes"], "rag_query": "resultados financieros 2025"},
+        ],
+    }
+
+
+@pytest.mark.unit
+def test_plan_deck_disabled_skips_llm():
+    config = make_config(outline_enabled=False)
+    with patch("services.templates.template_plan.generate_json") as mock_llm:
+        assert plan_mod.plan_deck(_two_profiles(), "doc.pdf", 1, "prompt", config) is None
+    mock_llm.assert_not_called()
+
+
+@pytest.mark.unit
+def test_plan_deck_no_active_slots_skips_llm():
+    config = make_config()
+    profile = make_profile([make_slot(action="preserve")])
+    with patch("services.templates.template_plan.generate_json") as mock_llm:
+        assert plan_mod.plan_deck([profile], "doc.pdf", 1, "prompt", config) is None
+    mock_llm.assert_not_called()
+
+
+@pytest.mark.unit
+def test_plan_deck_happy_path_maps_by_position_onto_slide_idx():
+    config = make_config()
+    with patch("services.templates.template_plan.generate_json", return_value=_valid_plan_json()), \
+         patch("services.templates.template_plan.search_rag", return_value="chunk one\n---\nchunk two"):
+        plan = plan_mod.plan_deck(_two_profiles(), "doc.pdf", 1, "prompt", config)
+
+    assert isinstance(plan, DeckPlan)
+    assert plan.language == "es"
+    assert plan.for_slide(0).topic == "Apertura"
+    assert plan.for_slide(1).rag_query == "resultados financieros 2025"
+
+
+@pytest.mark.unit
+def test_plan_deck_llm_failure_degrades_to_none():
+    config = make_config()
+    with patch("services.templates.template_plan.generate_json", side_effect=RuntimeError("llm down")), \
+         patch("services.templates.template_plan.search_rag", return_value=""):
+        assert plan_mod.plan_deck(_two_profiles(), "doc.pdf", 1, "prompt", config) is None
+
+
+@pytest.mark.unit
+def test_plan_deck_rag_failure_still_calls_llm():
+    config = make_config()
+    with patch("services.templates.template_plan.generate_json", return_value=_valid_plan_json()) as mock_llm, \
+         patch("services.templates.template_plan.search_rag", side_effect=RuntimeError("rag down")):
+        plan = plan_mod.plan_deck(_two_profiles(), "doc.pdf", 1, "prompt", config)
+    mock_llm.assert_called_once()
+    assert plan is not None
+
+
+@pytest.mark.unit
+def test_parse_plan_malformed_shapes_return_none():
+    profiles = _two_profiles()
+    assert plan_mod._parse_plan("not a dict", profiles) is None
+    assert plan_mod._parse_plan({}, profiles) is None
+    assert plan_mod._parse_plan({"slides": "nope"}, profiles) is None
+    assert plan_mod._parse_plan({"slides": []}, profiles) is None
+
+
+@pytest.mark.unit
+def test_parse_plan_invalid_entry_dropped_valid_ones_kept():
+    profiles = _two_profiles()
+    raw = {
+        "language": "EN ",
+        "tone": "crisp",
+        "slides": [
+            {"slide": 1, "topic": "", "key_points": [], "rag_query": "x"},          # invalid: empty topic
+            {"slide": 2, "topic": "Metrics", "key_points": "oops", "rag_query": "q"},  # tolerated: key_points not a list
+        ],
+    }
+    plan = plan_mod._parse_plan(raw, profiles)
+    assert plan is not None
+    assert plan.language == "en"
+    assert plan.for_slide(0) is None          # slide 1 degraded to v1
+    assert plan.for_slide(1).topic == "Metrics"
+    assert plan.for_slide(1).key_points == []
+
+
+# ---------------------------------------------------------------------------
+# template_content — v2 Fase 2 (plan integration, dedup, language, summaries)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_generate_for_slide_uses_plan_rag_query():
+    config = make_config()
+    profile = make_profile([make_slot(slot_key="1", hint="Old template hint")])
+    plan_slide = SlidePlan(topic="New topic", key_points=["a"], rag_query="planned query")
+    with patch("services.templates.template_content.generate_json", return_value={"1": "ok"}), \
+         patch("services.templates.template_content.search_rag", return_value="chunk") as mock_rag:
+        content_mod._generate_for_slide(
+            profile=profile, knowledge_filename="doc.pdf", brand_id=1,
+            user_prompt="prompt", slide_num=1, total_slides=1, config=config,
+            plan_slide=plan_slide,
+        )
+    assert mock_rag.call_args.kwargs["query"] == "planned query"
+
+
+@pytest.mark.unit
+def test_generate_for_slide_without_plan_keeps_v1_hint_query():
+    config = make_config()
+    profile = make_profile([make_slot(slot_key="1", role="title", hint="Old title")])
+    with patch("services.templates.template_content.generate_json", return_value={"1": "ok"}), \
+         patch("services.templates.template_content.search_rag", return_value="chunk") as mock_rag:
+        content_mod._generate_for_slide(
+            profile=profile, knowledge_filename="doc.pdf", brand_id=1,
+            user_prompt="prompt", slide_num=1, total_slides=1, config=config,
+        )
+    assert mock_rag.call_args.kwargs["query"] == "Old title"
+
+
+@pytest.mark.unit
+def test_build_prompt_includes_plan_prev_and_language_sections():
+    plan_slide = SlidePlan(topic="Growth story", key_points=["12% up"], rag_query="q")
+    prompt = content_mod._build_prompt(
+        slide_num=2, total_slides=3, topic_hint="hint", user_prompt="intent",
+        rag_context="ctx", slots_desc="slots",
+        plan_slide=plan_slide, language="es", tone="direct",
+        prev_summaries=["Slide 1: Opening about the company"],
+    )
+    assert "This slide's topic: Growth story" in prompt
+    assert "- 12% up" in prompt
+    assert "Deck tone: direct" in prompt
+    assert "Slide 1: Opening about the company" in prompt
+    assert 'write ALL content in "es"' in prompt
+
+
+@pytest.mark.unit
+def test_build_prompt_without_plan_falls_back_to_user_intent_language():
+    prompt = content_mod._build_prompt(
+        slide_num=1, total_slides=1, topic_hint="hint", user_prompt="intent",
+        rag_context="ctx", slots_desc="slots",
+    )
+    assert "DECK PLAN" not in prompt
+    assert "PREVIOUS SLIDES" not in prompt
+    assert "same language as the USER INTENT" in prompt
+
+
+@pytest.mark.unit
+def test_deprioritize_used_chunks_fresh_first_and_stale_dropped_by_cap():
+    used = {"chunk B"}
+    ctx = "chunk A\n---\nchunk B\n---\nchunk C"
+    result = content_mod._deprioritize_used_chunks(ctx, used, max_chars=20)
+    # 20 chars fit both fresh chunks (7 + 5 sep + 7 = 19); the stale B is
+    # pushed last and dropped by the cap
+    assert result == "chunk A\n---\nchunk C"
+    assert "chunk A" in used and "chunk C" in used
+
+
+@pytest.mark.unit
+def test_deprioritize_used_chunks_stale_kept_when_budget_allows():
+    used = {"chunk B"}
+    ctx = "chunk A\n---\nchunk B"
+    result = content_mod._deprioritize_used_chunks(ctx, used, max_chars=200)
+    assert result == "chunk A\n---\nchunk B"  # fresh first, stale after
+
+
+@pytest.mark.unit
+def test_summarize_slide_prefers_title_and_truncates():
+    title_slot = make_slot(slot_key="t", role="title")
+    body_slot = make_slot(slot_key="b", role="body")
+    profile = make_profile([body_slot, title_slot])
+    content = {"b": "body text first in dict", "t": "T" * 300}
+    summary = content_mod._summarize_slide(profile, content)
+    assert summary == "T" * 100
+
+
+@pytest.mark.unit
+def test_generate_slide_contents_accumulates_prev_summaries():
+    config = make_config()
+    profiles = _two_profiles()
+    captured_prompts = []
+
+    def fake_generate(prompt):
+        captured_prompts.append(prompt)
+        return {"1": "First slide generated title", "2": "Second slide text"}
+
+    with patch("services.templates.template_content.generate_json", side_effect=fake_generate), \
+         patch("services.templates.template_content.search_rag", return_value=""):
+        results = content_mod.generate_slide_contents(
+            profiles=profiles, knowledge_filename="doc.pdf", brand_id=1,
+            user_prompt="prompt", config=config,
+        )
+
+    assert len(results) == 2
+    assert "PREVIOUS SLIDES" not in captured_prompts[0]
+    assert "Slide 1: First slide generated title" in captured_prompts[1]
+
+
+# ---------------------------------------------------------------------------
 # template_renderer — _replace_text_frame / bullets / blank (real pptx objects)
 # ---------------------------------------------------------------------------
 
@@ -716,6 +928,7 @@ def test_run_template_merge_happy_path_sets_completed_and_report():
          patch.object(orch_mod, "resolve_storage", return_value="/tmp/deck.pptx"), \
          patch("os.path.isfile", return_value=True), \
          patch.object(orch_mod, "analyze_template", return_value=["profile1"]), \
+         patch.object(orch_mod, "plan_deck", return_value=None), \
          patch.object(orch_mod, "generate_slide_contents", return_value=[{"1": "text"}]), \
          patch.object(orch_mod, "render_merged_pptx", return_value=("/tmp/out.pptx", fake_report)), \
          patch.object(orch_mod, "job_dir", return_value="/tmp/jobs/tm_1"), \
@@ -796,6 +1009,7 @@ def test_run_template_merge_render_failure_marks_error_not_completed():
          patch.object(orch_mod, "resolve_storage", return_value="/tmp/deck.pptx"), \
          patch("os.path.isfile", return_value=True), \
          patch.object(orch_mod, "analyze_template", return_value=["profile1"]), \
+         patch.object(orch_mod, "plan_deck", return_value=None), \
          patch.object(orch_mod, "generate_slide_contents", return_value=[{"1": "text"}]), \
          patch.object(orch_mod, "render_merged_pptx", side_effect=RuntimeError("render exploded")), \
          patch.object(orch_mod, "job_dir", return_value="/tmp/jobs/tm_1"):

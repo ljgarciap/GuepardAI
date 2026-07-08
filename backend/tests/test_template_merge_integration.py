@@ -1,9 +1,10 @@
 """
 test_template_merge_integration.py — Integration tests for the Template Merge
-Engine: the 5 HTTP endpoints under /api/template-merge/ against a real test
-DB (db_session, rolled back per test) and the full job lifecycle
+Engine: the HTTP endpoints under /api/template-merge/ (served by
+routers/template_merge.py since v2 Phase 1) against a real test DB
+(db_session, rolled back per test) and the full job lifecycle
 (PENDING → PROCESSING → COMPLETED|ERROR) running the real orchestrator against
-a real in-memory-generated .pptx file.
+a real in-memory-generated .pptx file (including a group and a table since v2).
 
 LLM calls are mocked (autouse mock_llm_calls fixture + explicit search_rag
 mock) — no tokens spent. File I/O is redirected to a temp tree via
@@ -53,11 +54,23 @@ def client(db_session, superadmin_headers):
         app.dependency_overrides.clear()
 
 
-def _make_pptx_bytes(title_text="Placeholder title text here"):
+def _make_pptx_bytes(title_text="Placeholder title text here", rich=False):
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     box = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(6), Inches(1))
     box.text_frame.paragraphs[0].add_run().text = title_text
+    if rich:
+        # v2 structural coverage: a group with a text box and a 1x2 table
+        gtb = slide.shapes.add_textbox(Inches(1), Inches(2.5), Inches(4), Inches(1))
+        gtb.text_frame.text = (
+            "Grouped narrative block, long enough for the classifier to mark it adaptable"
+        )
+        slide.shapes.add_group_shape([gtb])
+        frame = slide.shapes.add_table(1, 2, Inches(1), Inches(4), Inches(5), Inches(1))
+        frame.table.cell(0, 0).text = "KPI"
+        frame.table.cell(0, 1).text = (
+            "Old metric narrative that is long enough to be replaced by generated content"
+        )
     buf = io.BytesIO()
     prs.save(buf)
     buf.seek(0)
@@ -216,6 +229,29 @@ class TestJobStatus:
         assert body["status"] == "completed"
         assert body["output_url"] is not None
 
+    def test_status_exposes_merge_report_and_summary(self, client, db_session, sample_brand):
+        asset = _make_template_asset(db_session, brand_id=sample_brand.id)
+        report = {"slides": [], "summary": {"rewritten": 3, "unfilled": 1}}
+        job = _make_job(
+            db_session, asset.id, brand_id=sample_brand.id,
+            status="completed", progress=100, merge_report=report,
+        )
+
+        res = client.get(f"/api/template-merge/jobs/{job.id}")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["merge_report"] == report
+        assert body["merge_summary"] == {"rewritten": 3, "unfilled": 1}
+
+    def test_status_merge_report_null_on_pre_v2_jobs(self, client, db_session, sample_brand):
+        asset = _make_template_asset(db_session, brand_id=sample_brand.id)
+        job = _make_job(db_session, asset.id, brand_id=sample_brand.id)
+
+        res = client.get(f"/api/template-merge/jobs/{job.id}")
+        body = res.json()
+        assert body["merge_report"] is None
+        assert body["merge_summary"] is None
+
 
 # ---------------------------------------------------------------------------
 # GET /api/template-merge/jobs/{job_id}/download
@@ -304,7 +340,7 @@ class TestFullPipeline:
         template_dir = st.brand_assets_dir(sample_brand.id)
         template_path = os.path.join(template_dir, "source_template.pptx")
         with open(template_path, "wb") as f:
-            f.write(_make_pptx_bytes(title_text="Q2 Results Overview"))
+            f.write(_make_pptx_bytes(title_text="Q2 Results Overview", rich=True))
 
         asset = _make_template_asset(
             db_session, brand_id=sample_brand.id, local_path=st.to_relative(template_path),
@@ -312,7 +348,11 @@ class TestFullPipeline:
         job = _make_job(db_session, asset.id, brand_id=sample_brand.id)
         db_session.commit()  # orchestrator opens its own SessionLocal, must see committed data
 
-        with patch("services.templates.template_content.search_rag", return_value=["Revenue grew 12% in Q2."]), \
+        # template_content importa generate_json por nombre, así que el mock
+        # global de conftest (que patchea providers.llm_provider) NO lo cubre —
+        # sin este patch explícito el test hace una llamada LLM REAL.
+        with patch("services.templates.template_content.generate_json", return_value={}), \
+             patch("services.templates.template_content.search_rag", return_value=["Revenue grew 12% in Q2."]), \
              patch("services.templates.template_merge_orchestrator.SessionLocal", return_value=db_session), \
              patch.object(db_session, "close", lambda: None):
             run_template_merge(job.id)
@@ -321,6 +361,13 @@ class TestFullPipeline:
         assert job.status == "completed"
         assert job.progress == 100
         assert job.output_path is not None
+
+        # v2: the merge report is persisted with per-slot outcomes
+        assert job.merge_report is not None
+        assert set(job.merge_report.keys()) == {"slides", "summary"}
+        reported_keys = {s["key"] for sl in job.merge_report["slides"] for s in sl["slots"]}
+        assert any(":" in k for k in reported_keys), "no table cell slot reported"
+        assert any("/" in k for k in reported_keys), "no group child slot reported"
 
         physical = st.resolve(job.output_path, brand_id=sample_brand.id)
         assert physical is not None and os.path.isfile(physical)

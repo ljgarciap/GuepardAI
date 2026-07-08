@@ -510,6 +510,9 @@ class TemplateMergeJob(Base):
     progress            = Column(Integer, default=0)
     output_path         = Column(String(1024), nullable=True)
     error_detail        = Column(Text, nullable=True)
+    # v2: per-slot outcome report ({"slides": [...], "summary": {...}}) built by
+    # template_renderer.render_merged_pptx(). NULL on pre-v2 jobs.
+    merge_report        = Column(JSON, nullable=True)
 
     display_name        = Column(String(120), nullable=True)
     created_at          = Column(DateTime, default=datetime.datetime.utcnow)

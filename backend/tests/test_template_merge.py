@@ -1,12 +1,14 @@
 """
-test_template_merge.py — Unit tests for the Template Merge Engine.
+test_template_merge.py — Unit tests for the Template Merge Engine (v2).
 
-Covers the pure/mockable logic in services/templates/*: role inference,
-char-limit estimation, action classification (analyzer), LLM response
-unwrapping and markdown stripping (content), in-place text replacement
-preserving run formatting (renderer), and the orchestrator's job lifecycle
-and error handling. No DB or real LLM calls — DB and generate_json/search_rag
-are mocked so these run without the test container.
+Covers the pure/mockable logic in services/templates/*: shared traversal
+(groups, tables, depth cap), role inference, char-limit estimation, action
+classification (analyzer), LLM response unwrapping and markdown stripping
+(content), in-place text replacement preserving run formatting including
+bullet-aware paragraph mapping and the empty-slot policy (renderer), the
+merge report, and the orchestrator's job lifecycle and error handling.
+No DB or real LLM calls — DB and generate_json/search_rag are mocked so
+these run without the test container.
 """
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -17,49 +19,147 @@ from services.templates.template_config import TemplateMergeConfig
 from services.templates import template_analyzer as analyzer_mod
 from services.templates import template_content as content_mod
 from services.templates import template_merge_orchestrator as orch_mod
+from services.templates import template_renderer as renderer_mod
+from services.templates.template_traversal import TextTarget, collect_text_targets
 
 
 def make_config(**overrides) -> TemplateMergeConfig:
     return TemplateMergeConfig(**overrides)
 
 
-def make_shape(width=0, height=0, top=0, is_placeholder=False, placeholder_type=None):
-    shape = SimpleNamespace(width=width, height=height, top=top, is_placeholder=is_placeholder)
+def make_target(width=0, height=0, top=0, is_placeholder=False,
+                placeholder_type=None, kind="shape", key="1", name="t"):
+    shape = None
     if is_placeholder:
-        shape.placeholder_format = SimpleNamespace(type=placeholder_type)
-    return shape
+        shape = SimpleNamespace(placeholder_format=SimpleNamespace(type=placeholder_type))
+    return TextTarget(
+        key=key, text_frame=None, name=name, kind=kind,
+        is_placeholder=is_placeholder, shape=shape,
+        width=width, height=height, top=top,
+    )
 
 
 # ---------------------------------------------------------------------------
-# template_analyzer — _should_include_shape
+# template_traversal — collect_text_targets (real python-pptx objects)
+# ---------------------------------------------------------------------------
+
+def _blank_slide():
+    from pptx import Presentation
+    prs = Presentation()
+    return prs, prs.slides.add_slide(prs.slide_layouts[6])
+
+
+@pytest.mark.unit
+def test_collect_targets_plain_textbox():
+    from pptx.util import Inches
+    _, slide = _blank_slide()
+    box = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(3), Inches(1))
+    box.text_frame.text = "hello"
+
+    targets, preserved = collect_text_targets(slide, max_group_depth=3)
+
+    assert len(targets) == 1
+    assert targets[0].key == str(box.shape_id)
+    assert targets[0].kind == "shape"
+    assert preserved == 0
+
+
+@pytest.mark.unit
+def test_collect_targets_recurses_into_groups_with_path_keys():
+    from pptx.util import Inches
+    _, slide = _blank_slide()
+    tb1 = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(2), Inches(1))
+    tb1.text_frame.text = "inside one"
+    tb2 = slide.shapes.add_textbox(Inches(3), Inches(1), Inches(2), Inches(1))
+    tb2.text_frame.text = "inside two"
+    group = slide.shapes.add_group_shape([tb1, tb2])
+
+    targets, _ = collect_text_targets(slide, max_group_depth=3)
+
+    keys = sorted(t.key for t in targets)
+    assert len(targets) == 2
+    assert all(k.startswith(f"{group.shape_id}/") for k in keys)
+    assert all(t.kind == "group_child" for t in targets)
+
+
+@pytest.mark.unit
+def test_collect_targets_group_beyond_depth_cap_is_preserved():
+    from pptx.util import Inches
+    _, slide = _blank_slide()
+    tb = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(2), Inches(1))
+    tb.text_frame.text = "unreachable"
+    slide.shapes.add_group_shape([tb])
+
+    targets, preserved = collect_text_targets(slide, max_group_depth=0)
+
+    assert targets == []
+    assert preserved == 1
+
+
+@pytest.mark.unit
+def test_collect_targets_table_cells_with_rc_keys_and_spanned_skipped():
+    from pptx.util import Inches
+    _, slide = _blank_slide()
+    frame = slide.shapes.add_table(2, 2, Inches(1), Inches(1), Inches(4), Inches(2))
+    table = frame.table
+    for r in range(2):
+        for c in range(2):
+            table.cell(r, c).text = f"cell {r}{c}"
+    table.cell(0, 0).merge(table.cell(0, 1))  # (0,1) becomes spanned
+
+    targets, preserved = collect_text_targets(slide, max_group_depth=3)
+
+    keys = sorted(t.key for t in targets)
+    sid = frame.shape_id
+    assert keys == [f"{sid}:r0c0", f"{sid}:r1c0", f"{sid}:r1c1"]
+    assert all(t.kind == "cell" for t in targets)
+    assert preserved == 1  # the spanned cell
+
+
+@pytest.mark.unit
+def test_collect_targets_cell_geometry_from_column_and_row():
+    from pptx.util import Inches
+    _, slide = _blank_slide()
+    frame = slide.shapes.add_table(1, 2, Inches(1), Inches(1), Inches(4), Inches(1))
+    frame.table.cell(0, 0).text = "x"
+
+    targets, _ = collect_text_targets(slide, max_group_depth=3)
+
+    cell0 = next(t for t in targets if t.key.endswith(":r0c0"))
+    assert cell0.width == frame.table.columns[0].width
+    assert cell0.height == frame.table.rows[0].height
+
+
+# ---------------------------------------------------------------------------
+# template_analyzer — _area_within_bounds
 # ---------------------------------------------------------------------------
 
 @pytest.mark.unit
-def test_should_include_shape_within_bounds():
+def test_area_within_bounds_accepts_normal_shape():
     config = make_config()
-    shape = make_shape(width=100, height=100)
-    assert analyzer_mod._should_include_shape(shape, slide_area_emu=100_000, config=config) is True
+    target = make_target(width=100, height=100)
+    assert analyzer_mod._area_within_bounds(target, slide_area_emu=100_000, config=config) is True
 
 
 @pytest.mark.unit
-def test_should_include_shape_rejects_background():
+def test_area_within_bounds_rejects_background():
     config = make_config(shape_bg_area_threshold=0.80)
-    shape = make_shape(width=1000, height=1000)  # ratio = 1_000_000 / 1_000_000 = 1.0 > 0.80
-    assert analyzer_mod._should_include_shape(shape, slide_area_emu=1_000_000, config=config) is False
+    target = make_target(width=1000, height=1000)  # ratio = 1.0 > 0.80
+    assert analyzer_mod._area_within_bounds(target, slide_area_emu=1_000_000, config=config) is False
 
 
 @pytest.mark.unit
-def test_should_include_shape_rejects_decorative_dot():
+def test_area_within_bounds_rejects_decorative_dot():
     config = make_config(shape_min_area_threshold=0.005)
-    shape = make_shape(width=10, height=10)  # ratio = 100 / 1_000_000 → tiny
-    assert analyzer_mod._should_include_shape(shape, slide_area_emu=1_000_000, config=config) is False
+    target = make_target(width=10, height=10)  # ratio tiny
+    assert analyzer_mod._area_within_bounds(target, slide_area_emu=1_000_000, config=config) is False
 
 
 @pytest.mark.unit
-def test_should_include_shape_zero_slide_area_defaults_true():
+def test_area_within_bounds_zero_slide_area_defaults_true():
     config = make_config()
-    shape = make_shape(width=10, height=10)
-    assert analyzer_mod._should_include_shape(shape, slide_area_emu=0, config=config) is True
+    target = make_target(width=10, height=10)
+    assert analyzer_mod._area_within_bounds(target, slide_area_emu=0, config=config) is True
 
 
 # ---------------------------------------------------------------------------
@@ -70,37 +170,45 @@ def test_should_include_shape_zero_slide_area_defaults_true():
 def test_infer_role_placeholder_title():
     from pptx.enum.shapes import PP_PLACEHOLDER
     config = make_config()
-    shape = make_shape(is_placeholder=True, placeholder_type=PP_PLACEHOLDER.TITLE)
-    assert analyzer_mod._infer_role(shape, slide_height_emu=1000, slide_area_emu=1_000_000, config=config) == "title"
+    target = make_target(is_placeholder=True, placeholder_type=PP_PLACEHOLDER.TITLE)
+    assert analyzer_mod._infer_role(target, slide_height_emu=1000, slide_area_emu=1_000_000, config=config) == "title"
 
 
 @pytest.mark.unit
 def test_infer_role_placeholder_body():
     from pptx.enum.shapes import PP_PLACEHOLDER
     config = make_config()
-    shape = make_shape(is_placeholder=True, placeholder_type=PP_PLACEHOLDER.BODY)
-    assert analyzer_mod._infer_role(shape, slide_height_emu=1000, slide_area_emu=1_000_000, config=config) == "body"
+    target = make_target(is_placeholder=True, placeholder_type=PP_PLACEHOLDER.BODY)
+    assert analyzer_mod._infer_role(target, slide_height_emu=1000, slide_area_emu=1_000_000, config=config) == "body"
+
+
+@pytest.mark.unit
+def test_infer_role_cell_is_always_body():
+    config = make_config(footnote_area_fraction=0.03)
+    # tiny area would classify a shape as footnote — cells must stay body
+    target = make_target(width=10, height=10, top=5000, kind="cell")
+    assert analyzer_mod._infer_role(target, slide_height_emu=10000, slide_area_emu=1_000_000, config=config) == "body"
 
 
 @pytest.mark.unit
 def test_infer_role_non_placeholder_footnote_by_small_area():
     config = make_config(footnote_area_fraction=0.03)
-    shape = make_shape(width=10, height=10, top=5000)  # area 100 << 3% of 1_000_000
-    assert analyzer_mod._infer_role(shape, slide_height_emu=10000, slide_area_emu=1_000_000, config=config) == "footnote"
+    target = make_target(width=10, height=10, top=5000)
+    assert analyzer_mod._infer_role(target, slide_height_emu=10000, slide_area_emu=1_000_000, config=config) == "footnote"
 
 
 @pytest.mark.unit
 def test_infer_role_non_placeholder_title_by_top_position():
     config = make_config(footnote_area_fraction=0.001, title_top_fraction=0.20)
-    shape = make_shape(width=500, height=500, top=100)  # top(100) < 20% of 10000
-    assert analyzer_mod._infer_role(shape, slide_height_emu=10000, slide_area_emu=1_000_000, config=config) == "title"
+    target = make_target(width=500, height=500, top=100)
+    assert analyzer_mod._infer_role(target, slide_height_emu=10000, slide_area_emu=1_000_000, config=config) == "title"
 
 
 @pytest.mark.unit
 def test_infer_role_non_placeholder_defaults_body():
     config = make_config(footnote_area_fraction=0.001, title_top_fraction=0.05)
-    shape = make_shape(width=500, height=500, top=9000)  # not small, not near top
-    assert analyzer_mod._infer_role(shape, slide_height_emu=10000, slide_area_emu=1_000_000, config=config) == "body"
+    target = make_target(width=500, height=500, top=9000)
+    assert analyzer_mod._infer_role(target, slide_height_emu=10000, slide_area_emu=1_000_000, config=config) == "body"
 
 
 # ---------------------------------------------------------------------------
@@ -110,46 +218,46 @@ def test_infer_role_non_placeholder_defaults_body():
 @pytest.mark.unit
 def test_estimate_char_limit_title_short_hint_uses_multiplier():
     config = make_config(short_hint_threshold=15, short_hint_title_multiplier=3)
-    shape = make_shape()
-    assert analyzer_mod._estimate_char_limit(shape, "title", "$45", config) == max(len("$45") * 3, 20)
+    target = make_target()
+    assert analyzer_mod._estimate_char_limit(target, "title", "$45", config) == max(len("$45") * 3, 20)
 
 
 @pytest.mark.unit
 def test_estimate_char_limit_title_long_hint_uses_default():
     config = make_config(title_char_limit=80)
-    shape = make_shape()
+    target = make_target()
     hint = "A" * 30  # longer than short_hint_threshold (15)
-    assert analyzer_mod._estimate_char_limit(shape, "title", hint, config) == 80
+    assert analyzer_mod._estimate_char_limit(target, "title", hint, config) == 80
 
 
 @pytest.mark.unit
 def test_estimate_char_limit_footnote_uses_fixed_limit():
     config = make_config(footnote_char_limit=120)
-    shape = make_shape()
-    assert analyzer_mod._estimate_char_limit(shape, "footnote", "any hint", config) == 120
+    target = make_target()
+    assert analyzer_mod._estimate_char_limit(target, "footnote", "any hint", config) == 120
 
 
 @pytest.mark.unit
 def test_estimate_char_limit_body_short_hint_uses_multiplier():
     config = make_config(short_hint_threshold=15, short_hint_body_multiplier=4)
-    shape = make_shape()
-    assert analyzer_mod._estimate_char_limit(shape, "body", "23%", config) == max(len("23%") * 4, 30)
+    target = make_target()
+    assert analyzer_mod._estimate_char_limit(target, "body", "23%", config) == max(len("23%") * 4, 30)
 
 
 @pytest.mark.unit
 def test_estimate_char_limit_body_area_based_clamped_to_min():
     config = make_config(body_char_limit_min=80, body_char_limit_max=600, chars_per_sq_inch=30)
-    shape = make_shape(width=91440, height=91440)  # 0.1in x 0.1in → tiny estimate, clamps to min
+    target = make_target(width=91440, height=91440)  # 0.1in × 0.1in
     hint = "A" * 30
-    assert analyzer_mod._estimate_char_limit(shape, "body", hint, config) == 80
+    assert analyzer_mod._estimate_char_limit(target, "body", hint, config) == 80
 
 
 @pytest.mark.unit
 def test_estimate_char_limit_body_area_based_clamped_to_max():
     config = make_config(body_char_limit_min=80, body_char_limit_max=600, chars_per_sq_inch=30)
-    shape = make_shape(width=914400 * 20, height=914400 * 20)  # huge box
+    target = make_target(width=914400 * 20, height=914400 * 20)  # huge box
     hint = "A" * 30
-    assert analyzer_mod._estimate_char_limit(shape, "body", hint, config) == 600
+    assert analyzer_mod._estimate_char_limit(target, "body", hint, config) == 600
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +301,33 @@ def test_infer_action_long_hint_rewrite():
     config = make_config(preserve_max_hint_chars=10, adapt_max_hint_chars=50)
     hint = "A" * 200
     assert analyzer_mod._infer_action(is_placeholder=False, role="body", hint=hint, config=config) == "rewrite"
+
+
+# ---------------------------------------------------------------------------
+# template_analyzer — analyze_template over groups/tables (real pptx)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_analyze_template_covers_group_children_and_cells(tmp_path):
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    tb = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(3), Inches(1))
+    tb.text_frame.text = "Grouped text long enough to be considered adaptable by the classifier here"
+    slide.shapes.add_group_shape([tb])
+    frame = slide.shapes.add_table(1, 1, Inches(1), Inches(3), Inches(3), Inches(1))
+    frame.table.cell(0, 0).text = "Cell text long enough to be adapted rather than preserved by length rules"
+    path = str(tmp_path / "t.pptx")
+    prs.save(path)
+
+    profiles = analyzer_mod.analyze_template(path, make_config())
+
+    kinds = {s.kind for s in profiles[0].slots}
+    assert "group_child" in kinds
+    assert "cell" in kinds
+    assert all(isinstance(s.slot_key, str) for s in profiles[0].slots)
 
 
 # ---------------------------------------------------------------------------
@@ -242,9 +377,7 @@ def test_unwrap_value_malformed_string_repr_falls_back_to_text():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.unit
-@pytest.mark.parametrize("mod", [content_mod, __import__(
-    "services.templates.template_renderer", fromlist=["_strip_markdown"]
-)])
+@pytest.mark.parametrize("mod", [content_mod, renderer_mod])
 def test_strip_markdown_removes_bold_italic_headings_bullets(mod):
     assert mod._strip_markdown("**Bold** and *italic*") == "Bold and italic"
     assert mod._strip_markdown("## Heading") == "Heading"
@@ -262,10 +395,10 @@ def test_strip_markdown_empty_string():
 # template_content — _generate_for_slide (mocked LLM + RAG)
 # ---------------------------------------------------------------------------
 
-def make_slot(shape_id=1, role="body", action="rewrite", char_limit=80, hint="hint"):
+def make_slot(slot_key="1", role="body", action="rewrite", char_limit=80, hint="hint", kind="shape"):
     return analyzer_mod.TextSlot(
-        slide_idx=0, shape_id=shape_id, shape_name=f"shape{shape_id}", role=role,
-        char_limit=char_limit, hint=hint, is_placeholder=False, action=action,
+        slide_idx=0, slot_key=slot_key, shape_name=f"shape{slot_key}", role=role,
+        char_limit=char_limit, hint=hint, is_placeholder=False, action=action, kind=kind,
     )
 
 
@@ -289,23 +422,23 @@ def test_generate_for_slide_skips_llm_when_all_preserved():
 
 
 @pytest.mark.unit
-def test_generate_for_slide_maps_shape_ids_to_llm_content():
+def test_generate_for_slide_maps_slot_keys_to_llm_content():
     config = make_config()
-    slot = make_slot(shape_id=42, char_limit=100)
+    slot = make_slot(slot_key="42:r1c0", char_limit=100, kind="cell")
     profile = make_profile([slot])
-    with patch("services.templates.template_content.generate_json", return_value={"42": "Generated text"}), \
+    with patch("services.templates.template_content.generate_json", return_value={"42:r1c0": "Generated text"}), \
          patch("services.templates.template_content.search_rag", return_value=["context chunk"]):
         result = content_mod._generate_for_slide(
             profile=profile, knowledge_filename="doc.pdf", brand_id=1,
             user_prompt="prompt", slide_num=1, total_slides=1, config=config,
         )
-    assert result == {42: "Generated text"}
+    assert result == {"42:r1c0": "Generated text"}
 
 
 @pytest.mark.unit
 def test_generate_for_slide_truncates_over_char_limit():
     config = make_config()
-    slot = make_slot(shape_id=1, char_limit=10)
+    slot = make_slot(slot_key="1", char_limit=10)
     profile = make_profile([slot])
     long_text = "This is a very long sentence that exceeds the limit"
     with patch("services.templates.template_content.generate_json", return_value={"1": long_text}), \
@@ -314,14 +447,14 @@ def test_generate_for_slide_truncates_over_char_limit():
             profile=profile, knowledge_filename="doc.pdf", brand_id=1,
             user_prompt="prompt", slide_num=1, total_slides=1, config=config,
         )
-    assert len(result[1]) <= 11  # char_limit + ellipsis
-    assert result[1].endswith("…")
+    assert len(result["1"]) <= 11  # char_limit + ellipsis
+    assert result["1"].endswith("…")
 
 
 @pytest.mark.unit
 def test_generate_for_slide_rag_failure_still_calls_llm():
     config = make_config()
-    slot = make_slot(shape_id=1, char_limit=100)
+    slot = make_slot(slot_key="1", char_limit=100)
     profile = make_profile([slot])
     with patch("services.templates.template_content.generate_json", return_value={"1": "ok"}) as mock_llm, \
          patch("services.templates.template_content.search_rag", side_effect=RuntimeError("rag down")):
@@ -330,7 +463,7 @@ def test_generate_for_slide_rag_failure_still_calls_llm():
             user_prompt="prompt", slide_num=1, total_slides=1, config=config,
         )
     mock_llm.assert_called_once()
-    assert result == {1: "ok"}
+    assert result == {"1": "ok"}
 
 
 @pytest.mark.unit
@@ -347,30 +480,28 @@ def test_generate_slide_contents_empty_slots_slide_skips_llm():
 
 
 @pytest.mark.unit
-def test_generate_slide_contents_per_slide_error_yields_empty_strings():
+def test_generate_slide_contents_per_slide_error_yields_none():
     config = make_config()
-    slot = make_slot(shape_id=7)
+    slot = make_slot(slot_key="7")
     profile = make_profile([slot])
     with patch("services.templates.template_content._generate_for_slide", side_effect=RuntimeError("boom")):
         results = content_mod.generate_slide_contents(
             profiles=[profile], knowledge_filename="doc.pdf", brand_id=1,
             user_prompt="prompt", config=config,
         )
-    assert results == [{7: ""}]
+    # A failed slide yields None so the renderer keeps the original text
+    # (reported as `failed`) instead of blanking it.
+    assert results == [None]
 
 
 # ---------------------------------------------------------------------------
-# template_renderer — _replace_text_frame / _capture_base_rpr (real python-pptx objects)
+# template_renderer — _replace_text_frame / bullets / blank (real pptx objects)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.unit
 def test_replace_text_frame_preserves_formatting_and_sets_text():
-    from pptx import Presentation
     from pptx.util import Inches, Pt
-    from services.templates.template_renderer import _replace_text_frame
-
-    prs = Presentation()
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _, slide = _blank_slide()
     box = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(3), Inches(1))
     tf = box.text_frame
     run = tf.paragraphs[0].add_run()
@@ -378,7 +509,7 @@ def test_replace_text_frame_preserves_formatting_and_sets_text():
     run.font.bold = True
     run.font.size = Pt(24)
 
-    _replace_text_frame(tf, "Replaced text")
+    renderer_mod._replace_text_frame(tf, "Replaced text")
 
     assert tf.paragraphs[0].runs[0].text == "Replaced text"
     assert tf.paragraphs[0].runs[0].font.bold is True
@@ -386,41 +517,174 @@ def test_replace_text_frame_preserves_formatting_and_sets_text():
 
 
 @pytest.mark.unit
-def test_replace_text_frame_multiline_creates_soft_breaks():
-    from pptx import Presentation
+def test_replace_text_frame_multiline_single_paragraph_uses_soft_breaks():
     from pptx.util import Inches
-    from services.templates.template_renderer import _replace_text_frame
-
-    prs = Presentation()
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _, slide = _blank_slide()
     box = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(3), Inches(2))
     tf = box.text_frame
     tf.paragraphs[0].add_run().text = "Original"
 
-    _replace_text_frame(tf, "Line one\nLine two")
+    renderer_mod._replace_text_frame(tf, "Line one\nLine two")
 
+    # Single original paragraph → v1 behavior: both lines in paragraph 0
     full_text = tf.paragraphs[0].text
     assert "Line one" in full_text and "Line two" in full_text
+    assert len(tf.paragraphs) == 1
 
 
 @pytest.mark.unit
-def test_inject_slide_content_skips_shapes_not_in_map_and_empty_replacement():
-    from pptx import Presentation
-    from pptx.util import Inches
-    from services.templates.template_renderer import _inject_slide_content
+def test_replace_text_frame_bulleted_maps_line_per_paragraph():
+    from pptx.util import Inches, Pt
+    _, slide = _blank_slide()
+    box = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(3), Inches(3))
+    tf = box.text_frame
+    r0 = tf.paragraphs[0].add_run(); r0.text = "Old bullet one"; r0.font.size = Pt(18)
+    p1 = tf.add_paragraph(); r1 = p1.add_run(); r1.text = "Old bullet two"; r1.font.size = Pt(12)
+    p2 = tf.add_paragraph(); r2 = p2.add_run(); r2.text = "Old bullet three"; r2.font.size = Pt(12)
 
-    prs = Presentation()
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    renderer_mod._replace_text_frame(tf, "New one\nNew two")
+
+    texts = [p.text for p in tf.paragraphs]
+    assert texts[0] == "New one"
+    assert texts[1] == "New two"
+    assert texts[2] == ""  # leftover paragraph blanked, geometry stable
+    # each line kept ITS paragraph's formatting, not the frame-wide first run's
+    assert tf.paragraphs[0].runs[0].font.size == Pt(18)
+    assert tf.paragraphs[1].runs[0].font.size == Pt(12)
+
+
+@pytest.mark.unit
+def test_replace_text_frame_bulleted_more_lines_than_paragraphs_clones_last():
+    from pptx.util import Inches
+    _, slide = _blank_slide()
+    box = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(3), Inches(3))
+    tf = box.text_frame
+    tf.paragraphs[0].add_run().text = "Old one"
+    tf.add_paragraph().add_run().text = "Old two"
+
+    renderer_mod._replace_text_frame(tf, "A\nB\nC\nD")
+
+    texts = [p.text for p in tf.paragraphs if p.text]
+    assert texts == ["A", "B", "C", "D"]
+
+
+@pytest.mark.unit
+def test_blank_text_frame_clears_all_text():
+    from pptx.util import Inches
+    _, slide = _blank_slide()
+    box = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(3), Inches(1))
+    tf = box.text_frame
+    tf.paragraphs[0].add_run().text = "Old"
+    tf.add_paragraph().add_run().text = "Older"
+
+    renderer_mod._blank_text_frame(tf)
+
+    assert tf.text.strip() == ""
+
+
+# ---------------------------------------------------------------------------
+# template_renderer — _merge_slide outcomes + empty policy (real pptx objects)
+# ---------------------------------------------------------------------------
+
+def _slide_with_two_boxes():
+    from pptx.util import Inches
+    prs, slide = _blank_slide()
     box1 = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(3), Inches(1))
-    box1.text_frame.paragraphs[0].add_run().text = "Keep me (not in map)"
+    box1.text_frame.paragraphs[0].add_run().text = "Original 1"
     box2 = slide.shapes.add_textbox(Inches(1), Inches(3), Inches(3), Inches(1))
     box2.text_frame.paragraphs[0].add_run().text = "Original 2"
+    return slide, str(box1.shape_id), str(box2.shape_id)
 
-    content_map = {box2.shape_id: ""}  # empty replacement → keep original
-    _inject_slide_content(slide, content_map, slide_idx=0)
 
-    assert box1.text_frame.text == "Keep me (not in map)"
-    assert box2.text_frame.text == "Original 2"
+def _profile_for(slide_idx, slots):
+    prof = analyzer_mod.SlideProfile(slide_idx=slide_idx, slide_width_emu=1, slide_height_emu=1)
+    prof.slots = slots
+    return prof
+
+
+@pytest.mark.unit
+def test_merge_slide_outcomes_rewritten_preserved_and_untouched_shapes():
+    slide, k1, k2 = _slide_with_two_boxes()
+    profile = _profile_for(0, [
+        make_slot(slot_key=k1, action="rewrite"),
+        make_slot(slot_key=k2, action="preserve"),
+    ])
+    entries = renderer_mod._merge_slide(slide, profile, {k1: "New text"}, make_config())
+
+    by_key = {e["key"]: e["outcome"] for e in entries}
+    assert by_key == {k1: "rewritten", k2: "preserved"}
+
+
+@pytest.mark.unit
+def test_merge_slide_empty_rewrite_blank_policy_blanks_and_reports_unfilled():
+    slide, k1, _ = _slide_with_two_boxes()
+    profile = _profile_for(0, [make_slot(slot_key=k1, action="rewrite")])
+
+    entries = renderer_mod._merge_slide(
+        slide, profile, {k1: ""}, make_config(empty_rewrite_policy="blank"))
+
+    assert entries[0]["outcome"] == "unfilled"
+    target = next(t for t in collect_text_targets(slide, 3)[0] if t.key == k1)
+    assert target.text_frame.text.strip() == ""
+
+
+@pytest.mark.unit
+def test_merge_slide_empty_rewrite_keep_policy_keeps_original():
+    slide, k1, _ = _slide_with_two_boxes()
+    profile = _profile_for(0, [make_slot(slot_key=k1, action="rewrite")])
+
+    entries = renderer_mod._merge_slide(
+        slide, profile, {k1: ""}, make_config(empty_rewrite_policy="keep"))
+
+    assert entries[0]["outcome"] == "kept_original"
+    target = next(t for t in collect_text_targets(slide, 3)[0] if t.key == k1)
+    assert target.text_frame.text == "Original 1"
+
+
+@pytest.mark.unit
+def test_merge_slide_empty_adapt_keeps_original_even_with_blank_policy():
+    slide, k1, _ = _slide_with_two_boxes()
+    profile = _profile_for(0, [make_slot(slot_key=k1, action="adapt")])
+
+    entries = renderer_mod._merge_slide(
+        slide, profile, {k1: ""}, make_config(empty_rewrite_policy="blank"))
+
+    assert entries[0]["outcome"] == "kept_original"
+
+
+@pytest.mark.unit
+def test_merge_slide_none_content_map_reports_failed_and_keeps_text():
+    slide, k1, _ = _slide_with_two_boxes()
+    profile = _profile_for(0, [make_slot(slot_key=k1, action="rewrite")])
+
+    entries = renderer_mod._merge_slide(slide, profile, None, make_config())
+
+    assert entries[0]["outcome"] == "failed"
+    target = next(t for t in collect_text_targets(slide, 3)[0] if t.key == k1)
+    assert target.text_frame.text == "Original 1"
+
+
+@pytest.mark.unit
+def test_merge_slide_unresolvable_slot_key_reports_failed():
+    slide, k1, _ = _slide_with_two_boxes()
+    profile = _profile_for(0, [make_slot(slot_key="9999", action="rewrite")])
+
+    entries = renderer_mod._merge_slide(slide, profile, {"9999": "text"}, make_config())
+
+    assert entries[0]["outcome"] == "failed"
+
+
+@pytest.mark.unit
+def test_summarize_counts_outcomes():
+    report_slides = [
+        {"slide": 0, "slots": [{"outcome": "rewritten"}, {"outcome": "preserved"}], "preserved_shapes": 2},
+        {"slide": 1, "slots": [{"outcome": "rewritten"}, {"outcome": "unfilled"}], "preserved_shapes": 0},
+    ]
+    summary = renderer_mod._summarize(report_slides)
+    assert summary["rewritten"] == 2
+    assert summary["preserved"] == 1
+    assert summary["unfilled"] == 1
+    assert summary["failed"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -432,13 +696,15 @@ def make_mock_job():
         id=1, brand_id=1, template_asset_id=10, knowledge_filename="doc.pdf",
         prompt="Make it good", status="pending", current_step=None, progress=0,
         output_path=None, error_detail=None, display_name=None, updated_at=None,
+        merge_report=None,
     )
 
 
 @pytest.mark.unit
-def test_run_template_merge_happy_path_sets_completed():
+def test_run_template_merge_happy_path_sets_completed_and_report():
     job = make_mock_job()
     template_asset = SimpleNamespace(local_path="templates/deck.pptx")
+    fake_report = {"slides": [], "summary": {"rewritten": 1}}
 
     mock_db = MagicMock()
     mock_db.query.return_value.get.side_effect = lambda id_: (
@@ -446,11 +712,12 @@ def test_run_template_merge_happy_path_sets_completed():
     )
 
     with patch.object(orch_mod, "SessionLocal", return_value=mock_db), \
+         patch.object(orch_mod.TemplateMergeConfig, "from_db", return_value=TemplateMergeConfig()), \
          patch.object(orch_mod, "resolve_storage", return_value="/tmp/deck.pptx"), \
          patch("os.path.isfile", return_value=True), \
          patch.object(orch_mod, "analyze_template", return_value=["profile1"]), \
-         patch.object(orch_mod, "generate_slide_contents", return_value=[{1: "text"}]), \
-         patch.object(orch_mod, "render_merged_pptx", return_value="/tmp/out.pptx"), \
+         patch.object(orch_mod, "generate_slide_contents", return_value=[{"1": "text"}]), \
+         patch.object(orch_mod, "render_merged_pptx", return_value=("/tmp/out.pptx", fake_report)), \
          patch.object(orch_mod, "job_dir", return_value="/tmp/jobs/tm_1"), \
          patch.object(orch_mod, "to_relative", return_value="jobs/tm_1/deck_merged.pptx"):
         orch_mod.run_template_merge(job_id=1)
@@ -458,6 +725,7 @@ def test_run_template_merge_happy_path_sets_completed():
     assert job.status == "completed"
     assert job.progress == 100
     assert job.output_path == "jobs/tm_1/deck_merged.pptx"
+    assert job.merge_report == fake_report
 
 
 @pytest.mark.unit
@@ -482,7 +750,8 @@ def test_run_template_merge_missing_template_asset_marks_error():
     mock_db2 = MagicMock()
     mock_db2.query.return_value.get.return_value = job
 
-    with patch.object(orch_mod, "SessionLocal", side_effect=[mock_db, mock_db2]):
+    with patch.object(orch_mod, "SessionLocal", side_effect=[mock_db, mock_db2]), \
+         patch.object(orch_mod.TemplateMergeConfig, "from_db", return_value=TemplateMergeConfig()):
         orch_mod.run_template_merge(job_id=1)
 
     assert job.status == "error"
@@ -502,6 +771,7 @@ def test_run_template_merge_missing_file_on_disk_marks_error():
     mock_db2.query.return_value.get.return_value = job
 
     with patch.object(orch_mod, "SessionLocal", side_effect=[mock_db, mock_db2]), \
+         patch.object(orch_mod.TemplateMergeConfig, "from_db", return_value=TemplateMergeConfig()), \
          patch.object(orch_mod, "resolve_storage", return_value=None):
         orch_mod.run_template_merge(job_id=1)
 
@@ -522,10 +792,11 @@ def test_run_template_merge_render_failure_marks_error_not_completed():
     mock_db2.query.return_value.get.return_value = job
 
     with patch.object(orch_mod, "SessionLocal", side_effect=[mock_db, mock_db2]), \
+         patch.object(orch_mod.TemplateMergeConfig, "from_db", return_value=TemplateMergeConfig()), \
          patch.object(orch_mod, "resolve_storage", return_value="/tmp/deck.pptx"), \
          patch("os.path.isfile", return_value=True), \
          patch.object(orch_mod, "analyze_template", return_value=["profile1"]), \
-         patch.object(orch_mod, "generate_slide_contents", return_value=[{1: "text"}]), \
+         patch.object(orch_mod, "generate_slide_contents", return_value=[{"1": "text"}]), \
          patch.object(orch_mod, "render_merged_pptx", side_effect=RuntimeError("render exploded")), \
          patch.object(orch_mod, "job_dir", return_value="/tmp/jobs/tm_1"):
         orch_mod.run_template_merge(job_id=1)

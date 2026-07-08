@@ -6,7 +6,7 @@ All tunables (RAG k, context window, bullet cap, etc.) come from TemplateMergeCo
 """
 import logging
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from providers.llm_provider import generate_json
 from services.generation.content_service import search_rag
@@ -22,12 +22,14 @@ def generate_slide_contents(
     brand_id: int,
     user_prompt: str,
     config: TemplateMergeConfig,
-) -> List[Dict[int, str]]:
+) -> List[Optional[Dict[str, str]]]:
     """
-    Returns a list parallel to `profiles`: each element maps shape_id → content string.
-    Errors per slide are caught; the slide gets empty strings on failure.
+    Returns a list parallel to `profiles`: each element maps slot_key → content
+    string. A slide whose generation failed entirely (LLM exception) yields
+    None instead of a dict — the renderer keeps that slide's original text and
+    reports its slots as `failed`, rather than blanking them.
     """
-    results: List[Dict[int, str]] = []
+    results: List[Optional[Dict[str, str]]] = []
     total = len(profiles)
 
     for profile in profiles:
@@ -50,7 +52,7 @@ def generate_slide_contents(
             logger.error(
                 f"[TemplateMergeContent] slide {slide_num} failed: {exc}"
             )
-            content_map = {slot.shape_id: "" for slot in profile.slots}
+            content_map = None
 
         results.append(content_map)
 
@@ -67,7 +69,7 @@ def _generate_for_slide(
     slide_num: int,
     total_slides: int,
     config: TemplateMergeConfig,
-) -> Dict[int, str]:
+) -> Dict[str, str]:
 
     # Split slots by action — PRESERVE slots never reach the LLM
     active_slots = [s for s in profile.slots if s.action != "preserve"]
@@ -105,10 +107,9 @@ def _generate_for_slide(
 
     raw = generate_json(prompt)
 
-    content_map: Dict[int, str] = {}
+    content_map: Dict[str, str] = {}
     for slot in active_slots:
-        key_str = str(slot.shape_id)
-        value = raw.get(key_str, "")
+        value = raw.get(slot.slot_key, "")
 
         # Unwrap nested LLM responses like {"content": "...", "role": "..."}
         value = _unwrap_value(value, config.max_bullet_items)
@@ -124,7 +125,7 @@ def _generate_for_slide(
                 truncated = truncated[:last_space]
             value = truncated.rstrip('.,;: ') + '…'
 
-        content_map[slot.shape_id] = value
+        content_map[slot.slot_key] = value
 
     return content_map
 
@@ -175,7 +176,7 @@ def _describe_slots(slots: List[TextSlot]) -> str:
     lines = []
     for s in slots:
         base = (
-            f'  shape_id={s.shape_id} role="{s.role}" action="{s.action}" '
+            f'  slot_id="{s.slot_key}" role="{s.role}" action="{s.action}" '
             f'char_limit={s.char_limit} hint="{s.hint[:60]}"'
         )
         if s.action == "adapt":
@@ -205,7 +206,7 @@ SLIDE SLOTS TO FILL:
 {slots_desc}
 
 STRICT FORMAT RULES — follow exactly or the output will be broken:
-1. Return ONLY a flat JSON object: {{"shape_id_string": "text content", ...}}
+1. Return ONLY a flat JSON object: {{"slot_id": "text content", ...}} — keys are the slot_id strings EXACTLY as listed above
 2. All values MUST be plain strings — NEVER nest objects, NEVER return {{"role": ..., "content": ...}}
 3. NO markdown — no **, no *, no #, no -, no backticks, no underscores for formatting
 4. Respect char_limit strictly — count every character including spaces
@@ -214,7 +215,7 @@ STRICT FORMAT RULES — follow exactly or the output will be broken:
 7. For role="footnote": short supporting fact or source note, max char_limit characters
 8. Derive all content EXCLUSIVELY from the knowledge context; do not invent data
 9. If no relevant data exists for a slot, return an empty string ""
-10. Use only shape_ids listed in SLIDE SLOTS; do not add extra keys
+10. Use only slot_ids listed in SLIDE SLOTS; do not add extra keys
 11. For action="adapt" slots: rewrite the hint with data from the knowledge context but keep
     the same semantic territory (same type of information) and stay within char_limit
 

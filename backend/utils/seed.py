@@ -827,6 +827,16 @@ Write content for exactly ONE slide. Use COMPANY DATA as your primary source.
                 "key": "tm_preserve_keywords",
                 "value": "confidential,proprietary,©,for reference only,preparado exclusivamente",
                 "description": "Template Merge: comma-separated substrings; any match in a shape's existing text forces PRESERVE regardless of hint length (legal/confidential text)."
+            },
+            {
+                "key": "tm_group_max_depth",
+                "value": "3",
+                "description": "Template Merge v2: maximum GroupShape nesting depth traversed when looking for text frames; groups beyond this depth are preserved as-is."
+            },
+            {
+                "key": "tm_empty_rewrite_policy",
+                "value": "blank",
+                "description": "Template Merge v2: what to do when the LLM returns an empty string for a rewrite slot — 'blank' clears the template text (reported as unfilled), 'keep' leaves the original text in place."
             }
 ]
 

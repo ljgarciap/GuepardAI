@@ -139,6 +139,13 @@
     <!-- ── Right: Status & results ─────────────────────────────────────── -->
     <div class="results-panel">
 
+      <div class="view-switcher">
+        <button [class.active]="activeView === 'session'" (click)="setView('session')">THIS SESSION</button>
+        <button [class.active]="activeView === 'history'" (click)="setView('history')">HISTORY</button>
+      </div>
+
+      <ng-container *ngIf="activeView === 'session'">
+
       <!-- Active job progress -->
       <div *ngIf="activeJob" class="job-card glass-panel" [class.job-error]="activeJob.status === 'error'" [class.job-done]="activeJob.status === 'completed'">
 
@@ -162,6 +169,19 @@
             <span class="success-icon">✓</span>
             Presentation ready — visual structure preserved, content updated from knowledge base.
           </div>
+
+          <!-- v2 merge report summary -->
+          <div *ngIf="mergeSummary" class="merge-summary">
+            <span class="merge-stat">{{ mergeReplacedCount }} text blocks updated</span>
+            <span class="merge-stat">{{ mergeSummary.preserved }} preserved by design</span>
+            <span *ngIf="mergeSummary.kept_original > 0" class="merge-stat">
+              {{ mergeSummary.kept_original }} kept original text
+            </span>
+            <span *ngIf="mergeWarningCount > 0" class="merge-stat merge-stat-warning">
+              ⚠ {{ mergeWarningCount }} slot(s) left blank or failed — review before presenting
+            </span>
+          </div>
+
           <button (click)="downloadResult(activeJob)" class="btn-primary btn-download">
             <span class="btn-icon">↓</span> DOWNLOAD PPTX
           </button>
@@ -205,6 +225,99 @@
         </div>
       </div>
 
+      </ng-container>
+
+      <!-- ── History tab: persisted Template Merge jobs ────────────────── -->
+      <ng-container *ngIf="activeView === 'history'">
+
+        <div class="portfolio-toolbar glass-panel">
+          <input
+            type="text"
+            class="portfolio-search"
+            placeholder="🔍 Search by name..."
+            [(ngModel)]="historySearch"
+            (ngModelChange)="onHistorySearchChange($event)" />
+          <div class="portfolio-dates">
+            <label>From</label>
+            <input type="date" [(ngModel)]="historyDateFrom" (change)="onHistoryDateChange()" />
+            <label>To</label>
+            <input type="date" [(ngModel)]="historyDateTo" (change)="onHistoryDateChange()" />
+          </div>
+          <button class="btn-mini" (click)="clearHistoryFilters()"
+                  *ngIf="historySearch || historyDateFrom || historyDateTo">CLEAR</button>
+        </div>
+
+        <div class="list-item glass-panel" *ngFor="let item of historyItems">
+          <div class="item-icon">⬡</div>
+          <div class="item-details">
+            <ng-container *ngIf="renamingHistoryId !== item.id; else renameEditor">
+              <h3>
+                {{ item.display_name }}
+                <button class="btn-rename" (click)="startHistoryRename(item)" title="Rename merge">✏️</button>
+              </h3>
+            </ng-container>
+            <ng-template #renameEditor>
+              <div class="rename-row">
+                <input
+                  type="text"
+                  class="rename-input"
+                  [(ngModel)]="renameValue"
+                  maxlength="120"
+                  (keyup.enter)="confirmHistoryRename()"
+                  (keyup.escape)="cancelHistoryRename()"
+                  autofocus />
+                <button class="btn-mini" (click)="confirmHistoryRename()" [disabled]="!renameValue.trim()">SAVE</button>
+                <button class="btn-mini btn-ghost" (click)="cancelHistoryRename()">CANCEL</button>
+              </div>
+            </ng-template>
+            <div class="meta-row">
+              <span class="meta-date">Template Merge • {{ item.created_at | date:'medium' }}</span>
+            </div>
+          </div>
+          <div class="item-actions">
+            <button class="btn-mini" (click)="downloadHistoryItem(item)">DOWNLOAD</button>
+            <button class="btn-mini btn-delete" (click)="askDeleteHistoryItem(item)" title="Delete merge">🗑️</button>
+          </div>
+        </div>
+
+        <div class="empty-state" *ngIf="historyItems.length === 0">
+          <p *ngIf="historySearch || historyDateFrom || historyDateTo; else noHistory">
+            No merges match your search. Try different filters.
+          </p>
+          <ng-template #noHistory>
+            <p>No completed Template Merge jobs yet.</p>
+          </ng-template>
+        </div>
+
+        <div class="portfolio-paginator" *ngIf="historyTotalPages > 1">
+          <button class="btn-mini" (click)="goToHistoryPage(historyPage - 1)" [disabled]="historyPage <= 1">← PREV</button>
+          <span class="paginator-info">Page {{ historyPage }} of {{ historyTotalPages }} • {{ historyTotal }} merges</span>
+          <button class="btn-mini" (click)="goToHistoryPage(historyPage + 1)" [disabled]="historyPage >= historyTotalPages">NEXT →</button>
+        </div>
+
+      </ng-container>
+
+    </div>
+  </div>
+
+  <!-- DELETE CONFIRMATION MODAL (HISTORY) -->
+  <div class="feedback-modal-overlay" *ngIf="showDeleteModal">
+    <div class="feedback-modal-card glass-panel slideUp">
+      <button class="btn-close" (click)="cancelDeleteHistoryItem()">×</button>
+
+      <div class="feedback-modal-header">
+        <h4>Delete Merge</h4>
+        <p class="question">
+          You are about to permanently delete
+          <strong>"{{ deleteTarget?.display_name }}"</strong>.
+          This removes the job and its file. This action cannot be undone.
+        </p>
+      </div>
+
+      <div class="feedback-modal-actions delete-actions">
+        <button class="btn-mini btn-ghost" (click)="cancelDeleteHistoryItem()">CANCEL</button>
+        <button class="btn-danger-enterprise" (click)="confirmDeleteHistoryItem()">DELETE PERMANENTLY</button>
+      </div>
     </div>
   </div>
 </div>

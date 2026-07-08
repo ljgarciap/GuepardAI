@@ -55,8 +55,16 @@ class TemplateMergeConfig:
     # Comma-separated substrings; any match forces PRESERVE regardless of length.
     preserve_keywords: str = "confidential,proprietary,©,for reference only,preparado exclusivamente"
 
+    # ── Traversal (v2) ────────────────────────────────────────────────────────
+    # Maximum GroupShape nesting depth walked when collecting text frames;
+    # groups beyond this depth are preserved as-is.
+    group_max_depth: int = 3
+
     # ── Rendering ─────────────────────────────────────────────────────────────
-    # (renderer has no numeric tunables beyond what comes in the content strings)
+    # What to do when the LLM returns "" for a rewrite slot:
+    #   "blank" → clear the template's text (an empty box beats stale lorem)
+    #   "keep"  → leave the original template text in place
+    empty_rewrite_policy: str = "blank"
 
     @classmethod
     def from_db(cls) -> TemplateMergeConfig:
@@ -93,4 +101,6 @@ class TemplateMergeConfig:
                 "tm_preserve_keywords",
                 "confidential,proprietary,©,for reference only,preparado exclusivamente"
             ),
+            group_max_depth=_i("tm_group_max_depth", "3"),
+            empty_rewrite_policy=str(get_system_config("tm_empty_rewrite_policy", "blank")).strip().lower(),
         )

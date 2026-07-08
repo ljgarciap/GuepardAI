@@ -77,15 +77,17 @@ def run_template_merge(job_id: int) -> None:
         output_filename = f"{stem}_merged_{uuid.uuid4().hex[:6]}.pptx"
         output_path = os.path.join(out_dir, output_filename)
 
-        render_merged_pptx(
+        _, merge_report = render_merged_pptx(
             template_path=template_path,
             profiles=profiles,
             slide_contents=slide_contents,
             output_path=output_path,
+            config=config,
         )
 
         # ── Step 5: persist result ──────────────────────────────────────────
         job.output_path = to_relative(output_path)
+        job.merge_report = merge_report
         job.display_name = job.display_name or f"{stem} (merged)"
         _set_status(db, job, "completed", "Done.", 100)
         logger.info(f"[TemplateMerge] Job {job_id} completed → {output_path}")

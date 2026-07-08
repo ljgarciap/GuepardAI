@@ -3,9 +3,11 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
-import { interval, Subscription } from 'rxjs';
-import { switchMap, takeWhile } from 'rxjs/operators';
+import { Subject, Subscription, interval } from 'rxjs';
+import { debounceTime, distinctUntilChanged, switchMap, takeWhile } from 'rxjs/operators';
 import { environment } from '../../../environments/environment';
+import { triggerBlobDownload } from '../../utils/download.util';
+import { BrandService, TemplateMergeHistoryItem } from '../../services/brand.service';
 
 interface TemplateAsset {
   id: number;
@@ -13,6 +15,15 @@ interface TemplateAsset {
   description: string;
   brand_id: number | null;
   created_at: string;
+}
+
+interface MergeSummary {
+  rewritten: number;
+  adapted: number;
+  preserved: number;
+  unfilled: number;
+  kept_original: number;
+  failed: number;
 }
 
 interface MergeJobStatus {
@@ -23,6 +34,7 @@ interface MergeJobStatus {
   error_detail: string | null;
   output_url: string | null;
   display_name: string | null;
+  merge_summary?: MergeSummary | null;
 }
 
 @Component({
@@ -34,6 +46,7 @@ interface MergeJobStatus {
 })
 export class TemplateMergeComponent implements OnInit, OnDestroy {
   private http = inject(HttpClient);
+  private brandService = inject(BrandService);
 
   // ── Form state ──────────────────────────────────────────────────────────────
   selectedTemplateId: number | null = null;
@@ -58,13 +71,36 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
   submitError: string = '';
   private pollSub: Subscription | null = null;
 
+  // ── History tab state ────────────────────────────────────────────────────
+  activeView: 'session' | 'history' = 'session';
+  historyItems: TemplateMergeHistoryItem[] = [];
+  historySearch = '';
+  historyDateFrom = '';
+  historyDateTo = '';
+  historyPage = 1;
+  historyPageSize = 12;
+  historyTotal = 0;
+  renamingHistoryId: number | null = null;
+  renameValue = '';
+  deleteTarget: TemplateMergeHistoryItem | null = null;
+  showDeleteModal = false;
+  private historySearch$ = new Subject<string>();
+  private historySearchSub?: Subscription;
+
   ngOnInit(): void {
     this.loadTemplates();
     this.loadKnowledgeSources();
+    this.historySearchSub = this.historySearch$
+      .pipe(debounceTime(300), distinctUntilChanged())
+      .subscribe(() => {
+        this.historyPage = 1;
+        this.loadHistory();
+      });
   }
 
   ngOnDestroy(): void {
     this.pollSub?.unsubscribe();
+    this.historySearchSub?.unsubscribe();
   }
 
   // ── Data loading ─────────────────────────────────────────────────────────
@@ -197,6 +233,7 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
           this.activeJob = job;
           if (job.status === 'completed') {
             this.completedJobs.unshift(job);
+            if (this.activeView === 'history') this.loadHistory();
           }
         },
         error: () => {},
@@ -205,11 +242,127 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
 
   // ── Download ──────────────────────────────────────────────────────────────
 
+  private downloadJobFile(jobId: number, filename: string): void {
+    this.http.get(`${environment.apiUrl}/template-merge/jobs/${jobId}/download`, { responseType: 'blob' })
+      .subscribe({
+        next: (blob) => triggerBlobDownload(blob, filename),
+        error: () => { this.submitError = 'Download failed. Please try again.'; }
+      });
+  }
+
   downloadResult(job: MergeJobStatus): void {
-    window.open(
-      `${environment.apiUrl}/template-merge/jobs/${job.job_id}/download`,
-      '_blank'
-    );
+    this.downloadJobFile(job.job_id, `${job.display_name || 'merge_' + job.job_id}.pptx`);
+  }
+
+  downloadHistoryItem(item: TemplateMergeHistoryItem): void {
+    this.downloadJobFile(item.id, item.filename);
+  }
+
+  // ── History tab ───────────────────────────────────────────────────────────
+
+  setView(view: 'session' | 'history'): void {
+    this.activeView = view;
+    if (view === 'history') this.loadHistory();
+  }
+
+  loadHistory(): void {
+    this.brandService.getTemplateMergeHistory(undefined, {
+      search: this.historySearch,
+      dateFrom: this.historyDateFrom || undefined,
+      dateTo: this.historyDateTo || undefined,
+      page: this.historyPage,
+      pageSize: this.historyPageSize,
+    }).subscribe({
+      next: (res) => {
+        this.historyItems = res.items;
+        this.historyTotal = res.total;
+        this.historyPage = res.page;
+      },
+      error: () => {},
+    });
+  }
+
+  onHistorySearchChange(value: string): void {
+    this.historySearch$.next(value);
+  }
+
+  onHistoryDateChange(): void {
+    this.historyPage = 1;
+    this.loadHistory();
+  }
+
+  clearHistoryFilters(): void {
+    this.historySearch = '';
+    this.historyDateFrom = '';
+    this.historyDateTo = '';
+    this.historyPage = 1;
+    this.loadHistory();
+  }
+
+  get historyTotalPages(): number {
+    return Math.max(1, Math.ceil(this.historyTotal / this.historyPageSize));
+  }
+
+  goToHistoryPage(page: number): void {
+    if (page < 1 || page > this.historyTotalPages || page === this.historyPage) return;
+    this.historyPage = page;
+    this.loadHistory();
+  }
+
+  startHistoryRename(item: TemplateMergeHistoryItem): void {
+    this.renamingHistoryId = item.id;
+    this.renameValue = item.display_name;
+  }
+
+  cancelHistoryRename(): void {
+    this.renamingHistoryId = null;
+    this.renameValue = '';
+  }
+
+  confirmHistoryRename(): void {
+    const name = this.renameValue.trim();
+    if (!this.renamingHistoryId || !name || name.length > 120) return;
+
+    this.brandService.renameTemplateMergeJob(this.renamingHistoryId, name).subscribe({
+      next: (res) => {
+        const item = this.historyItems.find(i => i.id === res.id);
+        if (item) item.display_name = res.display_name;
+        this.cancelHistoryRename();
+      },
+      error: () => {
+        this.cancelHistoryRename();
+        this.loadHistory();
+      },
+    });
+  }
+
+  askDeleteHistoryItem(item: TemplateMergeHistoryItem): void {
+    this.deleteTarget = item;
+    this.showDeleteModal = true;
+  }
+
+  cancelDeleteHistoryItem(): void {
+    this.deleteTarget = null;
+    this.showDeleteModal = false;
+  }
+
+  confirmDeleteHistoryItem(): void {
+    if (!this.deleteTarget) return;
+    const targetId = this.deleteTarget.id;
+
+    this.brandService.deleteTemplateMergeJob(targetId).subscribe({
+      next: () => {
+        this.cancelDeleteHistoryItem();
+        if (this.historyItems.length === 1 && this.historyPage > 1) {
+          this.historyPage--;
+        }
+        this.loadHistory();
+      },
+      error: () => {
+        this.cancelDeleteHistoryItem();
+        this.loadHistory();
+      },
+    });
   }
 
   // ── UI helpers ────────────────────────────────────────────────────────────
@@ -220,6 +373,21 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
 
   get isProcessing(): boolean {
     return !!this.activeJob && ['pending', 'processing'].includes(this.activeJob.status);
+  }
+
+  get mergeSummary(): MergeSummary | null {
+    return this.activeJob?.merge_summary ?? null;
+  }
+
+  /** Slots that ended without new content (unfilled) or errored (failed) — worth a review. */
+  get mergeWarningCount(): number {
+    const s = this.mergeSummary;
+    return s ? s.unfilled + s.failed : 0;
+  }
+
+  get mergeReplacedCount(): number {
+    const s = this.mergeSummary;
+    return s ? s.rewritten + s.adapted : 0;
   }
 
   resetForm(): void {

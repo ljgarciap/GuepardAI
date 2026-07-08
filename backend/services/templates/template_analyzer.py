@@ -1,13 +1,19 @@
 """
 template_analyzer.py — Parse a PPTX template into a list of TextSlots.
 
-Each TextSlot describes one text frame that the merge engine will overwrite.
+Each TextSlot describes one text frame that the merge engine will overwrite,
+addressed by a string slot key (see template_traversal.py for the scheme:
+"42" plain shape, "42/17" group child, "42:r2c3" table cell). The same
+traversal is used by the renderer, so addressing can never diverge.
+
 All thresholds and limits are read from TemplateMergeConfig (sourced from
 system_configs), never hardcoded.
 
 Role inference heuristic (no LLM):
   - Placeholder type PP_PLACEHOLDER.TITLE / CENTER_TITLE → "title"
   - Placeholder type PP_PLACEHOLDER.SUBTITLE / BODY → "body"
+  - Table cells → always "body" (the footnote/title position heuristics do
+    not apply inside a table grid)
   - Non-placeholder in top `config.title_top_fraction` of slide height → "title"
   - Non-placeholder with area < `config.footnote_area_fraction` of slide → "footnote"
   - Everything else → "body"
@@ -17,12 +23,15 @@ Shape filtering (non-placeholder shapes only):
   - Existing text < config.shape_min_text_length → skip
   - Area > config.shape_bg_area_threshold of slide → skip (background)
   - Area < config.shape_min_area_threshold of slide → skip (decorative dot)
+  - Table cells are exempt from the area filters (individual cells are
+    legitimately tiny relative to the slide)
 """
 import logging
 from dataclasses import dataclass, field
 from typing import List, Optional
 
 from services.templates.template_config import TemplateMergeConfig
+from services.templates.template_traversal import TextTarget, collect_text_targets
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +46,7 @@ except ImportError:
 @dataclass
 class TextSlot:
     slide_idx: int
-    shape_id: int
+    slot_key: str           # traversal key: "42" | "42/17" | "42:r2c3"
     shape_name: str
     role: str               # "title" | "body" | "footnote"
     char_limit: int
@@ -45,6 +54,7 @@ class TextSlot:
     is_placeholder: bool
     placeholder_type: Optional[str] = None
     action: str = "rewrite" # "preserve" | "adapt" | "rewrite"
+    kind: str = "shape"     # "shape" | "group_child" | "cell"
 
 
 @dataclass
@@ -85,53 +95,20 @@ def analyze_template(
             slide_height_emu=int(slide_h),
         )
 
-        for shape in slide.shapes:
+        targets, preserved = collect_text_targets(slide, config.group_max_depth)
+        profile.preserved_shapes = preserved
+
+        for target in targets:
             try:
-                if not shape.has_text_frame:
+                slot = _build_slot(target, slide_idx, int(slide_h), int(slide_area), config)
+                if slot is None:
                     profile.preserved_shapes += 1
                     continue
-
-                tf = shape.text_frame
-                existing_text = tf.text.strip()
-
-                if shape.is_placeholder:
-                    # Placeholder shapes are always content candidates
-                    pass
-                else:
-                    # Skip non-placeholder shapes without meaningful content
-                    if not existing_text:
-                        profile.preserved_shapes += 1
-                        continue
-
-                    if len(existing_text) < config.shape_min_text_length:
-                        profile.preserved_shapes += 1
-                        continue
-
-                    if not _should_include_shape(shape, int(slide_area), config):
-                        profile.preserved_shapes += 1
-                        continue
-
-                role = _infer_role(shape, slide_h, slide_area, config)
-                char_limit = _estimate_char_limit(shape, role, existing_text, config)
-                action = _infer_action(shape.is_placeholder, role, existing_text, config)
-
-                slot = TextSlot(
-                    slide_idx=slide_idx,
-                    shape_id=shape.shape_id,
-                    shape_name=shape.name,
-                    role=role,
-                    char_limit=char_limit,
-                    hint=existing_text[:config.hint_max_chars],
-                    is_placeholder=shape.is_placeholder,
-                    placeholder_type=_placeholder_type_str(shape),
-                    action=action,
-                )
                 profile.slots.append(slot)
-
             except Exception as exc:
                 logger.warning(
-                    f"[TemplateAnalyzer] slide {slide_idx} shape "
-                    f"'{getattr(shape, 'name', '?')}' skipped: {exc}"
+                    f"[TemplateAnalyzer] slide {slide_idx} target "
+                    f"'{target.name}' skipped: {exc}"
                 )
                 profile.preserved_shapes += 1
 
@@ -146,11 +123,49 @@ def analyze_template(
 
 # ─── private ──────────────────────────────────────────────────────────────────
 
-def _should_include_shape(
-    shape, slide_area_emu: int, config: TemplateMergeConfig
+def _build_slot(
+    target: TextTarget,
+    slide_idx: int,
+    slide_height_emu: int,
+    slide_area_emu: int,
+    config: TemplateMergeConfig,
+) -> Optional[TextSlot]:
+    """Filter + classify one traversal target. Returns None when it must be preserved as-is."""
+    existing_text = target.text_frame.text.strip()
+
+    if not target.is_placeholder:
+        # Skip non-placeholder targets without meaningful content
+        if not existing_text:
+            return None
+        if len(existing_text) < config.shape_min_text_length:
+            return None
+        # Cells are exempt from slide-relative area filters
+        if target.kind != "cell" and not _area_within_bounds(target, slide_area_emu, config):
+            return None
+
+    role = _infer_role(target, slide_height_emu, slide_area_emu, config)
+    char_limit = _estimate_char_limit(target, role, existing_text, config)
+    action = _infer_action(target.is_placeholder, role, existing_text, config)
+
+    return TextSlot(
+        slide_idx=slide_idx,
+        slot_key=target.key,
+        shape_name=target.name,
+        role=role,
+        char_limit=char_limit,
+        hint=existing_text[:config.hint_max_chars],
+        is_placeholder=target.is_placeholder,
+        placeholder_type=_placeholder_type_str(target),
+        action=action,
+        kind=target.kind,
+    )
+
+
+def _area_within_bounds(
+    target: TextTarget, slide_area_emu: int, config: TemplateMergeConfig
 ) -> bool:
     try:
-        area = (shape.width or 0) * (shape.height or 0)
+        area = target.width * target.height
         if slide_area_emu <= 0:
             return True
         ratio = area / slide_area_emu
@@ -164,12 +179,15 @@ def _should_include_shape(
 
 
 def _infer_role(
-    shape, slide_height_emu: int, slide_area_emu: int, config: TemplateMergeConfig
+    target: TextTarget, slide_height_emu: int, slide_area_emu: int, config: TemplateMergeConfig
 ) -> str:
-    if shape.is_placeholder:
+    if target.kind == "cell":
+        return "body"
+
+    if target.is_placeholder and target.shape is not None:
         try:
             from pptx.enum.shapes import PP_PLACEHOLDER
-            ph_type = shape.placeholder_format.type
+            ph_type = target.shape.placeholder_format.type
             if ph_type in (PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE):
                 return "title"
             if ph_type in (PP_PLACEHOLDER.SUBTITLE, PP_PLACEHOLDER.BODY):
@@ -178,12 +196,11 @@ def _infer_role(
             pass
 
     try:
-        top = shape.top or 0
-        area = (shape.width or 0) * (shape.height or 0)
+        area = target.width * target.height
 
         if area < slide_area_emu * config.footnote_area_fraction:
             return "footnote"
-        if top < slide_height_emu * config.title_top_fraction:
+        if target.top < slide_height_emu * config.title_top_fraction:
             return "title"
     except Exception:
         pass
@@ -192,7 +209,7 @@ def _infer_role(
 
 
 def _estimate_char_limit(
-    shape, role: str, hint: str, config: TemplateMergeConfig
+    target: TextTarget, role: str, hint: str, config: TemplateMergeConfig
 ) -> int:
     hint_stripped = hint.strip()
 
@@ -209,19 +226,19 @@ def _estimate_char_limit(
         return max(len(hint_stripped) * config.short_hint_body_multiplier, 30)
 
     try:
-        w_in = (shape.width or 0) / 914400
-        h_in = (shape.height or 0) / 914400
+        w_in = target.width / 914400
+        h_in = target.height / 914400
         estimated = int(w_in * h_in * config.chars_per_sq_inch)
         return max(config.body_char_limit_min, min(estimated, config.body_char_limit_max))
     except Exception:
         return config.body_char_limit_min
 
 
-def _placeholder_type_str(shape) -> Optional[str]:
-    if not shape.is_placeholder:
+def _placeholder_type_str(target: TextTarget) -> Optional[str]:
+    if not target.is_placeholder or target.shape is None:
         return None
     try:
-        return str(shape.placeholder_format.type)
+        return str(target.shape.placeholder_format.type)
     except Exception:
         return None
 

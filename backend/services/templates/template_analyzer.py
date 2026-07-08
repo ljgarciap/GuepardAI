@@ -216,6 +216,10 @@ def _estimate_char_limit(
     if role == "title":
         if hint_stripped and len(hint_stripped) <= config.short_hint_threshold:
             return max(len(hint_stripped) * config.short_hint_title_multiplier, 20)
+        typographic = _typographic_budget(target, config)
+        if typographic is not None:
+            # sanity ceiling: a banner-sized title box still shouldn't invite an essay
+            return max(20, min(typographic, config.title_char_limit * 2))
         return config.title_char_limit
 
     if role == "footnote":
@@ -225,6 +229,11 @@ def _estimate_char_limit(
     if hint_stripped and len(hint_stripped) <= config.short_hint_threshold:
         return max(len(hint_stripped) * config.short_hint_body_multiplier, 30)
 
+    typographic = _typographic_budget(target, config)
+    if typographic is not None:
+        return max(20, min(typographic, config.body_char_limit_max))
+
+    # Fallback: flat area estimate (no resolvable font size)
     try:
         w_in = target.width / 914400
         h_in = target.height / 914400
@@ -232,6 +241,44 @@ def _estimate_char_limit(
         return max(config.body_char_limit_min, min(estimated, config.body_char_limit_max))
     except Exception:
         return config.body_char_limit_min
+
+
+def _typographic_budget(target: TextTarget, config: TemplateMergeConfig) -> Optional[int]:
+    """
+    Char budget from real typography (v2 Fase 3):
+      chars_per_line = box_width_pt / (font_pt × char_width_factor)
+      lines          = box_height_pt / (font_pt × line_height_factor)
+      budget         = chars_per_line × lines × fill_safety_factor
+    Returns None when no explicit font size is resolvable (inherited theme
+    sizes are invisible to python-pptx) — caller falls back to the area estimate.
+    """
+    try:
+        font_pt = _dominant_font_size_pt(target.text_frame)
+        if not font_pt or not target.width or not target.height:
+            return None
+        width_pt = target.width / 12700   # EMU → pt
+        height_pt = target.height / 12700
+        chars_per_line = width_pt / (font_pt * config.char_width_factor)
+        lines = height_pt / (font_pt * config.line_height_factor)
+        if chars_per_line <= 0 or lines <= 0:
+            return None
+        return int(chars_per_line * max(lines, 1.0) * config.fill_safety_factor)
+    except Exception:
+        return None
+
+
+def _dominant_font_size_pt(text_frame) -> Optional[float]:
+    """Font size (pt) of the first non-empty run with an explicit size, else None."""
+    if text_frame is None:
+        return None
+    try:
+        for para in text_frame.paragraphs:
+            for run in para.runs:
+                if run.text.strip() and run.font.size is not None:
+                    return run.font.size.pt
+    except Exception:
+        pass
+    return None
 
 
 def _placeholder_type_str(target: TextTarget) -> Optional[str]:

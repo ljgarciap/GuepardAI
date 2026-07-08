@@ -261,6 +261,63 @@ def test_estimate_char_limit_body_area_based_clamped_to_max():
 
 
 # ---------------------------------------------------------------------------
+# template_analyzer — typographic budget (v2 Fase 3, real pptx objects)
+# ---------------------------------------------------------------------------
+
+def _target_with_font(width_in=3, height_in=1, size_pt=20, text="x"):
+    from pptx.util import Inches, Pt
+    _, slide = _blank_slide()
+    box = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(width_in), Inches(height_in))
+    run = box.text_frame.paragraphs[0].add_run()
+    run.text = text
+    if size_pt:
+        run.font.size = Pt(size_pt)
+    targets, _ = collect_text_targets(slide, 3)
+    return targets[0]
+
+
+@pytest.mark.unit
+def test_typographic_budget_from_font_size_and_box():
+    # 3in × 1in box, 20pt font, defaults (0.55 / 1.25 / 0.8):
+    # chars/line = 216 / 11 = 19.63…; lines = 72 / 25 = 2.88; → int(45.2) = 45
+    config = make_config()
+    target = _target_with_font(width_in=3, height_in=1, size_pt=20)
+    assert analyzer_mod._typographic_budget(target, config) == 45
+
+
+@pytest.mark.unit
+def test_estimate_char_limit_body_prefers_typographic_over_area():
+    config = make_config()
+    target = _target_with_font(width_in=3, height_in=1, size_pt=20)
+    hint = "A" * 30  # past short-hint threshold
+    # area estimate would be 3 sq in × 30 = 90; typographic wins with 45
+    assert analyzer_mod._estimate_char_limit(target, "body", hint, config) == 45
+
+
+@pytest.mark.unit
+def test_estimate_char_limit_title_typographic_with_ceiling():
+    config = make_config(title_char_limit=80)
+    target = _target_with_font(width_in=12, height_in=3, size_pt=12)
+    hint = "A" * 30
+    # huge box + small font → typographic explodes; ceiling = 2 × title_char_limit
+    assert analyzer_mod._estimate_char_limit(target, "title", hint, config) == 160
+
+
+@pytest.mark.unit
+def test_estimate_char_limit_falls_back_to_area_without_font_size():
+    config = make_config()
+    target = _target_with_font(width_in=3, height_in=1, size_pt=None)
+    hint = "A" * 30
+    # no explicit size anywhere → area fallback: 3 sq in × 30 = 90
+    assert analyzer_mod._estimate_char_limit(target, "body", hint, config) == 90
+
+
+@pytest.mark.unit
+def test_dominant_font_size_none_for_none_frame():
+    assert analyzer_mod._dominant_font_size_pt(None) is None
+
+
+# ---------------------------------------------------------------------------
 # template_analyzer — _infer_action
 # ---------------------------------------------------------------------------
 
@@ -707,6 +764,92 @@ def test_generate_slide_contents_accumulates_prev_summaries():
 
 
 # ---------------------------------------------------------------------------
+# template_content — fit-check + shorten-retry + sentence truncation (v2 Fase 3)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_fitcheck_shorten_retry_replaces_overflowing_value():
+    config = make_config(fitcheck_max_retries=1)
+    slot = make_slot(slot_key="1", char_limit=20)
+    profile = make_profile([slot])
+    responses = iter([{"1": "X" * 50}, {"1": "short enough"}])
+    with patch("services.templates.template_content.generate_json",
+               side_effect=lambda p: next(responses)) as mock_llm, \
+         patch("services.templates.template_content.search_rag", return_value=""):
+        result = content_mod._generate_for_slide(
+            profile=profile, knowledge_filename="doc.pdf", brand_id=1,
+            user_prompt="prompt", slide_num=1, total_slides=1, config=config,
+        )
+    assert mock_llm.call_count == 2
+    assert result["1"] == "short enough"
+
+
+@pytest.mark.unit
+def test_fitcheck_disabled_goes_straight_to_truncation():
+    config = make_config(fitcheck_max_retries=0)
+    slot = make_slot(slot_key="1", char_limit=20)
+    profile = make_profile([slot])
+    with patch("services.templates.template_content.generate_json",
+               return_value={"1": "wordy " * 10}) as mock_llm, \
+         patch("services.templates.template_content.search_rag", return_value=""):
+        result = content_mod._generate_for_slide(
+            profile=profile, knowledge_filename="doc.pdf", brand_id=1,
+            user_prompt="prompt", slide_num=1, total_slides=1, config=config,
+        )
+    assert mock_llm.call_count == 1
+    assert len(result["1"]) <= 21
+
+
+@pytest.mark.unit
+def test_fitcheck_retry_failure_falls_back_to_truncation():
+    config = make_config(fitcheck_max_retries=1)
+    slot = make_slot(slot_key="1", char_limit=20)
+    profile = make_profile([slot])
+    calls = {"n": 0}
+
+    def flaky(prompt):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"1": "wordy " * 10}
+        raise RuntimeError("retry exploded")
+
+    with patch("services.templates.template_content.generate_json", side_effect=flaky), \
+         patch("services.templates.template_content.search_rag", return_value=""):
+        result = content_mod._generate_for_slide(
+            profile=profile, knowledge_filename="doc.pdf", brand_id=1,
+            user_prompt="prompt", slide_num=1, total_slides=1, config=config,
+        )
+    assert calls["n"] == 2
+    assert len(result["1"]) <= 21   # truncation still applied, no crash
+
+
+@pytest.mark.unit
+def test_shorten_retry_ignores_longer_or_empty_replacements():
+    config = make_config()
+    slot = make_slot(slot_key="1", char_limit=10)
+    original = {"1": "original overflowing text"}
+    with patch("services.templates.template_content.generate_json",
+               return_value={"1": ""}):
+        result = content_mod._shorten_overflowing(dict(original), [slot], config, 1, "")
+    assert result["1"] == original["1"]
+
+
+@pytest.mark.unit
+def test_truncate_to_limit_prefers_sentence_boundary():
+    value = "First sentence is right here. Second part goes on and on."
+    result = content_mod._truncate_to_limit(value, 40)
+    assert result == "First sentence is right here."
+
+
+@pytest.mark.unit
+def test_truncate_to_limit_word_fallback_with_ellipsis():
+    value = "just words with no sentence ending anywhere at all here"
+    result = content_mod._truncate_to_limit(value, 20)
+    assert result.endswith("…")
+    assert len(result) <= 21
+
+
+# ---------------------------------------------------------------------------
 # template_renderer — _replace_text_frame / bullets / blank (real pptx objects)
 # ---------------------------------------------------------------------------
 
@@ -884,6 +1027,41 @@ def test_merge_slide_unresolvable_slot_key_reports_failed():
     entries = renderer_mod._merge_slide(slide, profile, {"9999": "text"}, make_config())
 
     assert entries[0]["outcome"] == "failed"
+
+
+def _add_stale_autofit(tf):
+    from pptx.oxml.ns import qn
+    from lxml import etree
+    body_pr = tf._txBody.find(qn('a:bodyPr'))
+    autofit = etree.SubElement(body_pr, qn('a:normAutofit'))
+    autofit.set('fontScale', '62500')
+    autofit.set('lnSpcReduction', '20000')
+    return autofit
+
+
+@pytest.mark.unit
+def test_reset_autofit_strips_stale_scale_after_replacement():
+    slide, k1, _ = _slide_with_two_boxes()
+    target = next(t for t in collect_text_targets(slide, 3)[0] if t.key == k1)
+    autofit = _add_stale_autofit(target.text_frame)
+    profile = _profile_for(0, [make_slot(slot_key=k1, action="rewrite")])
+
+    renderer_mod._merge_slide(slide, profile, {k1: "New text"}, make_config(reset_autofit=True))
+
+    assert 'fontScale' not in autofit.attrib
+    assert 'lnSpcReduction' not in autofit.attrib
+
+
+@pytest.mark.unit
+def test_reset_autofit_disabled_keeps_stored_scale():
+    slide, k1, _ = _slide_with_two_boxes()
+    target = next(t for t in collect_text_targets(slide, 3)[0] if t.key == k1)
+    autofit = _add_stale_autofit(target.text_frame)
+    profile = _profile_for(0, [make_slot(slot_key=k1, action="rewrite")])
+
+    renderer_mod._merge_slide(slide, profile, {k1: "New text"}, make_config(reset_autofit=False))
+
+    assert autofit.get('fontScale') == '62500'
 
 
 @pytest.mark.unit

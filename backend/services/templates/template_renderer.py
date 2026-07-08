@@ -164,6 +164,8 @@ def _apply_slot(slot, by_key, content_map, config, slide_idx) -> str:
 
     try:
         _replace_text_frame(target.text_frame, value)
+        if config.reset_autofit:
+            _reset_autofit(target.text_frame)
         return "rewritten" if slot.action == "rewrite" else "adapted"
     except Exception as exc:
         logger.warning(
@@ -251,6 +253,30 @@ def _blank_text_frame(tf) -> None:
     """Remove all text (every run in every paragraph), keeping the paragraphs."""
     for para in tf.paragraphs:
         _clear_paragraph(para)
+
+
+def _reset_autofit(tf) -> None:
+    """
+    Strip stale <a:normAutofit> fontScale/lnSpcReduction (v2 Fase 3).
+
+    PowerPoint stores the computed autofit shrink on the shape; after we swap
+    in longer/shorter text that stored scale is stale — text can visibly
+    overflow until a manual edit forces a recompute. Removing the attributes
+    (keeping the normAutofit element itself) makes PowerPoint recompute on open.
+    Tolerant: any XML surprise is logged, never fatal.
+    """
+    try:
+        body_pr = tf._txBody.find(qn('a:bodyPr'))
+        if body_pr is None:
+            return
+        autofit = body_pr.find(qn('a:normAutofit'))
+        if autofit is None:
+            return
+        for attr in ('fontScale', 'lnSpcReduction'):
+            if attr in autofit.attrib:
+                del autofit.attrib[attr]
+    except Exception as exc:
+        logger.warning(f"[TemplateMergeRenderer] autofit reset skipped: {exc}")
 
 
 def _capture_base_rpr(tf):

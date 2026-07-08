@@ -38,6 +38,16 @@ class TemplateMergeConfig:
     # Body area-based estimate: chars_per_sq_inch × box_area_sq_in
     chars_per_sq_inch: int = 30
 
+    # ── Typographic budget (v2 Fase 3) ────────────────────────────────────────
+    # When the slot's dominant font size is resolvable, char budgets derive
+    # from real typography instead of the flat area estimate:
+    #   chars_per_line = box_width_pt / (font_pt × char_width_factor)
+    #   lines          = box_height_pt / (font_pt × line_height_factor)
+    #   budget         = chars_per_line × lines × fill_safety_factor
+    char_width_factor: float = 0.55   # avg glyph width as fraction of font size
+    line_height_factor: float = 1.25  # line height as multiple of font size
+    fill_safety_factor: float = 0.8   # never plan to fill the box to the brim
+
     # ── Role inference ────────────────────────────────────────────────────────
     footnote_area_fraction: float = 0.03  # shapes < this fraction of slide → footnote
     title_top_fraction: float = 0.20      # shapes in top fraction of slide height → title
@@ -67,11 +77,20 @@ class TemplateMergeConfig:
     # groups beyond this depth are preserved as-is.
     group_max_depth: int = 3
 
+    # ── Fit-check (v2 Fase 3) ─────────────────────────────────────────────────
+    # Slots whose generated text exceeds char_limit get ONE batched
+    # shorten-retry LLM call per slide before falling back to truncation
+    # (sentence boundary first, then word boundary + ellipsis).
+    fitcheck_max_retries: int = 1
+
     # ── Rendering ─────────────────────────────────────────────────────────────
     # What to do when the LLM returns "" for a rewrite slot:
     #   "blank" → clear the template's text (an empty box beats stale lorem)
     #   "keep"  → leave the original template text in place
     empty_rewrite_policy: str = "blank"
+    # Strip stale normAutofit fontScale/lnSpcReduction after replacing text so
+    # PowerPoint recomputes autofit on open (old scale + new text = overflow).
+    reset_autofit: bool = True
 
     @classmethod
     def from_db(cls) -> TemplateMergeConfig:
@@ -113,4 +132,9 @@ class TemplateMergeConfig:
             outline_enabled=str(get_system_config("tm_outline_enabled", "true")).strip().lower() == "true",
             outline_rag_k=_i("tm_outline_rag_k", "8"),
             outline_context_max_chars=_i("tm_outline_context_max_chars", "4000"),
+            char_width_factor=_f("tm_char_width_factor", "0.55"),
+            line_height_factor=_f("tm_line_height_factor", "1.25"),
+            fill_safety_factor=_f("tm_fill_safety_factor", "0.8"),
+            fitcheck_max_retries=_i("tm_fitcheck_max_retries", "1"),
+            reset_autofit=str(get_system_config("tm_reset_autofit", "true")).strip().lower() == "true",
         )

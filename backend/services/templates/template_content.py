@@ -151,25 +151,92 @@ def _generate_for_slide(
 
     content_map: Dict[str, str] = {}
     for slot in active_slots:
-        value = raw.get(slot.slot_key, "")
+        # Unwrap nested LLM responses + strip markdown that slipped through
+        value = _unwrap_value(raw.get(slot.slot_key, ""), config.max_bullet_items)
+        content_map[slot.slot_key] = _strip_markdown(value)
 
-        # Unwrap nested LLM responses like {"content": "...", "role": "..."}
-        value = _unwrap_value(value, config.max_bullet_items)
+    # Fit-check (v2 Fase 3): overflowing slots get batched shorten-retry
+    # call(s) before any truncation — a rewritten-short text always beats a cut.
+    for _ in range(max(0, config.fitcheck_max_retries)):
+        overflowing = [
+            s for s in active_slots
+            if len(content_map.get(s.slot_key) or "") > s.char_limit
+        ]
+        if not overflowing:
+            break
+        content_map = _shorten_overflowing(
+            content_map, overflowing, config, slide_num, language
+        )
 
-        # Strip any markdown that slipped through
-        value = _strip_markdown(value)
-
-        # Enforce char limit — prevents overflow in large-font or small boxes
+    # Last resort: truncate — sentence boundary first, word boundary + ellipsis after
+    for slot in active_slots:
+        value = content_map.get(slot.slot_key) or ""
         if value and len(value) > slot.char_limit:
-            truncated = value[:slot.char_limit]
-            last_space = truncated.rfind(' ')
-            if last_space > slot.char_limit // 2:
-                truncated = truncated[:last_space]
-            value = truncated.rstrip('.,;: ') + '…'
-
-        content_map[slot.slot_key] = value
+            content_map[slot.slot_key] = _truncate_to_limit(value, slot.char_limit)
 
     return content_map
+
+
+def _shorten_overflowing(
+    content_map: Dict[str, str],
+    slots: List[TextSlot],
+    config: TemplateMergeConfig,
+    slide_num: int,
+    language: str,
+) -> Dict[str, str]:
+    """One batched LLM call asking to rewrite overflowing texts within budget.
+    Any failure leaves the original values in place (truncation handles them)."""
+    lines = []
+    for s in slots:
+        current = content_map.get(s.slot_key) or ""
+        lines.append(
+            f'  slot_id="{s.slot_key}" char_limit={s.char_limit} current_text="{current}"'
+        )
+    lang_rule = (
+        f'Keep the language: "{language}".' if language
+        else "Keep each text's original language."
+    )
+    prompt = f"""You are editing a corporate presentation (slide {slide_num}). The following texts EXCEED their character limits. Rewrite each one to fit STRICTLY within its char_limit while keeping its key point. {lang_rule}
+
+TEXTS TO SHORTEN:
+{chr(10).join(lines)}
+
+RULES:
+1. Return ONLY a flat JSON object: {{"slot_id": "shortened text", ...}} — keys exactly as listed
+2. Every value MUST be at most its char_limit characters — count every character including spaces
+3. Preserve the most important fact of each text; drop secondary detail
+4. NO markdown; plain strings only; keep newlines if the original had them
+
+Respond with ONLY valid JSON — no markdown fences, no extra text."""
+
+    try:
+        raw = generate_json(prompt)
+    except Exception as exc:
+        logger.warning(f"[TemplateMergeContent] slide {slide_num}: shorten-retry failed: {exc}")
+        return content_map
+
+    for s in slots:
+        value = _strip_markdown(_unwrap_value(raw.get(s.slot_key, ""), config.max_bullet_items)).strip()
+        original = content_map.get(s.slot_key) or ""
+        if value and len(value) < len(original):
+            content_map[s.slot_key] = value
+    return content_map
+
+
+def _truncate_to_limit(value: str, limit: int) -> str:
+    """Sentence-boundary truncation; word boundary + ellipsis as last resort."""
+    truncated = value[:limit]
+    best = -1
+    for punct in ('. ', '! ', '? ', '.\n', '!\n', '?\n'):
+        best = max(best, truncated.rfind(punct))
+    if truncated and truncated[-1] in '.!?':
+        best = max(best, len(truncated) - 1)
+    if best > limit // 2:
+        return truncated[:best + 1].rstrip()
+    last_space = truncated.rfind(' ')
+    if last_space > limit // 2:
+        truncated = truncated[:last_space]
+    return truncated.rstrip('.,;: ') + '…'
 
 
 def _deprioritize_used_chunks(

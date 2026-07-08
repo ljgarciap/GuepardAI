@@ -103,16 +103,20 @@ from Luis after 1–3 land. The classic generation pipeline is untouched.
       `test-ai-request` run, 2026-07-07) + content ADR v2 superseding
       `default-llm-template-merge-content-adr.md`.
 
-### Phase 3 — Typographic fidelity
+### Phase 3 — Typographic fidelity — DONE 2026-07-08
 
-- [ ] Char budgets derive from dominant font size + box dimensions
+- [x] Char budgets derive from dominant font size + box dimensions
       (`tm_char_width_factor`, `tm_line_height_factor`,
-      `tm_fill_safety_factor`); area-based estimate remains as fallback.
-- [ ] Deterministic fit-check after generation; overflowing slots get at
+      `tm_fill_safety_factor`); area-based estimate remains as fallback
+      (`_typographic_budget` in `template_analyzer.py`).
+- [x] Deterministic fit-check after generation; overflowing slots get at
       most one batched shorten-retry (`tm_fitcheck_max_retries`, default 1);
-      final fallback truncates at a sentence boundary.
-- [ ] Stale autofit `fontScale`/`lnSpcReduction` is stripped after
-      replacement (`tm_reset_autofit`, default on).
+      final fallback truncates at a sentence boundary
+      (`_shorten_overflowing` / `_truncate_to_limit` in `template_content.py`;
+      the retry call shape is covered in advance by content ADR v2).
+- [x] Stale autofit `fontScale`/`lnSpcReduction` is stripped after
+      replacement (`tm_reset_autofit`, default on; `_reset_autofit` in
+      `template_renderer.py`).
 
 ## Configuration (all new keys, seeded in `utils/seed.py`)
 

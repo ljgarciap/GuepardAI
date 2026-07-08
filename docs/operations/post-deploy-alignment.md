@@ -34,7 +34,7 @@ cuando el guard esté apagado (ejecución manual con los scripts de `utils/`).
 
 **Sin comandos manuales.** Convergencia automática al arrancar:
 - Columna `template_merge_jobs.merge_report` (JSON) → auto-ALTER genérico vía `reconcile_additive_columns()`.
-- Claves nuevas `tm_group_max_depth`, `tm_empty_rewrite_policy`, `tm_outline_enabled`, `tm_outline_rag_k`, `tm_outline_context_max_chars` (seeds).
+- Claves nuevas `tm_group_max_depth`, `tm_empty_rewrite_policy`, `tm_outline_enabled`, `tm_outline_rag_k`, `tm_outline_context_max_chars` (seeds Fase 1-2) y `tm_char_width_factor`, `tm_line_height_factor`, `tm_fill_safety_factor`, `tm_fitcheck_max_retries`, `tm_reset_autofit` (seeds Fase 3, 2026-07-08).
 - Alineación `stale_fallback_model_fix_v1` — reemplaza el eslabón obsoleto
   `claude-3-5-sonnet-20241022` por `anthropic/claude-sonnet-4.6` en
   `extraction_synthesis_model` y `global_fallback_model` (el id pelado caía en

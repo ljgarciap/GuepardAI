@@ -852,6 +852,31 @@ Write content for exactly ONE slide. Use COMPANY DATA as your primary source.
                 "key": "tm_outline_context_max_chars",
                 "value": "4000",
                 "description": "Template Merge v2 Fase 2: maximum characters of RAG sample passed to the outline planning call."
+            },
+            {
+                "key": "tm_char_width_factor",
+                "value": "0.55",
+                "description": "Template Merge v2 Fase 3: average glyph width as a fraction of the font size, used by the typographic char budget (chars_per_line = box_width_pt / (font_pt × this))."
+            },
+            {
+                "key": "tm_line_height_factor",
+                "value": "1.25",
+                "description": "Template Merge v2 Fase 3: line height as a multiple of the font size, used by the typographic char budget (lines = box_height_pt / (font_pt × this))."
+            },
+            {
+                "key": "tm_fill_safety_factor",
+                "value": "0.8",
+                "description": "Template Merge v2 Fase 3: fraction of the theoretical typographic capacity actually budgeted — never plan to fill a text box to the brim."
+            },
+            {
+                "key": "tm_fitcheck_max_retries",
+                "value": "1",
+                "description": "Template Merge v2 Fase 3: shorten-retry LLM calls (batched per slide) for slots whose generated text overflows char_limit, before falling back to sentence-boundary truncation. 0 disables the retry."
+            },
+            {
+                "key": "tm_reset_autofit",
+                "value": "true",
+                "description": "Template Merge v2 Fase 3: strip stale normAutofit fontScale/lnSpcReduction after text replacement so PowerPoint recomputes autofit on open."
             }
 ]
 

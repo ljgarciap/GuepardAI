@@ -92,6 +92,13 @@ class TemplateMergeConfig:
     # PowerPoint recomputes autofit on open (old scale + new text = overflow).
     reset_autofit: bool = True
 
+    # ── Visual QA (v2 Fase 4) ─────────────────────────────────────────────────
+    # Advisory Vision-LLM pass over the rendered deck (1 call per job, spends
+    # Vision tokens → default OFF). Findings land in merge_report.visual_qa;
+    # the pass never modifies the deck and never fails the job.
+    visual_qa_enabled: bool = False
+    visual_qa_max_slides: int = 15
+
     @classmethod
     def from_db(cls) -> TemplateMergeConfig:
         """Load all tunables from system_configs (ENV overrides take priority)."""
@@ -137,4 +144,6 @@ class TemplateMergeConfig:
             fill_safety_factor=_f("tm_fill_safety_factor", "0.8"),
             fitcheck_max_retries=_i("tm_fitcheck_max_retries", "1"),
             reset_autofit=str(get_system_config("tm_reset_autofit", "true")).strip().lower() == "true",
+            visual_qa_enabled=str(get_system_config("tm_visual_qa_enabled", "false")).strip().lower() == "true",
+            visual_qa_max_slides=_i("tm_visual_qa_max_slides", "15"),
         )

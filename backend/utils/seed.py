@@ -877,6 +877,16 @@ Write content for exactly ONE slide. Use COMPANY DATA as your primary source.
                 "key": "tm_reset_autofit",
                 "value": "true",
                 "description": "Template Merge v2 Fase 3: strip stale normAutofit fontScale/lnSpcReduction after text replacement so PowerPoint recomputes autofit on open."
+            },
+            {
+                "key": "tm_visual_qa_enabled",
+                "value": "false",
+                "description": "Template Merge v2 Fase 4: kill switch for the advisory Vision-LLM QA pass over the rendered deck (1 Vision call per job, spends tokens). Findings go to merge_report.visual_qa; never blocks or modifies the deck."
+            },
+            {
+                "key": "tm_visual_qa_max_slides",
+                "value": "15",
+                "description": "Template Merge v2 Fase 4: maximum slide images sent to the Vision QA call (payload/cost cap)."
             }
 ]
 

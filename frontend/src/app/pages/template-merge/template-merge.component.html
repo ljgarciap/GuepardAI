@@ -180,7 +180,20 @@
             <span *ngIf="mergeWarningCount > 0" class="merge-stat merge-stat-warning">
               ⚠ {{ mergeWarningCount }} slot(s) left blank or failed — review before presenting
             </span>
+            <span *ngIf="visualQa && visualQaFindingCount === 0" class="merge-stat">
+              Visual QA: {{ visualQa.slides_reviewed }} slides reviewed, no issues
+            </span>
+            <span *ngIf="visualQaFindingCount > 0" class="merge-stat merge-stat-warning">
+              ⚠ Visual QA flagged {{ visualQaFindingCount }} issue(s)
+            </span>
           </div>
+
+          <!-- Visual QA finding details (v2 phase 4, only when the pass ran and found issues) -->
+          <ul *ngIf="visualQaFindingCount > 0" class="vqa-findings">
+            <li *ngFor="let f of visualQaFindings" [class.vqa-high]="f.severity === 'high'">
+              <strong>Slide {{ f.slide }}</strong> · {{ f.type }} ({{ f.severity }}): {{ f.detail }}
+            </li>
+          </ul>
 
           <button (click)="downloadResult(activeJob)" class="btn-primary btn-download">
             <span class="btn-icon">↓</span> DOWNLOAD PPTX

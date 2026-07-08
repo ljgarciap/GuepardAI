@@ -118,6 +118,20 @@ from Luis after 1–3 land. The classic generation pipeline is untouched.
       replacement (`tm_reset_autofit`, default on; `_reset_autofit` in
       `template_renderer.py`).
 
+### Phase 4 — Visual QA (advisory, gated) — DONE 2026-07-08 (Luis's go: same date)
+
+- [x] Optional Vision-LLM pass over the rendered deck (LibreOffice → PDF →
+      PyMuPDF → one `generate_vision_json` call): per-slide findings limited
+      to `overflow` / `contrast` / `overlap`, attached to
+      `merge_report.visual_qa` and listed in the UI. Advisory only — never
+      modifies the deck, never fails the job (`unavailable` / `failed`
+      statuses inside the report).
+- [x] Gated by `tm_visual_qa_enabled` (default **off** — spends Vision
+      tokens); slide count capped by `tm_visual_qa_max_slides`.
+- [x] ADR validated with a live `test-ai-request` run
+      (`docs/ai/contracts/vision-template-merge-visual-qa-adr.md`) —
+      including documented recall limits of the default vision chain.
+
 ## Configuration (all new keys, seeded in `utils/seed.py`)
 
 Phase 1: `tm_group_max_depth` (3), `tm_empty_rewrite_policy` (`blank`).

@@ -490,6 +490,23 @@
   border-color: rgba(245,158,11,.35);
 }
 
+/* v2 phase 4: visual QA finding details */
+.vqa-findings {
+  margin: 0;
+  padding: 8px 12px;
+  list-style: none;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted, #64748b);
+  background: var(--bg-app, #f8fafc);
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: 8px;
+}
+
+.vqa-findings .vqa-high {
+  color: #b45309;
+}
+
 .job-error-msg {
   font-size: 12px;
   color: #dc2626;

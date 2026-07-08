@@ -9,7 +9,10 @@ Spec: `docs/specs/template-merge.md`, `docs/specs/template-merge-job-history.md`
 `docs/specs/template-merge-v2-quality.md`
 Design: `docs/designs/template-merge.md`, `docs/designs/template-merge-job-history.md`,
 `docs/designs/template-merge-v2-quality.md`
-ADR: `docs/ai/contracts/default-llm-template-merge-content-adr.md`
+ADRs: `docs/ai/contracts/default-llm-template-merge-content-adr-v2.md` (contenido
+por slide; supersede al v1), `docs/ai/contracts/default-llm-template-merge-outline-adr.md`
+(plan narrativo, Fase 2), `docs/ai/contracts/vision-template-merge-visual-qa-adr.md`
+(QA visual, Fase 4, gated)
 
 Toma un PPTX existente como blueprint de layout (fuentes, fondos, imágenes,
 estructura) + un documento de conocimiento ya ingerido en el RAG, y genera un
@@ -82,6 +85,13 @@ Outcomes: `rewritten`/`adapted` (texto reemplazado), `preserved` (intocable por 
 `unfilled` (el RAG no tenía datos → texto blanqueado, según `tm_empty_rewrite_policy`),
 `kept_original` (se conservó el texto del template), `failed` (error puntual; el job continúa).
 `merge_summary` es el atajo a `merge_report.summary`.
+
+**`merge_report.visual_qa`** (Fase 4, solo si `tm_visual_qa_enabled=true`): pase
+consultivo de Vision LLM sobre el deck renderizado —
+`{ "status": "ok|unavailable|failed", "slides_reviewed": n, "total_findings": n,
+"slides": [{ "slide": 1, "findings": [{ "type": "overflow|contrast|overlap",
+"severity": "high|medium|low", "detail": "..." }] }] }`. Nunca modifica el deck ni
+falla el job; con el gate apagado la clave no existe.
 
 ### `GET /api/template-merge/jobs/{job_id}/download`
 

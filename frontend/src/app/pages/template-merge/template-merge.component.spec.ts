@@ -201,5 +201,39 @@ describe('TemplateMergeComponent — History tab', () => {
       expect(component.mergeWarningCount).toBe(0);
       expect(component.mergeReplacedCount).toBe(0);
     });
+
+    it('exposes visual QA findings flattened with slide numbers (phase 4)', () => {
+      component.activeJob = {
+        job_id: 1, status: 'completed', progress: 100, current_step: 'Done.',
+        error_detail: null, output_url: 'x', display_name: null,
+        merge_report: {
+          visual_qa: {
+            status: 'ok', total_findings: 2, slides_reviewed: 3,
+            slides: [
+              { slide: 1, findings: [{ type: 'overflow', severity: 'high', detail: 'Title cut' }] },
+              { slide: 3, findings: [{ type: 'contrast', severity: 'low', detail: 'Footer faint' }] },
+            ],
+          },
+        },
+      };
+
+      expect(component.visualQaFindingCount).toBe(2);
+      expect(component.visualQaFindings).toEqual([
+        { slide: 1, type: 'overflow', severity: 'high', detail: 'Title cut' },
+        { slide: 3, type: 'contrast', severity: 'low', detail: 'Footer faint' },
+      ]);
+    });
+
+    it('hides visual QA when the pass did not run cleanly (unavailable/failed/absent)', () => {
+      component.activeJob = {
+        job_id: 1, status: 'completed', progress: 100, current_step: 'Done.',
+        error_detail: null, output_url: 'x', display_name: null,
+        merge_report: { visual_qa: { status: 'failed', detail: 'boom' } },
+      };
+
+      expect(component.visualQa).toBeNull();
+      expect(component.visualQaFindingCount).toBe(0);
+      expect(component.visualQaFindings).toEqual([]);
+    });
   });
 });

@@ -26,6 +26,20 @@ interface MergeSummary {
   failed: number;
 }
 
+interface VisualQaFinding {
+  type: 'overflow' | 'contrast' | 'overlap';
+  severity: 'high' | 'medium' | 'low';
+  detail: string;
+}
+
+interface VisualQaReport {
+  status: 'ok' | 'unavailable' | 'failed';
+  total_findings?: number;
+  slides_reviewed?: number;
+  slides?: { slide: number; findings: VisualQaFinding[] }[];
+  detail?: string;
+}
+
 interface MergeJobStatus {
   job_id: number;
   status: string;
@@ -35,6 +49,7 @@ interface MergeJobStatus {
   output_url: string | null;
   display_name: string | null;
   merge_summary?: MergeSummary | null;
+  merge_report?: { visual_qa?: VisualQaReport } | null;
 }
 
 @Component({
@@ -388,6 +403,22 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
   get mergeReplacedCount(): number {
     const s = this.mergeSummary;
     return s ? s.rewritten + s.adapted : 0;
+  }
+
+  /** Visual QA report when the pass ran successfully (gate is off by default). */
+  get visualQa(): VisualQaReport | null {
+    const vqa = this.activeJob?.merge_report?.visual_qa;
+    return vqa && vqa.status === 'ok' ? vqa : null;
+  }
+
+  get visualQaFindingCount(): number {
+    return this.visualQa?.total_findings ?? 0;
+  }
+
+  /** Flattened findings with their slide number, for the detail list. */
+  get visualQaFindings(): ({ slide: number } & VisualQaFinding)[] {
+    const slides = this.visualQa?.slides ?? [];
+    return slides.flatMap(s => s.findings.map(f => ({ slide: s.slide, ...f })));
   }
 
   resetForm(): void {

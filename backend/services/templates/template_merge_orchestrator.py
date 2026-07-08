@@ -17,6 +17,7 @@ from services.templates.template_config import TemplateMergeConfig
 from services.templates.template_content import generate_slide_contents
 from services.templates.template_plan import plan_deck
 from services.templates.template_renderer import render_merged_pptx
+from services.templates.template_visual_qa import run_visual_qa
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,14 @@ def run_template_merge(job_id: int) -> None:
             config=config,
         )
 
-        # ── Step 6: persist result ──────────────────────────────────────────
+        # ── Step 6: advisory Vision QA (v2 Fase 4, gated, default off) ──────
+        if config.visual_qa_enabled:
+            _set_status(db, job, "processing", "Reviewing rendered slides (visual QA)...", 90)
+        visual_qa = run_visual_qa(output_path, config)  # None cuando el gate está off
+        if visual_qa is not None:
+            merge_report["visual_qa"] = visual_qa
+
+        # ── Step 7: persist result ──────────────────────────────────────────
         job.output_path = to_relative(output_path)
         job.merge_report = merge_report
         job.display_name = job.display_name or f"{stem} (merged)"

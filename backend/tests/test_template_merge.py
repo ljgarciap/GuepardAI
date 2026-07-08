@@ -1078,6 +1078,109 @@ def test_summarize_counts_outcomes():
 
 
 # ---------------------------------------------------------------------------
+# template_visual_qa — run_visual_qa (v2 Fase 4, mocked conversion + Vision)
+# ---------------------------------------------------------------------------
+
+from services.templates import template_visual_qa as vqa_mod
+
+
+def _valid_vision_json():
+    return {
+        "slides": [
+            {"slide": 1, "findings": [
+                {"type": "overflow", "severity": "high", "detail": "Title 'X' is cut off"},
+            ]},
+            {"slide": 2, "findings": []},
+        ],
+    }
+
+
+@pytest.mark.unit
+def test_visual_qa_gate_off_returns_none_without_touching_anything():
+    config = make_config(visual_qa_enabled=False)
+    with patch("services.templates.template_visual_qa.generate_vision_json") as mock_vision, \
+         patch.object(vqa_mod, "_to_pdf") as mock_pdf:
+        assert vqa_mod.run_visual_qa("deck.pptx", config) is None
+    mock_vision.assert_not_called()
+    mock_pdf.assert_not_called()
+
+
+@pytest.mark.unit
+def test_visual_qa_unavailable_when_pdf_conversion_missing():
+    config = make_config(visual_qa_enabled=True)
+    with patch.object(vqa_mod, "_to_pdf", return_value=None), \
+         patch("services.templates.template_visual_qa.generate_vision_json") as mock_vision:
+        result = vqa_mod.run_visual_qa("deck.pptx", config)
+    assert result["status"] == "unavailable"
+    mock_vision.assert_not_called()
+
+
+@pytest.mark.unit
+def test_visual_qa_unavailable_when_image_rendering_missing():
+    config = make_config(visual_qa_enabled=True)
+    with patch.object(vqa_mod, "_to_pdf", return_value="x.pdf"), \
+         patch.object(vqa_mod, "_pdf_to_images", return_value=[]), \
+         patch("services.templates.template_visual_qa.generate_vision_json") as mock_vision:
+        result = vqa_mod.run_visual_qa("deck.pptx", config)
+    assert result["status"] == "unavailable"
+    mock_vision.assert_not_called()
+
+
+@pytest.mark.unit
+def test_visual_qa_happy_path_reports_findings():
+    config = make_config(visual_qa_enabled=True)
+    with patch.object(vqa_mod, "_to_pdf", return_value="x.pdf"), \
+         patch.object(vqa_mod, "_pdf_to_images", return_value=["1.png", "2.png"]), \
+         patch("services.templates.template_visual_qa.generate_vision_json",
+               return_value=_valid_vision_json()):
+        result = vqa_mod.run_visual_qa("deck.pptx", config)
+
+    assert result["status"] == "ok"
+    assert result["total_findings"] == 1
+    assert result["slides_reviewed"] == 2
+    assert result["slides"][0]["findings"][0]["type"] == "overflow"
+
+
+@pytest.mark.unit
+def test_visual_qa_vision_failure_reports_failed_never_raises():
+    config = make_config(visual_qa_enabled=True)
+    with patch.object(vqa_mod, "_to_pdf", return_value="x.pdf"), \
+         patch.object(vqa_mod, "_pdf_to_images", return_value=["1.png"]), \
+         patch("services.templates.template_visual_qa.generate_vision_json",
+               side_effect=RuntimeError("vision down")):
+        result = vqa_mod.run_visual_qa("deck.pptx", config)
+    assert result["status"] == "failed"
+    assert "vision down" in result["detail"]
+
+
+@pytest.mark.unit
+def test_visual_qa_parse_drops_invalid_findings_and_out_of_range_slides():
+    raw = {
+        "slides": [
+            {"slide": 1, "findings": [
+                {"type": "overflow", "severity": "nuclear", "detail": "cut"},  # severity normalized
+                {"type": "aesthetics", "severity": "high", "detail": "meh"},   # unknown type dropped
+                {"type": "contrast", "severity": "low", "detail": ""},         # empty detail dropped
+            ]},
+            {"slide": 99, "findings": []},   # out of range dropped
+            "garbage",                        # non-dict dropped
+        ],
+    }
+    result = vqa_mod._parse_findings(raw, slides_sent=2)
+    assert result["total_findings"] == 1
+    assert result["slides"] == [
+        {"slide": 1, "findings": [{"type": "overflow", "severity": "medium", "detail": "cut"}]},
+    ]
+
+
+@pytest.mark.unit
+def test_visual_qa_parse_unusable_shape_returns_none():
+    assert vqa_mod._parse_findings("nope", 2) is None
+    assert vqa_mod._parse_findings({}, 2) is None
+    assert vqa_mod._parse_findings({"slides": []}, 2) is None
+
+
+# ---------------------------------------------------------------------------
 # template_merge_orchestrator — run_template_merge (fully mocked DB + pipeline steps)
 # ---------------------------------------------------------------------------
 
@@ -1117,6 +1220,39 @@ def test_run_template_merge_happy_path_sets_completed_and_report():
     assert job.progress == 100
     assert job.output_path == "jobs/tm_1/deck_merged.pptx"
     assert job.merge_report == fake_report
+    # visual QA gate is off by default → no visual_qa key in the report
+    assert "visual_qa" not in job.merge_report
+
+
+@pytest.mark.unit
+def test_run_template_merge_attaches_visual_qa_when_gate_on():
+    job = make_mock_job()
+    template_asset = SimpleNamespace(local_path="templates/deck.pptx")
+    fake_report = {"slides": [], "summary": {"rewritten": 1}}
+    vqa_result = {"status": "ok", "total_findings": 2, "slides_reviewed": 3, "slides": []}
+
+    mock_db = MagicMock()
+    mock_db.query.return_value.get.side_effect = lambda id_: (
+        job if id_ == job.id else template_asset
+    )
+
+    with patch.object(orch_mod, "SessionLocal", return_value=mock_db), \
+         patch.object(orch_mod.TemplateMergeConfig, "from_db",
+                      return_value=TemplateMergeConfig(visual_qa_enabled=True)), \
+         patch.object(orch_mod, "resolve_storage", return_value="/tmp/deck.pptx"), \
+         patch("os.path.isfile", return_value=True), \
+         patch.object(orch_mod, "analyze_template", return_value=["profile1"]), \
+         patch.object(orch_mod, "plan_deck", return_value=None), \
+         patch.object(orch_mod, "generate_slide_contents", return_value=[{"1": "text"}]), \
+         patch.object(orch_mod, "render_merged_pptx", return_value=("/tmp/out.pptx", fake_report)), \
+         patch.object(orch_mod, "run_visual_qa", return_value=vqa_result) as mock_vqa, \
+         patch.object(orch_mod, "job_dir", return_value="/tmp/jobs/tm_1"), \
+         patch.object(orch_mod, "to_relative", return_value="jobs/tm_1/deck_merged.pptx"):
+        orch_mod.run_template_merge(job_id=1)
+
+    assert job.status == "completed"
+    mock_vqa.assert_called_once()
+    assert job.merge_report["visual_qa"] == vqa_result
 
 
 @pytest.mark.unit

@@ -20,11 +20,13 @@ from services.core.data_alignment_service import (
 
 
 @pytest.fixture()
-def alignment_db(create_test_schema):
+def alignment_db(create_test_schema, require_db):
     """
     Sesión REAL (SessionLocal → BD de test) con limpieza antes/después.
     El servicio commitea de verdad, así que no sirve la transacción-rollback
-    de db_session.
+    de db_session. require_db: si la BD de test no está alcanzable, el test
+    se salta con mensaje claro en vez de colgar en el connect (visto 2026-07-07
+    con un .env.test apuntando a host.docker.internal inaccesible desde el host).
     """
     from database import SessionLocal
     db = SessionLocal()

@@ -46,3 +46,4 @@ backend_logs.txt
 memory.md
 CLAUDE.md
 notify.sh
+backend/.coverage

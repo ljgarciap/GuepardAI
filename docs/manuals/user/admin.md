@@ -29,13 +29,28 @@ The main presentation-generation workflow:
 3. Pick **TARGET REGION** (language/dialect), **DELIVERY FORMAT** (editable
    PPTX or Executive Art PDF), and **ENGINE TIER** (Free grammar layouts or
    Premium layout clone).
-4. Write your request in the command box at the bottom (or use a quick-fill
-   preset: Strategic Outlook, Market Entry, Culture Playbook). Optionally
-   toggle "Use AI generated images" for AI-generated imagery when nothing
-   suitable exists in your asset library.
+4. Write your request in the command box at the bottom, or use one of the
+   three prompt-support cards above it to build a stronger one:
+   - **Reuse Previous Prompt** — pick an earlier presentation and reload the
+     prompt it was generated from (only presentations that have a saved
+     prompt show up here).
+   - **Intent Library** — pick what you're building (Executive Presentation,
+     Sales Deck, Workshop, Training, Strategy, Investor, Retail, Innovation)
+     and it opens the guided composer below, pre-filled with that category's
+     tone/story defaults.
+   - **Guide / Write My Own** — opens the guided composer directly: fill in
+     Objective, Tone, Audience, Slide type, Story, Visual rules, Output
+     format, and an "avoid buzzwords" toggle, then **INSERT INTO PROMPT** to
+     assemble it into the command box (with a confirmation if you already
+     had text there, so nothing is silently overwritten). The same panel has
+     a short written guide on what makes a good prompt.
+
+   Optionally toggle "Use AI generated images" for AI-generated imagery when
+   nothing suitable exists in your asset library.
 5. Click **CREATE PRESENTATION** and watch the live log until it finishes.
 6. **DOWNLOAD STRATEGIC PORTFOLIO** downloads the file. The first download
-   prompts a quick 1–5 star rating with an optional comment.
+   prompts a quick 1–5 star rating with an optional comment — a separate,
+   simpler mechanism from the collaborative reviews described below.
 
 ### Intelligence Hub (`/brands`) — feeding the system
 
@@ -65,6 +80,49 @@ Four tabs — Images, Blueprints, Knowledge, Portfolios — scoped to your
 organization's brands via the scope dropdown. Portfolios is where you
 search, rename, rate, view feedback, download, or permanently delete past
 presentations, with search-by-name and date-range filters plus pagination.
+
+Each item also has a **REVIEWS & TEAM** button that opens a presentation's
+collaborative detail:
+- **Collaborators** — anyone added here can leave their own review on that
+  presentation, same as the owner. You (as admin) or the presentation's
+  owner can add/remove collaborators for any presentation in your
+  organization; anyone in your organization can see who they are.
+- **Your Review** — a 1–5 star rating plus an optional comment, independent
+  per teammate. Editable for up to **6 months from the presentation's
+  creation date**.
+- **All Reviews** — every teammate's rating and comment, including any
+  flagged by the word filter (see Admin Panel → Moderation below to hide
+  one).
+
+### Your badges
+
+The sidebar shows your progress toward the next tier, based on how many
+presentations you've generated: **Starter** (5), **Expert** (10), **Genius**
+(20).
+
+### Admin Panel (`/admin`)
+
+Four tabs, visible only to `admin`/`superadmin`:
+
+- **Departments** — create/list/delete departments for your organization
+  (delete is blocked with a `409` if anyone is still assigned — reassign or
+  clear them first), and assign a department to any teammate. Purely a
+  grouping label used by Analytics; it doesn't gate access to anything.
+- **Moderation** — the queue of reviews across your organization, filterable
+  by status (defaults to **Flagged**: comments the word filter caught).
+  **HIDE** removes a review from everyone's normal view (only admins still
+  see it); **RESTORE TO VISIBLE** undoes that. You do **not** see the
+  blocklist editor here — the list of blocked terms is platform-wide and
+  only the superadmin can change it.
+- **Analytics** — a table per teammate: presentations created, edits made,
+  time spent, and average rating received, scoped to your organization.
+- **Reports** — the monthly usage reports already generated for your
+  organization (presentations/edits/time/rating/contributors, plus the top
+  user and top department by activity). These are also emailed to you
+  automatically on the 1st of each month if SMTP is configured for this
+  deployment (see `docs/manuals/technical/email-and-celery-beat-deployment.md`)
+  — if a report shows "not emailed", it was still generated correctly, the
+  email step alone didn't go out.
 
 ### Template Merge (`/template-merge`)
 

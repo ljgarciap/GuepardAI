@@ -35,8 +35,22 @@ The main presentation-generation workflow:
 3. Pick **TARGET REGION** (language/dialect), **DELIVERY FORMAT** (editable
    PPTX or Executive Art PDF), and **ENGINE TIER** (Free grammar layouts or
    Premium layout clone).
-4. Write your request in the command box at the bottom (or use one of the
-   quick-fill presets: Strategic Outlook, Market Entry, Culture Playbook).
+4. Write your request in the command box at the bottom, or use one of the
+   three prompt-support cards above it to build a stronger one:
+   - **Reuse Previous Prompt** — pick an earlier presentation and reload the
+     prompt it was generated from (only presentations that have a saved
+     prompt show up here).
+   - **Intent Library** — pick what you're building (Executive Presentation,
+     Sales Deck, Workshop, Training, Strategy, Investor, Retail, Innovation)
+     and it opens the guided composer below, pre-filled with that category's
+     tone/story defaults.
+   - **Guide / Write My Own** — opens the guided composer directly: fill in
+     Objective, Tone, Audience, Slide type, Story, Visual rules, Output
+     format, and an "avoid buzzwords" toggle, then **INSERT INTO PROMPT** to
+     assemble it into the command box (with a confirmation if you already
+     had text there, so nothing is silently overwritten). The same panel has
+     a short written guide on what makes a good prompt.
+
    Optionally toggle "Use AI generated images" if you want AI-generated
    imagery when nothing suitable exists in the asset library.
 5. Click **CREATE PRESENTATION**. A live log shows each pipeline stage
@@ -44,7 +58,8 @@ The main presentation-generation workflow:
 6. When done, **DOWNLOAD STRATEGIC PORTFOLIO** downloads the file. The first
    download opens a quick 1–5 star rating with an optional comment — this
    feedback is saved against the job and visible later in Strategic Assets →
-   Portfolios.
+   Portfolios. This is separate from the collaborative reviews described
+   below.
 
 ### Intelligence Hub (`/brands`) — feeding the system
 
@@ -79,6 +94,46 @@ Four tabs, each filterable by brand via the scope dropdown:
   filter by date range, rename, download, rate (if not already rated), view
   feedback comments, or permanently delete.
 
+### Strategic Assets → Portfolios — reviews and collaborators
+
+Every portfolio item has a **REVIEWS & TEAM** button:
+- **Collaborators** — anyone added can leave their own review, same as the
+  owner. As superadmin you can add/remove collaborators on any presentation
+  in any tenant; the target user must belong to the same tenant as the
+  presentation's brand.
+- **Your Review** — a 1–5 star rating plus an optional comment, editable for
+  up to **6 months from the presentation's creation date**.
+- **All Reviews** — every contributor's rating and comment, including any
+  flagged by the word filter.
+
+### Your badges
+
+The sidebar shows your own progress toward the next tier (Starter 5 / Expert
+10 / Genius 20), based on presentations you personally generated — same
+mechanic as every other role.
+
+### Admin Panel (`/admin`)
+
+Four tabs. Unlike an `admin`, every action here can target **any** tenant,
+not just your own:
+
+- **Departments** — create/list/delete departments for any tenant (pass a
+  `Tenant ID` — there's no tenant picker UI yet, see "Known limitations"),
+  and assign a department to any user.
+- **Moderation** — the review queue across **all** tenants, filterable by
+  status. This is also the only role that sees the **Moderation Blocklist**
+  editor: a comma-separated list of terms (case-insensitive substring match)
+  that auto-flags a review's comment on submission. It's platform-wide, not
+  per-tenant — changing it affects every organization's moderation.
+- **Analytics** — the usage table across all tenants, or filtered to one via
+  the `Tenant ID` field.
+- **Reports** — every monthly `UsageReport` generated, including the
+  **global** one (`tenant_id: null`, platform-wide totals) that only you can
+  see. Filter by `Tenant ID` to narrow it down. See
+  `docs/manuals/technical/email-and-celery-beat-deployment.md` for what
+  needs to be configured for these to actually be emailed, not just
+  generated.
+
 ### Template Merge (`/template-merge`) — preserve a template's design
 
 An alternative to Synthesis Studio: instead of an AI-designed layout, you
@@ -106,10 +161,12 @@ Assets → Portfolios, which only lists Synthesis Studio output.
   your own account's tenant (which doesn't exist for a superadmin, so always
   pass `tenant_id` when creating a user as superadmin).
 
-## Known limitations (as of 2026-07-06)
+## Known limitations (as of 2026-07-09)
 
 - No screen exists yet to browse tenants or switch between them explicitly
   — the "★ SUPERUSER / ALL ACCESS" option in Identity dropdowns is the only
-  cross-tenant view.
+  cross-tenant view. In the Admin Panel (Departments/Analytics/Reports),
+  targeting a specific tenant means typing its numeric `Tenant ID` — there's
+  no tenant name picker yet.
 - User management (creating `admin`/`cliente` accounts) requires calling the
   API directly; there is no admin screen for it.

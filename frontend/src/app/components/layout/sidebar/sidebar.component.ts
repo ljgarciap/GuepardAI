@@ -1,9 +1,10 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { BrandService } from '../../../services/brand.service';
 import { ThemeService } from '../../../services/theme.service';
 import { AuthService } from '../../../services/auth.service';
+import { CollaborationService, MyBadges } from '../../../services/collaboration.service';
 
 @Component({
   selector: 'app-sidebar',
@@ -12,12 +13,28 @@ import { AuthService } from '../../../services/auth.service';
   templateUrl: './sidebar.component.html',
   styleUrl: './sidebar.component.css'
 })
-export class SidebarComponent {
+export class SidebarComponent implements OnInit {
+  myBadges: MyBadges | null = null;
+
   constructor(
     private brandService: BrandService,
+    private collaborationService: CollaborationService,
     public themeService: ThemeService,
     public authService: AuthService
   ) {}
+
+  ngOnInit() {
+    this.authService.currentUser$.subscribe(user => {
+      if (user) {
+        this.collaborationService.getMyBadges().subscribe({
+          next: (res) => this.myBadges = res,
+          error: () => { this.myBadges = null; }
+        });
+      } else {
+        this.myBadges = null;
+      }
+    });
+  }
 
   get logoSrc(): string {
     return this.themeService.theme() === 'dark' ? 'logo-dark.png' : 'logo-light.png';
@@ -30,6 +47,11 @@ export class SidebarComponent {
 
   get isSuperadmin(): boolean {
     return this.authService.currentUser?.role === 'superadmin';
+  }
+
+  get isAdminOrSuperadmin(): boolean {
+    const role = this.authService.currentUser?.role;
+    return role === 'admin' || role === 'superadmin';
   }
 
   logout(): void {

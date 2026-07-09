@@ -203,6 +203,205 @@
   transform: translateY(-2px);
 }
 
+/* Prompt Support — compositor entry cards (soporte-indicaciones) */
+.compositor-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+  max-width: 800px;
+}
+
+.compositor-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-color);
+  border-radius: 14px;
+  padding: 20px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.compositor-card:hover {
+  border-color: var(--brand-accent);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 24px rgba(224, 138, 52, 0.1);
+}
+
+.compositor-card-icon {
+  font-size: 1.4rem;
+  color: var(--brand-accent);
+}
+
+.compositor-card-title {
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: var(--text-title);
+}
+
+.compositor-card-desc {
+  font-size: 0.75rem;
+  color: var(--text-muted-2);
+  line-height: 1.4;
+}
+
+@media (max-width: 768px) {
+  .compositor-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Prompt Support — picker / intent-grid modals (wider variant of the feedback modal card) */
+.wide-modal {
+  max-width: 640px;
+  text-align: left;
+}
+
+.wide-modal .feedback-modal-header {
+  text-align: left;
+}
+
+.picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.picker-empty {
+  color: var(--text-muted-2);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 24px 0;
+}
+
+.picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+
+.picker-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.picker-item-title {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text-title);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-item-date {
+  font-size: 0.72rem;
+  color: var(--text-muted-2);
+}
+
+.btn-mini {
+  background: var(--brand-accent-soft);
+  color: var(--brand-accent);
+  border: 1px solid var(--brand-accent);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.btn-mini:hover {
+  background: var(--brand-accent);
+  color: white;
+}
+
+.intent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.intent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-color);
+  border-radius: 10px;
+  padding: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.intent-card:hover {
+  border-color: var(--brand-accent);
+  transform: translateY(-2px);
+}
+
+.intent-card-title {
+  font-weight: 800;
+  font-size: 0.82rem;
+  color: var(--text-title);
+}
+
+.intent-card-tone,
+.intent-card-duration {
+  font-size: 0.72rem;
+  color: var(--text-muted-2);
+}
+
+@media (max-width: 600px) {
+  .intent-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.static-guide {
+  margin-top: 20px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 16px;
+  text-align: left;
+}
+
+.static-guide summary {
+  font-weight: 800;
+  font-size: 0.8rem;
+  color: var(--text-title);
+  cursor: pointer;
+}
+
+.static-guide ul {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.static-guide li {
+  font-size: 0.78rem;
+  color: var(--text-muted-2);
+  line-height: 1.5;
+}
+
 /* Command Area */
 .command-area {
   padding-bottom: 8px;

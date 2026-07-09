@@ -8,6 +8,7 @@
  * Spec: docs/specs/gestion-portfolios.md
  */
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { of } from 'rxjs';
 import { AssetLibraryComponent } from './asset-library.component';
 import { BrandService, PortfolioItem, PortfolioPage } from '../../services/brand.service';
@@ -25,6 +26,7 @@ describe('AssetLibraryComponent — Portfolio management', () => {
     brand_id: null,
     rating: null,
     comment: null,
+    has_prompt: true,
   });
 
   const makePage = (items: PortfolioItem[], total: number, page = 1): PortfolioPage => ({
@@ -43,7 +45,7 @@ describe('AssetLibraryComponent — Portfolio management', () => {
     brandServiceSpy.getLibraryPortfolios.and.returnValue(of(makePage([makeItem(1, 'Deck A')], 1)));
 
     await TestBed.configureTestingModule({
-      imports: [AssetLibraryComponent],
+      imports: [AssetLibraryComponent, HttpClientTestingModule],
       providers: [{ provide: BrandService, useValue: brandServiceSpy }],
     }).compileComponents();
 

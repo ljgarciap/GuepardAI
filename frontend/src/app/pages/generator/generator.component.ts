@@ -1,17 +1,18 @@
 import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { BrandService } from '../../services/brand.service';
+import { BrandService, PortfolioItem, PromptIntent, PromptMetadata } from '../../services/brand.service';
 import { AuthService } from '../../services/auth.service';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { interval, switchMap, takeWhile } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { triggerBlobDownload } from '../../utils/download.util';
+import { PromptComposerComponent } from '../../components/generator/prompt-composer/prompt-composer.component';
 
 @Component({
   selector: 'app-generator',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, PromptComposerComponent],
   templateUrl: './generator.component.html',
   styleUrl: './generator.component.css'
 })
@@ -56,6 +57,20 @@ export class GeneratorComponent implements OnInit {
   synthesisLogs: { time: string, role: string, message: string }[] = [];
   progress: number = 0;
   currentStatus: string = '';
+
+  // --- PROMPT SUPPORT (soporte-indicaciones) ---
+  promptMetadata: PromptMetadata | null = null;
+
+  showReuseModal: boolean = false;
+  reusablePortfolios: PortfolioItem[] = [];
+  loadingReusable: boolean = false;
+
+  showIntentModal: boolean = false;
+  promptIntents: PromptIntent[] = [];
+  loadingIntents: boolean = false;
+
+  showComposerModal: boolean = false;
+  composerInitialValues: Partial<PromptMetadata> | null = null;
 
   ngOnInit() {
     this.loadBrands();
@@ -124,6 +139,73 @@ export class GeneratorComponent implements OnInit {
     this.prompt = text;
   }
 
+  /** Reemplaza el textarea con confirmación si ya había contenido manual (no se pierde trabajo en silencio). */
+  private applyPromptText(text: string) {
+    if (this.prompt.trim() && !confirm('This will replace your current prompt text. Continue?')) {
+      return;
+    }
+    this.prompt = text;
+  }
+
+  // --- AYUDA 1: Reutilizar indicación anterior ---
+  openReuseModal() {
+    this.showReuseModal = true;
+    this.loadingReusable = true;
+    this.brandService.getLibraryPortfolios(this.selectedBrandId || undefined, { pageSize: 50 }).subscribe({
+      next: (res) => {
+        this.reusablePortfolios = (res.items || []).filter(p => p.has_prompt);
+        this.loadingReusable = false;
+      },
+      error: () => { this.loadingReusable = false; }
+    });
+  }
+
+  useAsBase(jobId: number) {
+    this.brandService.getPortfolioDetail(jobId).subscribe({
+      next: (detail) => {
+        this.applyPromptText(detail.prompt);
+        this.promptMetadata = detail.prompt_metadata;
+        this.showReuseModal = false;
+      },
+      error: () => { this.errorMessage = 'Could not load that presentation as a base.'; }
+    });
+  }
+
+  // --- AYUDA 2: Biblioteca de intenciones ---
+  openIntentModal() {
+    this.showIntentModal = true;
+    this.loadingIntents = true;
+    this.brandService.getPromptIntents().subscribe({
+      next: (res) => {
+        this.promptIntents = res || [];
+        this.loadingIntents = false;
+      },
+      error: () => { this.loadingIntents = false; }
+    });
+  }
+
+  selectIntent(intent: PromptIntent) {
+    this.composerInitialValues = {
+      objective: intent.label,
+      tone: intent.expected_tone,
+      story: intent.narrative_style,
+      slide_type: intent.preferred_layouts?.[0] || '',
+    };
+    this.showIntentModal = false;
+    this.showComposerModal = true;
+  }
+
+  // --- AYUDA 3: Compositor guiado + guía ---
+  openComposerModal() {
+    this.showComposerModal = true;
+  }
+
+  onComposerInsert(payload: { text: string; metadata: PromptMetadata }) {
+    this.applyPromptText(payload.text);
+    this.promptMetadata = payload.metadata;
+    this.showComposerModal = false;
+  }
+
   generate() {
     this.isGenerating = true;
     this.downloadUrl = '';
@@ -141,7 +223,8 @@ export class GeneratorComponent implements OnInit {
       brand_id: this.selectedBrandId || undefined,
       allow_ai_images: this.allowAiImages,
       output_format: this.selectedFormat,
-      tier: this.selectedTier
+      tier: this.selectedTier,
+      prompt_metadata: this.promptMetadata || undefined
     }).subscribe({
         next: (res: any) => {
           this.currentJobId = res.job_id;
@@ -218,6 +301,7 @@ export class GeneratorComponent implements OnInit {
     this.downloadUrl = '';
     this.errorMessage = '';
     this.prompt = '';
+    this.promptMetadata = null;
     this.synthesisLogs = [];
     this.currentJobId = null;
     this.showFeedbackModal = false;

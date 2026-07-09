@@ -8,6 +8,7 @@ CAMBIOS v8.5:
 """
 
 import datetime
+import json
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,6 +16,62 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlalchemy.orm import Session
 from database import SessionLocal, engine
 import models
+
+
+# Biblioteca de intenciones (soporte-indicaciones, ítem 2) — taxonomía fija/global
+# v1, no configurable por tenant en esta iteración. `preferred_layouts` referencia
+# slugs de GRAMMAR_GEOMETRIES (brand_composition_dna.py) solo como sugerencia
+# informativa al compositor — no restringe al Architect de generación.
+_INTENT_LIBRARY_V1 = [
+    {
+        "slug": "executive_presentation", "label": "Executive Presentation",
+        "expected_tone": "Formal, authoritative", "expected_duration_label": "15-20 min",
+        "narrative_style": "Data-driven executive summary", "visual_density": "low",
+        "preferred_layouts": ["cover_hero", "executive_quote", "impact_number"],
+    },
+    {
+        "slug": "sales_deck", "label": "Sales Deck",
+        "expected_tone": "Engaging, persuasive", "expected_duration_label": "10-15 min",
+        "narrative_style": "Customer-centric storytelling", "visual_density": "medium",
+        "preferred_layouts": ["cover_hero", "case_study", "strategic_split"],
+    },
+    {
+        "slug": "workshop", "label": "Workshop",
+        "expected_tone": "Conversational, energetic", "expected_duration_label": "20-30 min",
+        "narrative_style": "Step-by-step interactive", "visual_density": "medium",
+        "preferred_layouts": ["section_break", "two_column", "data_grid_cards"],
+    },
+    {
+        "slug": "training", "label": "Training",
+        "expected_tone": "Clear, instructional", "expected_duration_label": "20-30 min",
+        "narrative_style": "Structured how-to", "visual_density": "medium",
+        "preferred_layouts": ["two_column", "section_break", "data_grid_cards"],
+    },
+    {
+        "slug": "strategy", "label": "Strategy",
+        "expected_tone": "Confident, forward-looking", "expected_duration_label": "15-20 min",
+        "narrative_style": "Vision-to-execution roadmap", "visual_density": "low",
+        "preferred_layouts": ["impact_number", "strategic_split", "section_break"],
+    },
+    {
+        "slug": "investor", "label": "Investor",
+        "expected_tone": "Ambitious, credible, data-backed", "expected_duration_label": "10-15 min",
+        "narrative_style": "Problem-solution-traction-ask", "visual_density": "medium",
+        "preferred_layouts": ["cover_hero", "impact_number", "case_study"],
+    },
+    {
+        "slug": "retail", "label": "Retail",
+        "expected_tone": "Warm, consultative", "expected_duration_label": "10-15 min",
+        "narrative_style": "Relationship-first, tailored value proposition", "visual_density": "medium",
+        "preferred_layouts": ["case_study", "strategic_split", "data_grid_cards"],
+    },
+    {
+        "slug": "innovation", "label": "Innovation",
+        "expected_tone": "Bold, exciting, optimistic", "expected_duration_label": "10-15 min",
+        "narrative_style": "Reveal-driven, benefit-forward", "visual_density": "high",
+        "preferred_layouts": ["cover_hero", "section_break", "impact_number"],
+    },
+]
 
 
 CONFIGS = [
@@ -887,6 +944,25 @@ Write content for exactly ONE slide. Use COMPANY DATA as your primary source.
                 "key": "tm_visual_qa_max_slides",
                 "value": "15",
                 "description": "Template Merge v2 Fase 4: maximum slide images sent to the Vision QA call (payload/cost cap)."
+            },
+
+            # ─────────────────────────────────────────────────────
+            # REVIEWS, ANALÍTICA DE USO Y COLABORACIÓN
+            # ─────────────────────────────────────────────────────
+            {
+                "key": "review_moderation_blocklist_v1",
+                "value": "[]",
+                "description": "Reviews: lista JSON de términos/frases (case-insensitive, substring) que fuerzan moderation_status='flagged'. Poblada por negocio vía PATCH /api/admin/config/review-moderation-blocklist."
+            },
+            {
+                "key": "badge_thresholds_v1",
+                "value": '[{"threshold": 5, "label": "Starter"}, {"threshold": 10, "label": "Expert"}, {"threshold": 20, "label": "Genius"}]',
+                "description": "Badges: lista JSON ordenada ascendente de {threshold, label} — cantidad de presentaciones creadas (GenerationJob.owner_id) para desbloquear cada insignia. GET /api/users/me/badges."
+            },
+            {
+                "key": "intent_library_v1",
+                "value": json.dumps(_INTENT_LIBRARY_V1),
+                "description": "Compositor guiado (soporte-indicaciones): categorías de intención fijas/globales con tono/duración/narrativa/densidad visual/layouts sugeridos. GET /api/config/prompt-intents."
             }
 ]
 

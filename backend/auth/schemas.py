@@ -41,6 +41,7 @@ class UserOut(BaseModel):
     role: str
     tenant_id: Optional[int] = None
     is_active: int
+    department_id: Optional[int] = None
 
 
 class CreateUserRequest(BaseModel):

@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, Subscription, debounceTime, distinctUntilChanged } from 'rxjs';
 import { BrandService, PortfolioItem } from '../../services/brand.service';
+import { AuthService } from '../../services/auth.service';
+import { CollaborationService, Collaborator, Review } from '../../services/collaboration.service';
 import { environment } from '../../../environments/environment';
 import { triggerBlobDownload } from '../../utils/download.util';
 
@@ -15,6 +17,8 @@ import { triggerBlobDownload } from '../../utils/download.util';
 })
 export class AssetLibraryComponent implements OnInit, OnDestroy {
   private brandService = inject(BrandService);
+  private collaborationService = inject(CollaborationService);
+  private authService = inject(AuthService);
   baseUrl = environment.baseUrl;
 
   brands: any[] = [];
@@ -54,6 +58,27 @@ export class AssetLibraryComponent implements OnInit, OnDestroy {
 
   selectedComment = '';
   showCommentModal = false;
+
+  // --- PRESENTATION DETAIL: reviews + collaborators (reviews-analitica-colaboracion) ---
+  showDetailModal = false;
+  detailJob: PortfolioItem | null = null;
+  detailReviews: Review[] = [];
+  detailRatingAverage: number | null = null;
+  detailRatingCount = 0;
+  detailCollaborators: Collaborator[] = [];
+  detailLoading = false;
+  detailError = '';
+
+  myReviewRating = 0;
+  myReviewComment = '';
+
+  userDirectory: { id: number; email: string }[] = [];
+  selectedCollaboratorUserId: number | null = null;
+  collaboratorError = '';
+
+  get currentUserId(): number | null {
+    return this.authService.currentUser?.id ?? null;
+  }
 
   ngOnInit() {
     this.loadBrands();
@@ -258,5 +283,111 @@ export class AssetLibraryComponent implements OnInit, OnDestroy {
   closeCommentModal() {
     this.showCommentModal = false;
     this.selectedComment = '';
+  }
+
+  // --- PRESENTATION DETAIL: reviews + collaborators ---
+
+  openDetailModal(p: PortfolioItem) {
+    this.detailJob = p;
+    this.showDetailModal = true;
+    this.detailError = '';
+    this.collaboratorError = '';
+    this.selectedCollaboratorUserId = null;
+    this.loadDetailReviews();
+    this.loadDetailCollaborators();
+    this.loadUserDirectory();
+  }
+
+  closeDetailModal() {
+    this.showDetailModal = false;
+    this.detailJob = null;
+    this.detailReviews = [];
+    this.detailCollaborators = [];
+    this.myReviewRating = 0;
+    this.myReviewComment = '';
+  }
+
+  private loadDetailReviews() {
+    if (!this.detailJob) return;
+    this.detailLoading = true;
+    this.collaborationService.getReviews(this.detailJob.id).subscribe({
+      next: (res) => {
+        this.detailReviews = res.reviews;
+        this.detailRatingAverage = res.rating_average;
+        this.detailRatingCount = res.rating_count;
+        this.detailLoading = false;
+        const mine = res.reviews.find(r => r.user_id === this.currentUserId);
+        if (mine) {
+          this.myReviewRating = mine.rating;
+          this.myReviewComment = mine.comment || '';
+        }
+      },
+      error: () => { this.detailLoading = false; }
+    });
+  }
+
+  private loadDetailCollaborators() {
+    if (!this.detailJob) return;
+    this.collaborationService.getCollaborators(this.detailJob.id).subscribe({
+      next: (res) => this.detailCollaborators = res,
+      error: () => {}
+    });
+  }
+
+  private loadUserDirectory() {
+    this.collaborationService.getUserDirectory().subscribe({
+      next: (res) => this.userDirectory = res,
+      error: () => {}
+    });
+  }
+
+  get availableCollaboratorCandidates(): { id: number; email: string }[] {
+    const collaboratorIds = new Set(this.detailCollaborators.map(c => c.user_id));
+    return this.userDirectory.filter(u => u.id !== this.currentUserId && !collaboratorIds.has(u.id));
+  }
+
+  selectMyReviewRating(rating: number) {
+    this.myReviewRating = rating;
+  }
+
+  submitMyReview() {
+    if (!this.detailJob || this.myReviewRating === 0) return;
+    this.detailError = '';
+    this.collaborationService.upsertReview(this.detailJob.id, this.myReviewRating, this.myReviewComment).subscribe({
+      next: () => this.loadDetailReviews(),
+      error: (err) => { this.detailError = err.error?.detail || 'Could not submit your review.'; }
+    });
+  }
+
+  deleteMyReview() {
+    if (!this.detailJob) return;
+    this.collaborationService.deleteOwnReview(this.detailJob.id).subscribe({
+      next: () => {
+        this.myReviewRating = 0;
+        this.myReviewComment = '';
+        this.loadDetailReviews();
+      },
+      error: (err) => { this.detailError = err.error?.detail || 'Could not delete your review.'; }
+    });
+  }
+
+  addCollaborator() {
+    if (!this.detailJob || !this.selectedCollaboratorUserId) return;
+    this.collaboratorError = '';
+    this.collaborationService.addCollaborator(this.detailJob.id, this.selectedCollaboratorUserId).subscribe({
+      next: () => {
+        this.selectedCollaboratorUserId = null;
+        this.loadDetailCollaborators();
+      },
+      error: (err) => { this.collaboratorError = err.error?.detail || 'Could not add collaborator.'; }
+    });
+  }
+
+  removeCollaborator(userId: number) {
+    if (!this.detailJob) return;
+    this.collaborationService.removeCollaborator(this.detailJob.id, userId).subscribe({
+      next: () => this.loadDetailCollaborators(),
+      error: (err) => { this.collaboratorError = err.error?.detail || 'Could not remove collaborator.'; }
+    });
   }
 }

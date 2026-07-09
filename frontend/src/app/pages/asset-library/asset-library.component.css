@@ -796,3 +796,141 @@
 .btn-danger-enterprise:hover {
   background: rgba(220, 60, 60, 0.45);
 }
+
+/* Presentation Detail: Reviews + Collaborators (reviews-analitica-colaboracion) */
+.wide-modal {
+  max-width: 640px;
+  max-height: 85vh;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.wide-modal .feedback-modal-header {
+  text-align: left;
+}
+
+.detail-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-color);
+  text-align: left;
+}
+
+.detail-section:first-of-type {
+  margin-top: 20px;
+}
+
+.detail-section h5 {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--text-title);
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.detail-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted-2);
+  margin: 0 0 12px;
+}
+
+.picker-empty {
+  color: var(--text-muted-2);
+  font-size: 0.85rem;
+  padding: 12px 0;
+}
+
+.collaborator-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.collaborator-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+
+.collaborator-add-row {
+  display: flex;
+  gap: 10px;
+}
+
+.collaborator-add-row select {
+  flex: 1;
+}
+
+.detail-error {
+  color: #ff6b6b;
+  font-size: 0.78rem;
+  margin-top: 8px;
+}
+
+.detail-stars {
+  justify-content: flex-start;
+  margin-bottom: 12px;
+}
+
+.detail-review-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.detail-review-actions .btn-primary-enterprise {
+  width: auto;
+  padding: 10px 20px;
+}
+
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.review-item {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.review-item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.review-author {
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--text-title);
+}
+
+.review-moderation-tag {
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(220, 60, 60, 0.15);
+  color: #ff6b6b;
+}
+
+.review-comment {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-muted-2);
+  line-height: 1.5;
+}

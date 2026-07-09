@@ -73,12 +73,22 @@
         <p class="hero-desc-clean">Enter your strategic requirements below to begin the generation process.</p>
       </div>
       
-      <div class="quick-actions-compact">
-        <div class="preset-pills">
-          <button (click)="setPrompt('Strategic Q3 Financial Outlook')">Strategic Outlook</button>
-          <button (click)="setPrompt('Market Entry Strategy Europe')">Market Entry</button>
-          <button (click)="setPrompt('Corporate Culture Playbook')">Culture Playbook</button>
-        </div>
+      <div class="compositor-cards">
+        <button class="compositor-card" (click)="openReuseModal()">
+          <span class="compositor-card-icon">↺</span>
+          <span class="compositor-card-title">Reuse Previous Prompt</span>
+          <span class="compositor-card-desc">Pick a past presentation and start from its prompt</span>
+        </button>
+        <button class="compositor-card" (click)="openIntentModal()">
+          <span class="compositor-card-icon">▦</span>
+          <span class="compositor-card-title">Intent Library</span>
+          <span class="compositor-card-desc">Choose what you're building — tone and structure are set for you</span>
+        </button>
+        <button class="compositor-card" (click)="openComposerModal()">
+          <span class="compositor-card-icon">✎</span>
+          <span class="compositor-card-title">Guide / Write My Own</span>
+          <span class="compositor-card-desc">Build a strong prompt field by field, with a how-to guide</span>
+        </button>
       </div>
     </div>
 
@@ -210,13 +220,92 @@
       </div>
 
       <div class="feedback-modal-actions">
-        <button 
-          class="btn-primary-enterprise" 
-          [disabled]="selectedRating === 0" 
+        <button
+          class="btn-primary-enterprise"
+          [disabled]="selectedRating === 0"
           (click)="submitFeedback()">
           SUBMIT REVIEW
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- AYUDA 1: REUSE PREVIOUS PROMPT MODAL -->
+  <div class="feedback-modal-overlay" *ngIf="showReuseModal">
+    <div class="feedback-modal-card glass-panel slideUp wide-modal">
+      <button class="btn-close" (click)="showReuseModal = false">×</button>
+      <div class="feedback-modal-header">
+        <h4>Reuse a Previous Prompt</h4>
+        <p class="question">Only presentations with a saved prompt are shown.</p>
+      </div>
+
+      <div class="picker-list" *ngIf="!loadingReusable; else loadingBlock">
+        <div class="picker-empty" *ngIf="reusablePortfolios.length === 0">
+          No reusable prompts found yet.
+        </div>
+        <div class="picker-item" *ngFor="let p of reusablePortfolios">
+          <div class="picker-item-info">
+            <span class="picker-item-title">{{ p.display_name }}</span>
+            <span class="picker-item-date">{{ p.created_at | date:'medium' }}</span>
+          </div>
+          <button class="btn-mini" (click)="useAsBase(p.id)">USE AS BASE</button>
+        </div>
+      </div>
+      <ng-template #loadingBlock>
+        <div class="picker-empty">Loading...</div>
+      </ng-template>
+    </div>
+  </div>
+
+  <!-- AYUDA 2: INTENT LIBRARY MODAL -->
+  <div class="feedback-modal-overlay" *ngIf="showIntentModal">
+    <div class="feedback-modal-card glass-panel slideUp wide-modal">
+      <button class="btn-close" (click)="showIntentModal = false">×</button>
+      <div class="feedback-modal-header">
+        <h4>Intent Library</h4>
+        <p class="question">Pick what you're building — tone, story and layout suggestions load automatically.</p>
+      </div>
+
+      <div class="intent-grid" *ngIf="!loadingIntents; else loadingBlock2">
+        <button class="intent-card" *ngFor="let intent of promptIntents" (click)="selectIntent(intent)">
+          <span class="intent-card-title">{{ intent.label }}</span>
+          <span class="intent-card-tone">{{ intent.expected_tone }}</span>
+          <span class="intent-card-duration">{{ intent.expected_duration_label }}</span>
+        </button>
+      </div>
+      <ng-template #loadingBlock2>
+        <div class="picker-empty">Loading...</div>
+      </ng-template>
+    </div>
+  </div>
+
+  <!-- AYUDA 3: COMPOSER + STATIC GUIDE MODAL -->
+  <div class="feedback-modal-overlay" *ngIf="showComposerModal">
+    <div class="feedback-modal-card glass-panel slideUp wide-modal">
+      <button class="btn-close" (click)="showComposerModal = false">×</button>
+      <div class="feedback-modal-header">
+        <h4>Build Your Prompt</h4>
+        <p class="question">A strong prompt = Objective + Tone + Audience + Slide type + Story + Visual rules + Output format.</p>
+      </div>
+
+      <app-prompt-composer
+        [initialValues]="composerInitialValues"
+        (insert)="onComposerInsert($event)">
+      </app-prompt-composer>
+
+      <details class="static-guide">
+        <summary>How to write a good prompt</summary>
+        <ul>
+          <li><strong>Objective</strong> — what is this presentation for? e.g. "CEO Board Update on Q3 performance".</li>
+          <li><strong>Tone</strong> — Factual, engaging, optimistic, sense of urgency, financial...</li>
+          <li><strong>Audience</strong> — Internal team, Board, CEO, client...</li>
+          <li><strong>Slide type</strong> — cover, data grid, pillars, case study...</li>
+          <li><strong>Story</strong> — customer-centric, creative, data-driven narrative...</li>
+          <li><strong>Visual rules</strong> — use only library assets, use external assets, no restrictions...</li>
+          <li><strong>Output format</strong> — data driven, storytelling, creative, action oriented...</li>
+          <li>Avoid buzzwords — be specific instead of generic corporate language.</li>
+        </ul>
+      </details>
     </div>
   </div>
 </div>

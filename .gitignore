@@ -36,6 +36,9 @@ backend/data/*
 backend/chroma_db/
 .DS_Store
 
+# Celery beat runtime state (persisted last-run timestamps, local only)
+backend/celerybeat-schedule*
+
 # IDEs
 .vscode/
 .idea/

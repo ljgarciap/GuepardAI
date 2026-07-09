@@ -136,6 +136,7 @@
           </div>
         </div>
         <div class="item-actions">
+          <button class="btn-mini" (click)="openDetailModal(p)">REVIEWS &amp; TEAM</button>
           <button *ngIf="!p.rating" class="btn-mini btn-rate" (click)="openRatingModal(p.id)">★ RATE IT</button>
           <button class="btn-mini" (click)="downloadPortfolio(p)">DOWNLOAD</button>
           <button class="btn-mini btn-delete" (click)="askDeletePortfolio(p)" title="Delete presentation">🗑️</button>
@@ -287,6 +288,80 @@
 
       <div class="feedback-modal-actions" style="margin-top: 24px;">
         <button class="btn-primary-enterprise" (click)="closeCommentModal()">CLOSE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRESENTATION DETAIL: REVIEWS + COLLABORATORS -->
+  <div class="feedback-modal-overlay" *ngIf="showDetailModal">
+    <div class="feedback-modal-card glass-panel slideUp wide-modal" (click)="$event.stopPropagation()">
+      <button class="btn-close" (click)="closeDetailModal()">×</button>
+      <div class="feedback-modal-header">
+        <h4>{{ detailJob?.display_name }}</h4>
+        <p class="question" *ngIf="detailRatingCount > 0">
+          Average rating: {{ detailRatingAverage }} / 5 ({{ detailRatingCount }} review{{ detailRatingCount === 1 ? '' : 's' }})
+        </p>
+      </div>
+
+      <div class="detail-section">
+        <h5>Collaborators</h5>
+        <p class="detail-hint">Anyone added here can rate and comment on this presentation.</p>
+        <div class="collaborator-list">
+          <div class="collaborator-item" *ngFor="let c of detailCollaborators">
+            <span>{{ c.email }}</span>
+            <button class="btn-mini btn-ghost" (click)="removeCollaborator(c.user_id)">REMOVE</button>
+          </div>
+          <div class="picker-empty" *ngIf="detailCollaborators.length === 0">No collaborators yet.</div>
+        </div>
+        <div class="collaborator-add-row">
+          <select [(ngModel)]="selectedCollaboratorUserId" class="enterprise-select">
+            <option [ngValue]="null" disabled>Select a teammate...</option>
+            <option *ngFor="let u of availableCollaboratorCandidates" [ngValue]="u.id">{{ u.email }}</option>
+          </select>
+          <button class="btn-mini" [disabled]="!selectedCollaboratorUserId" (click)="addCollaborator()">ADD</button>
+        </div>
+        <p class="detail-error" *ngIf="collaboratorError">{{ collaboratorError }}</p>
+      </div>
+
+      <div class="detail-section">
+        <h5>Your Review</h5>
+        <div class="stars-container detail-stars">
+          <span
+            *ngFor="let star of [5, 4, 3, 2, 1]"
+            class="star"
+            [class.active]="myReviewRating >= star"
+            (click)="selectMyReviewRating(star)">
+            ★
+          </span>
+        </div>
+        <textarea
+          [(ngModel)]="myReviewComment"
+          placeholder="Optional comment..."
+          rows="2"
+          class="feedback-textarea">
+        </textarea>
+        <div class="detail-review-actions">
+          <button class="btn-primary-enterprise" [disabled]="myReviewRating === 0" (click)="submitMyReview()">SAVE REVIEW</button>
+          <button class="btn-mini btn-ghost" *ngIf="myReviewRating > 0" (click)="deleteMyReview()">DELETE MY REVIEW</button>
+        </div>
+        <p class="detail-error" *ngIf="detailError">{{ detailError }}</p>
+      </div>
+
+      <div class="detail-section">
+        <h5>All Reviews ({{ detailReviews.length }})</h5>
+        <div class="review-list">
+          <div class="review-item" *ngFor="let r of detailReviews">
+            <div class="review-item-header">
+              <span class="review-author">{{ r.user_email }}</span>
+              <span class="rating-stars">
+                <span *ngFor="let star of [1,2,3,4,5]" class="star-static" [class.filled]="r.rating >= star">★</span>
+              </span>
+              <span class="review-moderation-tag" *ngIf="r.moderation_status !== 'visible'">{{ r.moderation_status }}</span>
+            </div>
+            <p class="review-comment" *ngIf="r.comment">{{ r.comment }}</p>
+          </div>
+          <div class="picker-empty" *ngIf="!detailLoading && detailReviews.length === 0">No reviews yet.</div>
+        </div>
       </div>
     </div>
   </div>

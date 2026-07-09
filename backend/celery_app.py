@@ -1,6 +1,7 @@
 import os
 import sys
 from celery import Celery
+from celery.schedules import crontab
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -21,3 +22,12 @@ celery_app.conf.update(
     # Importar explícitamente el archivo de tareas para que el worker las registre
     imports=["tasks"]
 )
+
+# Tareas periódicas (requiere el servicio `celery_beat` corriendo — ver
+# docker-compose.yml; sin él, `beat_schedule` nunca dispara, sin error visible).
+celery_app.conf.beat_schedule = {
+    "monthly-usage-report": {
+        "task": "tasks.generate_monthly_usage_report",
+        "schedule": crontab(day_of_month=1, hour=6, minute=0),
+    },
+}

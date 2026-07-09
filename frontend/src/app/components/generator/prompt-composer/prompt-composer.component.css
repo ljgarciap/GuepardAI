@@ -1,0 +1,102 @@
+.composer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.composer-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.composer-field-wide {
+  grid-column: 1 / -1;
+}
+
+.composer-field label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--text-muted-2);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.composer-input,
+.composer-select {
+  width: 100%;
+  border: 1.5px solid var(--border-color);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--text-title);
+  background-color: var(--bg-surface);
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.composer-select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 14px;
+  padding-right: 36px;
+}
+
+:host-context([data-theme="dark"]) .composer-select {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f5f5f5' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+.composer-input:focus,
+.composer-select:focus {
+  border-color: var(--brand-accent);
+  box-shadow: 0 0 0 3px var(--brand-accent-soft);
+}
+
+.composer-input + .composer-input {
+  margin-top: 6px;
+}
+
+.composer-field-checkbox {
+  justify-content: flex-end;
+}
+
+.composer-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-body);
+  cursor: pointer;
+}
+
+.composer-checkbox-label input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand-accent);
+  cursor: pointer;
+}
+
+.composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.composer-actions .btn-primary-enterprise {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.composer-actions .btn-primary-enterprise:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}

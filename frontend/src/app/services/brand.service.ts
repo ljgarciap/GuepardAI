@@ -11,6 +11,39 @@ export interface PortfolioItem {
   brand_id: number | null;
   rating: number | null;
   comment: string | null;
+  has_prompt: boolean;
+}
+
+export interface PortfolioDetail {
+  id: number;
+  filename: string;
+  display_name: string;
+  created_at: string;
+  brand_id: number | null;
+  prompt: string;
+  prompt_metadata: PromptMetadata | null;
+}
+
+export interface PromptIntent {
+  slug: string;
+  label: string;
+  expected_tone: string;
+  expected_duration_label: string;
+  narrative_style: string;
+  visual_density: string;
+  preferred_layouts: string[];
+}
+
+export interface PromptMetadata {
+  intent_slug?: string;
+  objective?: string;
+  tone?: string;
+  audience?: string;
+  slide_type?: string;
+  story?: string;
+  visual_rules?: string;
+  output_format?: string;
+  no_buzzwords?: boolean;
 }
 
 export interface PortfolioPage {
@@ -148,6 +181,14 @@ export class BrandService {
     return this.http.delete<{ deleted: boolean; id: number }>(`${this.apiUrl}/library/portfolios/${jobId}`);
   }
 
+  getPortfolioDetail(jobId: number): Observable<PortfolioDetail> {
+    return this.http.get<PortfolioDetail>(`${this.apiUrl}/library/portfolios/${jobId}`);
+  }
+
+  getPromptIntents(): Observable<PromptIntent[]> {
+    return this.http.get<PromptIntent[]>(`${this.apiUrl}/config/prompt-intents`);
+  }
+
   generatePresentation(req: {
     prompt: string, 
     style_filename: string, 
@@ -156,7 +197,8 @@ export class BrandService {
     brand_id?: number, 
     allow_ai_images?: boolean,
     output_format?: string,
-    tier?: string
+    tier?: string,
+    prompt_metadata?: PromptMetadata
   }): Observable<any> {
     return this.http.post(`${this.apiUrl}/presentations/generate`, req);
   }

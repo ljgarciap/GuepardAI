@@ -38,6 +38,13 @@
       <span class="nav-icon-elite">◇</span>
       <span class="nav-link">Intelligence Hub</span>
     </a>
+    <ng-container *ngIf="isAdminOrSuperadmin">
+      <div class="nav-section-label">ADMIN</div>
+      <a routerLink="/admin" routerLinkActive="active" class="nav-item-elite">
+        <span class="nav-icon-elite">⚙</span>
+        <span class="nav-link">Admin Panel</span>
+      </a>
+    </ng-container>
     <div class="nav-section-label">SYSTEM</div>
     <button (click)="themeService.toggle()" class="nav-item-elite theme-toggle-elite" style="background: none; border: none; width: 100%; cursor: pointer; text-align: left;">
       <span class="nav-icon-elite">{{ themeService.theme() === 'dark' ? '☀' : '☾' }}</span>
@@ -50,6 +57,17 @@
   </nav>
 
   <div class="sidebar-footer">
+    <div class="badge-widget" *ngIf="myBadges as badges" [title]="badges.next_badge ? (badges.next_badge.threshold - badges.count) + ' more to ' + badges.next_badge.label : 'Top tier reached'">
+      <span class="badge-widget-icon">🏆</span>
+      <div class="badge-widget-info">
+        <span class="badge-widget-label">{{ badges.current_badge?.label || 'No badge yet' }}</span>
+        <div class="badge-widget-track" *ngIf="badges.next_badge">
+          <div class="badge-widget-fill" [style.width.%]="(badges.progress_to_next || 0) * 100"></div>
+        </div>
+        <span class="badge-widget-next" *ngIf="badges.next_badge">{{ badges.count }} / {{ badges.next_badge.threshold }} to {{ badges.next_badge.label }}</span>
+      </div>
+    </div>
+
     <div class="user-profile-lite" *ngIf="authService.currentUser$ | async as user">
       <div class="user-avatar-elite">{{ userInitial }}</div>
       <div class="user-info-elite">

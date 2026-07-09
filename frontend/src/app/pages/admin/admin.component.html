@@ -1,0 +1,159 @@
+<div class="page-container">
+  <header class="library-header glass-panel">
+    <div class="header-titles">
+      <h1 class="page-title">ADMIN PANEL</h1>
+      <p class="page-subtitle">DEPARTMENTS • MODERATION • ANALYTICS • REPORTS</p>
+    </div>
+    <div class="tab-switcher">
+      <button [class.active]="activeTab === 'departments'" (click)="setTab('departments')">DEPARTMENTS</button>
+      <button [class.active]="activeTab === 'moderation'" (click)="setTab('moderation')">MODERATION</button>
+      <button [class.active]="activeTab === 'analytics'" (click)="setTab('analytics')">ANALYTICS</button>
+      <button [class.active]="activeTab === 'reports'" (click)="setTab('reports')">REPORTS</button>
+    </div>
+  </header>
+
+  <div class="library-content">
+
+    <!-- DEPARTMENTS -->
+    <div class="admin-section" *ngIf="activeTab === 'departments'">
+      <div class="admin-card glass-panel">
+        <h5>Create Department</h5>
+        <div class="admin-form-row">
+          <input type="text" [(ngModel)]="newDepartmentName" placeholder="Department name" class="admin-input">
+          <input *ngIf="isSuperadmin" type="number" [(ngModel)]="newDepartmentTenantId" placeholder="Tenant ID" class="admin-input admin-input-narrow">
+          <button class="btn-mini" [disabled]="!newDepartmentName.trim()" (click)="createDepartment()">CREATE</button>
+        </div>
+        <p class="detail-error" *ngIf="departmentError">{{ departmentError }}</p>
+      </div>
+
+      <div class="admin-card glass-panel">
+        <h5>Departments {{ isSuperadmin ? '(filtered by Tenant ID above, if set)' : '' }}</h5>
+        <div class="admin-table">
+          <div class="admin-table-row admin-table-header">
+            <span>Name</span><span>Tenant</span><span></span>
+          </div>
+          <div class="admin-table-row" *ngFor="let d of departments">
+            <span>{{ d.name }}</span>
+            <span>{{ d.tenant_id }}</span>
+            <button class="btn-mini btn-ghost" (click)="deleteDepartment(d)">DELETE</button>
+          </div>
+          <div class="picker-empty" *ngIf="departments.length === 0">No departments yet.</div>
+        </div>
+      </div>
+
+      <div class="admin-card glass-panel">
+        <h5>Assign Department to User</h5>
+        <div class="admin-form-row">
+          <select [(ngModel)]="assignUserId" class="enterprise-select">
+            <option [ngValue]="null" disabled>Select user...</option>
+            <option *ngFor="let u of users" [ngValue]="u.id">{{ u.email }} ({{ departmentName(u.department_id) }})</option>
+          </select>
+          <select [(ngModel)]="assignDepartmentId" class="enterprise-select">
+            <option [ngValue]="null">No department</option>
+            <option *ngFor="let d of departments" [ngValue]="d.id">{{ d.name }}</option>
+          </select>
+          <button class="btn-mini" [disabled]="!assignUserId" (click)="assignDepartment()">ASSIGN</button>
+        </div>
+        <p class="detail-error" *ngIf="assignError">{{ assignError }}</p>
+      </div>
+    </div>
+
+    <!-- MODERATION -->
+    <div class="admin-section" *ngIf="activeTab === 'moderation'">
+      <div class="admin-card glass-panel" *ngIf="isSuperadmin">
+        <h5>Moderation Blocklist</h5>
+        <p class="detail-hint">Comma-separated terms. Any review comment containing one (case-insensitive) is auto-flagged.</p>
+        <textarea [(ngModel)]="blocklistText" rows="2" class="feedback-textarea" placeholder="e.g. spam, scam, badword"></textarea>
+        <div class="admin-form-row">
+          <button class="btn-mini" (click)="saveBlocklist()">SAVE BLOCKLIST</button>
+          <span class="saved-tag" *ngIf="blocklistSaved">Saved ✓</span>
+        </div>
+      </div>
+
+      <div class="admin-card glass-panel">
+        <div class="admin-form-row">
+          <h5 style="margin: 0;">Reviews</h5>
+          <select [(ngModel)]="moderationFilter" (ngModelChange)="loadAdminReviews()" class="enterprise-select admin-input-narrow">
+            <option value="flagged">Flagged</option>
+            <option value="visible">Visible</option>
+            <option value="hidden">Hidden</option>
+            <option value="">All</option>
+          </select>
+        </div>
+        <div class="review-list admin-review-list">
+          <div class="review-item" *ngFor="let r of adminReviews">
+            <div class="review-item-header">
+              <span class="review-author">{{ r.job_display_name }}</span>
+              <span class="rating-stars">
+                <span *ngFor="let star of [1,2,3,4,5]" class="star-static" [class.filled]="r.rating >= star">★</span>
+              </span>
+              <span class="review-moderation-tag" *ngIf="r.moderation_status !== 'visible'">{{ r.moderation_status }}</span>
+            </div>
+            <p class="review-comment" *ngIf="r.comment">{{ r.user_email }}: {{ r.comment }}</p>
+            <div class="admin-form-row">
+              <button class="btn-mini" *ngIf="r.moderation_status !== 'hidden'" (click)="setModerationStatus(r, 'hidden')">HIDE</button>
+              <button class="btn-mini btn-ghost" *ngIf="r.moderation_status !== 'visible'" (click)="setModerationStatus(r, 'visible')">RESTORE TO VISIBLE</button>
+            </div>
+          </div>
+          <div class="picker-empty" *ngIf="adminReviews.length === 0">No reviews match this filter.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ANALYTICS -->
+    <div class="admin-section" *ngIf="activeTab === 'analytics'">
+      <div class="admin-card glass-panel">
+        <div class="admin-form-row" *ngIf="isSuperadmin">
+          <input type="number" [(ngModel)]="analyticsTenantId" placeholder="Tenant ID (optional)" class="admin-input admin-input-narrow">
+          <button class="btn-mini" (click)="loadAnalytics()">FILTER</button>
+        </div>
+        <div class="admin-table">
+          <div class="admin-table-row admin-table-header analytics-row">
+            <span>User</span><span>Department</span><span>Presentations</span><span>Edits</span><span>Time</span><span>Avg Rating</span>
+          </div>
+          <div class="admin-table-row analytics-row" *ngFor="let u of usageUsers">
+            <span>{{ u.email }}</span>
+            <span>{{ u.department_name || '—' }}</span>
+            <span>{{ u.presentations_created }}</span>
+            <span>{{ u.edits }}</span>
+            <span>{{ formatMinutes(u.time_spent_seconds) }}</span>
+            <span>{{ u.rating_average_received ?? '—' }}</span>
+          </div>
+          <div class="picker-empty" *ngIf="usageUsers.length === 0">No activity recorded yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- REPORTS -->
+    <div class="admin-section" *ngIf="activeTab === 'reports'">
+      <div class="admin-card glass-panel">
+        <div class="admin-form-row" *ngIf="isSuperadmin">
+          <input type="number" [(ngModel)]="reportsTenantId" placeholder="Tenant ID (optional, blank = all)" class="admin-input admin-input-narrow">
+          <button class="btn-mini" (click)="loadReports()">FILTER</button>
+        </div>
+        <div class="report-list">
+          <div class="report-item glass-panel" *ngFor="let r of usageReports">
+            <div class="report-item-header">
+              <span class="report-period">{{ r.period_start | date:'MMMM y' }}</span>
+              <span class="report-scope">{{ r.tenant_id === null ? 'Global' : 'Tenant ' + r.tenant_id }}</span>
+              <span class="review-moderation-tag" *ngIf="!r.sent_at">not emailed</span>
+            </div>
+            <div class="report-stats">
+              <span>{{ r.payload.presentations_created }} presentations</span>
+              <span>{{ r.payload.total_edits }} edits</span>
+              <span>{{ formatMinutes(r.payload.total_time_spent_seconds) }}</span>
+              <span>Rating {{ r.payload.rating_average ?? '—' }}</span>
+              <span>{{ r.payload.contributors_count }} contributors</span>
+            </div>
+            <div class="report-stats" *ngIf="r.payload.top_user || r.payload.top_department">
+              <span *ngIf="r.payload.top_user">Top user: {{ r.payload.top_user.email }}</span>
+              <span *ngIf="r.payload.top_department">Top dept: {{ r.payload.top_department.name }}</span>
+            </div>
+          </div>
+          <div class="picker-empty" *ngIf="usageReports.length === 0">No reports generated yet.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>

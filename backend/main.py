@@ -131,9 +131,23 @@ cleanup_tmp()  # housekeeping de temporales >24h (tolerante, nunca bloquea)
 from routers.auth import router as auth_router
 from routers.users import router as users_router
 from routers.template_merge import router as template_merge_router
+from routers.collaborators import router as collaborators_router
+from routers.reviews import router as reviews_router
+from routers.portfolios import router as portfolios_router
+from routers.departments import router as departments_router
+from routers.analytics import router as analytics_router
+from routers.badges import router as badges_router
+from routers.config import router as config_router
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(template_merge_router)
+app.include_router(collaborators_router)
+app.include_router(reviews_router)
+app.include_router(portfolios_router)
+app.include_router(departments_router)
+app.include_router(analytics_router)
+app.include_router(badges_router)
+app.include_router(config_router)
 
 
 # ──────────────────────────────────────────────
@@ -147,8 +161,8 @@ class BrandCreate(BaseModel):
     logo_path: Optional[str] = None
 
 class PresentationRequest(BaseModel):
-    style_filename: str        
-    knowledge_filename: str    
+    style_filename: str
+    knowledge_filename: str
     prompt: str
     region: str = "LATAM"
     brand_id: Optional[int] = None
@@ -156,6 +170,10 @@ class PresentationRequest(BaseModel):
     output_format: str = "pptx" # 'pptx' or 'pdf_artistic'
     tier: str = "free"         # 'free' | 'premium' (Fix/Roadmap 1)
     interactive_mode: bool = False
+    # Selección estructurada del compositor guiado (soporte-indicaciones), si el
+    # frontend lo usó. Se persiste tal cual en el job — el backend no la interpreta,
+    # `prompt` sigue siendo la única entrada real al pipeline.
+    prompt_metadata: Optional[dict] = None
 
 
 # ──────────────────────────────────────────────
@@ -583,15 +601,7 @@ def list_library_knowledge(brand_id: Optional[int] = None, db: Session = Depends
         "brand_id": k.brand_id
     } for i, k in enumerate(knowledge)]
 
-def _portfolio_display_name(job) -> str:
-    """Nombre visible: etiqueta editable > basename del archivo > fallback."""
-    if job.display_name:
-        return job.display_name
-    if job.pptx_path:
-        return os.path.basename(job.pptx_path)
-    return f"Presentation_{job.id}.pptx"
-
-
+from services.core.portfolio_service import portfolio_display_name as _portfolio_display_name
 from utils.sql import escape_like as _escape_like  # compartido con routers/template_merge.py
 
 
@@ -659,7 +669,8 @@ def list_library_portfolios(
         "created_at": j.created_at,
         "brand_id": j.brand_id,
         "rating": feedbacks_dict.get(j.id, {}).get("rating"),
-        "comment": feedbacks_dict.get(j.id, {}).get("comment")
+        "comment": feedbacks_dict.get(j.id, {}).get("comment"),
+        "has_prompt": bool(j.prompt),
     } for j in jobs]
 
     return {"items": items, "total": total, "page": page, "page_size": page_size}
@@ -799,7 +810,10 @@ async def generate_presentation(
         status=models.GenerationJobStatus.PENDING,
         progress=0,
         current_step="Initializing isolated synthesis engine v23.0...",
-        allow_ai_images=request.allow_ai_images
+        allow_ai_images=request.allow_ai_images,
+        owner_id=current_user.id,
+        prompt_metadata=request.prompt_metadata,
+        prompt=request.prompt,
     )
     db.add(job)
     db.commit()
@@ -870,7 +884,10 @@ def update_presentation_slide(job_id: int, slide_id: int, request: SlideUpdate, 
     
     # Marcamos el slide de vuelta en CONTENT_READY para obligar al arquitecto a procesarlo
     slide.status = models.PresentationSlideStatus.CONTENT_READY
-    
+
+    # Analítica de uso (reviews-analitica-colaboracion, ítem 5): cada edición cuenta.
+    db.add(models.UserActivityEvent(job_id=job_id, user_id=current_user.id, event_type="slide_edit", value=1))
+
     db.commit()
     db.refresh(slide)
     return slide
@@ -903,7 +920,7 @@ def resume_presentation(job_id: int, request: ResumeRequest, db: Session = Depen
         job.id,
         req_payload
     )
-    
+
     return {"job_id": job.id, "status": models.GenerationJobStatus.PROCESSING}
 
 

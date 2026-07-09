@@ -76,3 +76,13 @@ def celery_run_template_merge(job_id: int):
     from services.templates.template_merge_orchestrator import run_template_merge
     run_template_merge(job_id)
 
+
+@celery_app.task(name="tasks.generate_monthly_usage_report")
+def generate_monthly_usage_report():
+    """Disparada por Celery beat el día 1 de cada mes (ver celery_app.py beat_schedule)."""
+    logger.info("[Celery] Monthly usage report task started")
+    from services.core.usage_report_service import generate_and_send_monthly_reports
+    summary = generate_and_send_monthly_reports()
+    logger.info(f"[Celery] Monthly usage report task finished: {summary}")
+    return summary
+

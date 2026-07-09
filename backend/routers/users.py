@@ -5,15 +5,16 @@ superadmin, sin restricción de tenant).
 Spec: docs/specs/autenticacion-multiusuario-multitenant.md
 Design: docs/designs/autenticacion-multitenant-design.md §3.2
 """
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 import models
 from auth import security
-from auth.dependencies import require_role
+from auth.dependencies import get_current_user, require_role
 from auth.schemas import CreateUserRequest, UserOut
 from database import get_db
 
@@ -68,6 +69,25 @@ def list_users(
     return query.order_by(models.User.id).all()
 
 
+class UserDirectoryEntry(BaseModel):
+    id: int
+    email: str
+
+
+@router.get("/directory", response_model=List[UserDirectoryEntry])
+def list_user_directory(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Picker mínimo (id+email) para invitar colaboradores — a diferencia de GET /api/users
+    (admin-only), cualquier usuario autenticado puede ver a sus pares de tenant: el owner de
+    un job puede ser un 'cliente' y aun así necesita poder invitar (reviews-analitica-colaboracion)."""
+    query = db.query(models.User)
+    if current_user.role != models.UserRole.SUPERADMIN.value:
+        query = query.filter(models.User.tenant_id == current_user.tenant_id)
+    return query.order_by(models.User.email).all()
+
+
 @router.patch("/{user_id}/deactivate", response_model=UserOut)
 def deactivate_user(
     user_id: int,
@@ -81,6 +101,36 @@ def deactivate_user(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User belongs to a different tenant")
 
     target.is_active = 0
+    db.commit()
+    db.refresh(target)
+    return target
+
+
+class UpdateDepartmentRequest(BaseModel):
+    department_id: Optional[int] = None
+
+
+@router.patch("/{user_id}/department", response_model=UserOut)
+def update_user_department(
+    user_id: int,
+    payload: UpdateDepartmentRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role(*_ADMIN_ROLES)),
+):
+    target = db.query(models.User).filter(models.User.id == user_id).first()
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if current_user.role != models.UserRole.SUPERADMIN.value and target.tenant_id != current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User belongs to a different tenant")
+
+    if payload.department_id is not None:
+        department = db.query(models.Department).filter(models.Department.id == payload.department_id).first()
+        if department is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
+        if department.tenant_id != target.tenant_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Department belongs to a different tenant")
+
+    target.department_id = payload.department_id
     db.commit()
     db.refresh(target)
     return target

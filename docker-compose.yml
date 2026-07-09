@@ -97,6 +97,29 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  celery_beat:
+    image: guepardai-backend:latest
+    container_name: guepard-celery-beat
+    command: celery -A celery_app.celery_app beat --loglevel=info
+    env_file:
+      - ./.env
+    environment:
+      - DATABASE_URL=postgresql+psycopg://root:root@db:5432/ai_db
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+      - redis
+      - backend
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   frontend:
     build: ./frontend
     container_name: guepard-frontend

@@ -1,0 +1,74 @@
+<div class="composer-grid">
+  <div class="composer-field composer-field-wide">
+    <label>OBJECTIVE</label>
+    <input type="text" [(ngModel)]="objective" placeholder="e.g. CEO Board Update on Q3 performance" class="composer-input">
+  </div>
+
+  <div class="composer-field">
+    <label>TONE</label>
+    <select [(ngModel)]="toneSelect" class="composer-select">
+      <option value="" disabled>Select...</option>
+      <option *ngFor="let o of toneOptions" [value]="o.value">{{ o.label }}</option>
+      <option [value]="OTHER">Other...</option>
+    </select>
+    <input *ngIf="toneSelect === OTHER" type="text" [(ngModel)]="toneOther" placeholder="Custom tone" class="composer-input">
+  </div>
+
+  <div class="composer-field">
+    <label>AUDIENCE</label>
+    <select [(ngModel)]="audienceSelect" class="composer-select">
+      <option value="" disabled>Select...</option>
+      <option *ngFor="let o of audienceOptions" [value]="o.value">{{ o.label }}</option>
+      <option [value]="OTHER">Other...</option>
+    </select>
+    <input *ngIf="audienceSelect === OTHER" type="text" [(ngModel)]="audienceOther" placeholder="Custom audience" class="composer-input">
+  </div>
+
+  <div class="composer-field">
+    <label>SLIDE TYPE</label>
+    <input type="text" [(ngModel)]="slideType" placeholder="e.g. cover, data grid, pillars" class="composer-input">
+  </div>
+
+  <div class="composer-field">
+    <label>STORY</label>
+    <select [(ngModel)]="storySelect" class="composer-select">
+      <option value="" disabled>Select...</option>
+      <option *ngFor="let o of storyOptions" [value]="o.value">{{ o.label }}</option>
+      <option [value]="OTHER">Other...</option>
+    </select>
+    <input *ngIf="storySelect === OTHER" type="text" [(ngModel)]="storyOther" placeholder="Custom story style" class="composer-input">
+  </div>
+
+  <div class="composer-field">
+    <label>VISUAL RULES</label>
+    <select [(ngModel)]="visualRulesSelect" class="composer-select">
+      <option value="" disabled>Select...</option>
+      <option *ngFor="let o of visualRulesOptions" [value]="o.value">{{ o.label }}</option>
+      <option [value]="OTHER">Other...</option>
+    </select>
+    <input *ngIf="visualRulesSelect === OTHER" type="text" [(ngModel)]="visualRulesOther" placeholder="Custom visual rules" class="composer-input">
+  </div>
+
+  <div class="composer-field">
+    <label>OUTPUT FORMAT</label>
+    <select [(ngModel)]="outputFormatSelect" class="composer-select">
+      <option value="" disabled>Select...</option>
+      <option *ngFor="let o of outputFormatOptions" [value]="o.value">{{ o.label }}</option>
+      <option [value]="OTHER">Other...</option>
+    </select>
+    <input *ngIf="outputFormatSelect === OTHER" type="text" [(ngModel)]="outputFormatOther" placeholder="Custom output format" class="composer-input">
+  </div>
+
+  <div class="composer-field composer-field-checkbox">
+    <label class="composer-checkbox-label">
+      <input type="checkbox" [(ngModel)]="noBuzzwords">
+      No buzzwords
+    </label>
+  </div>
+</div>
+
+<div class="composer-actions">
+  <button class="btn-primary-enterprise" [disabled]="!isValid" (click)="assemble()">
+    INSERT INTO PROMPT
+  </button>
+</div>

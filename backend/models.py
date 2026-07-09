@@ -1,6 +1,6 @@
 import datetime
 from enum import Enum
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Float, ForeignKey, Boolean, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Float, ForeignKey, Boolean, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from pgvector.sqlalchemy import Vector
@@ -71,9 +71,24 @@ class User(Base):
     role            = Column(String, nullable=False)  # valor de UserRole
     tenant_id       = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)  # null solo para superadmin
     is_active       = Column(Integer, default=1)
+    # Asignación opcional (reviews-analitica-colaboracion, ítem 4) — no bloquea registro de usuarios existentes.
+    department_id   = Column(Integer, ForeignKey("departments.id"), nullable=True)
     created_at      = Column(DateTime, default=datetime.datetime.utcnow)
 
     tenant = relationship("Tenant", back_populates="users")
+    department = relationship("Department")
+
+
+class Department(Base):
+    """Catálogo de departamentos administrado por tenant (reviews-analitica-colaboracion, ítem 4)."""
+    __tablename__ = "departments"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    tenant_id  = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    name       = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint('tenant_id', 'name', name='uq_department_tenant_name'),)
 
 
 class Brand(Base):
@@ -290,6 +305,11 @@ class GenerationJob(Base):
     prompt      = Column(Text)              # Prompt original del usuario
     full_llm_prompt = Column(Text, nullable=True)  # Prompt final con contexto RAG
     llm_response_json = Column(JSONB, nullable=True) # JSON crudo devuelto por la IA
+    # Selección estructurada del compositor guiado (soporte-indicaciones): categoría de
+    # intención, tono, audiencia, tipo de slide, historia, reglas visuales, formato de
+    # salida, flag "sin buzzwords". Nunca se usa para lógica de negoción — el campo
+    # `prompt` de texto plano sigue siendo la única entrada real al pipeline.
+    prompt_metadata = Column(JSONB, nullable=True)
 
     status      = Column(String, default="pending")
     current_step = Column(String, nullable=True) # v12.0: Para logs en tiempo real
@@ -298,11 +318,54 @@ class GenerationJob(Base):
     qa_forced   = Column(Integer, default=0)    # F4 fixes-resiliencia: 1 si QA agotó reintentos y se forzó el pase
     display_name = Column(String(120), nullable=True)  # Etiqueta visible editable (Gestión de Portfolios); null → basename del archivo
     pptx_path   = Column(String, nullable=True)
+    # Ownership y colaboración (reviews-analitica-colaboracion). Nullable: jobs
+    # históricos no tienen owner conocido — no se hace backfill, gap aceptado.
+    owner_id    = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     created_at  = Column(DateTime, default=datetime.datetime.utcnow)
-    
+
     # Relationship con las slides granulares (v18.5)
     slides      = relationship("PresentationSlide", back_populates="job", cascade="all, delete-orphan")
+    collaborators = relationship("GenerationJobCollaborator", back_populates="job", cascade="all, delete-orphan")
+    reviews       = relationship("PresentationReview", back_populates="job", cascade="all, delete-orphan")
+
+
+class GenerationJobCollaborator(Base):
+    """Colaboradores invitados a un GenerationJob (además del owner)."""
+    __tablename__ = "generation_job_collaborators"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    job_id     = Column(Integer, ForeignKey("generation_jobs.id"), nullable=False)
+    user_id    = Column(Integer, ForeignKey("users.id"), nullable=False)
+    added_at   = Column(DateTime, default=datetime.datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint('job_id', 'user_id', name='uq_job_collaborator'),)
+
+    job  = relationship("GenerationJob", back_populates="collaborators")
+    user = relationship("User")
+
+
+class PresentationReview(Base):
+    """Review + rating (1-5) de un colaborador sobre un GenerationJob."""
+    __tablename__ = "presentation_reviews"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    job_id      = Column(Integer, ForeignKey("generation_jobs.id"), nullable=False)
+    user_id     = Column(Integer, ForeignKey("users.id"), nullable=False)
+    rating      = Column(Integer, nullable=False)  # 1-5, CHECK agregado vía ALTER en database.py
+    comment     = Column(Text, nullable=True)
+    created_at  = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at  = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    is_deleted  = Column(Boolean, default=False)
+    moderation_status = Column(String(20), default="visible")  # visible | flagged | hidden
+
+    __table_args__ = (
+        UniqueConstraint('job_id', 'user_id', name='uq_job_review'),
+        CheckConstraint('rating BETWEEN 1 AND 5', name='ck_review_rating_range'),
+    )
+
+    job  = relationship("GenerationJob", back_populates="reviews")
+    user = relationship("User")
 
 
 
@@ -445,6 +508,39 @@ class DataAlignment(Base):
     started_at  = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
     created_at  = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class UserActivityEvent(Base):
+    """
+    Analítica de producto por usuario (reviews-analitica-colaboracion, ítem 5).
+    Distinto de PerformanceMetric (esa es telemetría de sistema — duración de
+    llamadas LLM/pipeline). Tabla genérica única para ambas métricas (ediciones
+    + tiempo invertido) — evita dos tablas casi idénticas.
+    """
+    __tablename__ = "user_activity_events"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    job_id     = Column(Integer, ForeignKey("generation_jobs.id"), nullable=False)
+    user_id    = Column(Integer, ForeignKey("users.id"), nullable=False)
+    event_type = Column(String(30), nullable=False)  # 'slide_edit' | 'session_time_seconds'
+    value      = Column(Integer, nullable=False, default=1)  # 1 para slide_edit, segundos para session_time
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class UsageReport(Base):
+    """
+    Reporte mensual de uso (reviews-analitica-colaboracion, ítem 7). Uno por
+    tenant + uno global (tenant_id NULL, solo superadmin) por cada período.
+    """
+    __tablename__ = "usage_reports"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    tenant_id    = Column(Integer, ForeignKey("tenants.id"), nullable=True)  # NULL = plataforma completa
+    period_start = Column(DateTime, nullable=False)
+    period_end   = Column(DateTime, nullable=False)
+    payload_json = Column(JSONB, nullable=False)
+    created_at   = Column(DateTime, default=datetime.datetime.utcnow)
+    sent_at      = Column(DateTime, nullable=True)
 
 
 class PerformanceMetric(Base):

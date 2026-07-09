@@ -82,7 +82,11 @@ export class PromptComposerComponent implements OnChanges {
       this.objective = this.initialValues.objective ?? this.objective;
       this.slideType = this.initialValues.slide_type ?? this.slideType;
       this.setSelectOrOther('tone', this.initialValues.tone, TONE_OPTIONS);
+      this.setSelectOrOther('audience', this.initialValues.audience, AUDIENCE_OPTIONS);
       this.setSelectOrOther('story', this.initialValues.story, STORY_OPTIONS);
+      this.setSelectOrOther('visualRules', this.initialValues.visual_rules, VISUAL_RULES_OPTIONS);
+      this.setSelectOrOther('outputFormat', this.initialValues.output_format, OUTPUT_FORMAT_OPTIONS);
+      if (this.initialValues.no_buzzwords !== undefined) this.noBuzzwords = this.initialValues.no_buzzwords;
     }
   }
 

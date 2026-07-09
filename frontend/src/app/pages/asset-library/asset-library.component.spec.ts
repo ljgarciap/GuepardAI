@@ -9,14 +9,17 @@
  */
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { AssetLibraryComponent } from './asset-library.component';
 import { BrandService, PortfolioItem, PortfolioPage } from '../../services/brand.service';
+import { CollaborationService } from '../../services/collaboration.service';
+import { AuthService } from '../../services/auth.service';
 
 describe('AssetLibraryComponent — Portfolio management', () => {
   let fixture: ComponentFixture<AssetLibraryComponent>;
   let component: AssetLibraryComponent;
   let brandServiceSpy: jasmine.SpyObj<BrandService>;
+  let collabSpy: jasmine.SpyObj<CollaborationService>;
 
   const makeItem = (id: number, name: string): PortfolioItem => ({
     id,
@@ -44,9 +47,21 @@ describe('AssetLibraryComponent — Portfolio management', () => {
     brandServiceSpy.getLibraryKnowledge.and.returnValue(of([]));
     brandServiceSpy.getLibraryPortfolios.and.returnValue(of(makePage([makeItem(1, 'Deck A')], 1)));
 
+    collabSpy = jasmine.createSpyObj('CollaborationService', [
+      'getReviews', 'getCollaborators', 'getUserDirectory', 'upsertReview', 'deleteOwnReview',
+      'addCollaborator', 'removeCollaborator',
+    ]);
+    collabSpy.getReviews.and.returnValue(of({ reviews: [], rating_average: null, rating_count: 0 }));
+    collabSpy.getCollaborators.and.returnValue(of([]));
+    collabSpy.getUserDirectory.and.returnValue(of([]));
+
     await TestBed.configureTestingModule({
       imports: [AssetLibraryComponent, HttpClientTestingModule],
-      providers: [{ provide: BrandService, useValue: brandServiceSpy }],
+      providers: [
+        { provide: BrandService, useValue: brandServiceSpy },
+        { provide: CollaborationService, useValue: collabSpy },
+        { provide: AuthService, useValue: { currentUser: { id: 100, role: 'cliente' } } },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(AssetLibraryComponent);
@@ -166,5 +181,201 @@ describe('AssetLibraryComponent — Portfolio management', () => {
     component.confirmRename();
 
     expect(brandServiceSpy.renamePortfolio).not.toHaveBeenCalled();
+  });
+});
+
+describe('AssetLibraryComponent — Presentation detail: reviews + collaborators', () => {
+  let fixture: ComponentFixture<AssetLibraryComponent>;
+  let component: AssetLibraryComponent;
+  let collabSpy: jasmine.SpyObj<CollaborationService>;
+
+  const makeItem = (id: number, name: string): PortfolioItem => ({
+    id, filename: `Presentation_${id}.pptx`, display_name: name, created_at: '2026-06-11T10:00:00',
+    brand_id: null, rating: null, comment: null, has_prompt: true,
+  });
+
+  beforeEach(async () => {
+    const brandServiceSpy = jasmine.createSpyObj('BrandService', [
+      'getBrands', 'getLibraryImages', 'getLibraryBlueprints', 'getLibraryKnowledge', 'getLibraryPortfolios',
+    ]);
+    brandServiceSpy.getBrands.and.returnValue(of([]));
+    brandServiceSpy.getLibraryImages.and.returnValue(of([]));
+    brandServiceSpy.getLibraryBlueprints.and.returnValue(of([]));
+    brandServiceSpy.getLibraryKnowledge.and.returnValue(of([]));
+    brandServiceSpy.getLibraryPortfolios.and.returnValue(of({ items: [], total: 0, page: 1, page_size: 12 }));
+
+    collabSpy = jasmine.createSpyObj('CollaborationService', [
+      'getReviews', 'getCollaborators', 'getUserDirectory', 'upsertReview', 'deleteOwnReview',
+      'addCollaborator', 'removeCollaborator',
+    ]);
+    collabSpy.getReviews.and.returnValue(of({ reviews: [], rating_average: null, rating_count: 0 }));
+    collabSpy.getCollaborators.and.returnValue(of([]));
+    collabSpy.getUserDirectory.and.returnValue(of([
+      { id: 100, email: 'me@example.com' },
+      { id: 200, email: 'teammate@example.com' },
+      { id: 300, email: 'already.collab@example.com' },
+    ]));
+
+    await TestBed.configureTestingModule({
+      imports: [AssetLibraryComponent, HttpClientTestingModule],
+      providers: [
+        { provide: BrandService, useValue: brandServiceSpy },
+        { provide: CollaborationService, useValue: collabSpy },
+        { provide: AuthService, useValue: { currentUser: { id: 100, role: 'cliente' } } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(AssetLibraryComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+  });
+
+  it('openDetailModal() loads reviews, collaborators and the user directory', () => {
+    const target = makeItem(5, 'Deck A');
+    component.openDetailModal(target);
+
+    expect(component.showDetailModal).toBeTrue();
+    expect(component.detailJob).toBe(target);
+    expect(collabSpy.getReviews).toHaveBeenCalledWith(5);
+    expect(collabSpy.getCollaborators).toHaveBeenCalledWith(5);
+    expect(collabSpy.getUserDirectory).toHaveBeenCalled();
+  });
+
+  it('prefills the rating/comment form with the current user\'s own existing review', () => {
+    collabSpy.getReviews.and.returnValue(of({
+      reviews: [
+        { id: 1, job_id: 5, user_id: 100, user_email: 'me@example.com', rating: 4, comment: 'nice', created_at: '', updated_at: '', moderation_status: 'visible' },
+      ],
+      rating_average: 4, rating_count: 1,
+    }));
+
+    component.openDetailModal(makeItem(5, 'Deck A'));
+
+    expect(component.myReviewRating).toBe(4);
+    expect(component.myReviewComment).toBe('nice');
+  });
+
+  it('availableCollaboratorCandidates excludes the current user and existing collaborators', () => {
+    collabSpy.getCollaborators.and.returnValue(of([
+      { user_id: 300, email: 'already.collab@example.com', added_at: '' },
+    ]));
+
+    component.openDetailModal(makeItem(5, 'Deck A'));
+
+    const emails = component.availableCollaboratorCandidates.map(c => c.email);
+    expect(emails).toEqual(['teammate@example.com']);
+  });
+
+  it('closeDetailModal() resets the review form state', () => {
+    component.myReviewRating = 5;
+    component.myReviewComment = 'great';
+    component.detailJob = makeItem(5, 'Deck A');
+    component.showDetailModal = true;
+
+    component.closeDetailModal();
+
+    expect(component.showDetailModal).toBeFalse();
+    expect(component.detailJob).toBeNull();
+    expect(component.myReviewRating).toBe(0);
+    expect(component.myReviewComment).toBe('');
+  });
+
+  describe('submitMyReview()', () => {
+    it('does nothing when no rating is selected', () => {
+      component.openDetailModal(makeItem(5, 'Deck A'));
+      component.myReviewRating = 0;
+
+      component.submitMyReview();
+
+      expect(collabSpy.upsertReview).not.toHaveBeenCalled();
+    });
+
+    it('upserts the review and reloads the list on success', () => {
+      component.openDetailModal(makeItem(5, 'Deck A'));
+      collabSpy.upsertReview.and.returnValue(of({
+        id: 1, job_id: 5, user_id: 100, user_email: 'me@example.com', rating: 5, comment: 'great',
+        created_at: '', updated_at: '', moderation_status: 'visible',
+      }));
+      collabSpy.getReviews.calls.reset();
+      component.myReviewRating = 5;
+      component.myReviewComment = 'great';
+
+      component.submitMyReview();
+
+      expect(collabSpy.upsertReview).toHaveBeenCalledWith(5, 5, 'great');
+      expect(collabSpy.getReviews).toHaveBeenCalledWith(5);
+    });
+
+    it('surfaces the backend error message (e.g. 6-month window closed)', () => {
+      component.openDetailModal(makeItem(5, 'Deck A'));
+      collabSpy.upsertReview.and.returnValue(throwError(() => ({ error: { detail: 'Review window closed (6 months after job creation)' } })));
+      component.myReviewRating = 3;
+
+      component.submitMyReview();
+
+      expect(component.detailError).toBe('Review window closed (6 months after job creation)');
+    });
+  });
+
+  describe('deleteMyReview()', () => {
+    it('clears the local form and reloads on success', () => {
+      component.openDetailModal(makeItem(5, 'Deck A'));
+      collabSpy.deleteOwnReview.and.returnValue(of({ status: 'deleted' }));
+      collabSpy.getReviews.calls.reset();
+      component.myReviewRating = 4;
+      component.myReviewComment = 'x';
+
+      component.deleteMyReview();
+
+      expect(collabSpy.deleteOwnReview).toHaveBeenCalledWith(5);
+      expect(component.myReviewRating).toBe(0);
+      expect(component.myReviewComment).toBe('');
+      expect(collabSpy.getReviews).toHaveBeenCalledWith(5);
+    });
+  });
+
+  describe('addCollaborator() / removeCollaborator()', () => {
+    it('does nothing without a selected candidate', () => {
+      component.openDetailModal(makeItem(5, 'Deck A'));
+      component.selectedCollaboratorUserId = null;
+
+      component.addCollaborator();
+
+      expect(collabSpy.addCollaborator).not.toHaveBeenCalled();
+    });
+
+    it('adds the selected candidate and reloads the collaborator list', () => {
+      component.openDetailModal(makeItem(5, 'Deck A'));
+      collabSpy.addCollaborator.and.returnValue(of({ user_id: 200, added_at: '' }));
+      collabSpy.getCollaborators.calls.reset();
+      component.selectedCollaboratorUserId = 200;
+
+      component.addCollaborator();
+
+      expect(collabSpy.addCollaborator).toHaveBeenCalledWith(5, 200);
+      expect(component.selectedCollaboratorUserId).toBeNull();
+      expect(collabSpy.getCollaborators).toHaveBeenCalledWith(5);
+    });
+
+    it('surfaces a 403 error message (e.g. non-owner, non-admin)', () => {
+      component.openDetailModal(makeItem(5, 'Deck A'));
+      collabSpy.addCollaborator.and.returnValue(throwError(() => ({ error: { detail: 'Only the job owner or a tenant admin can manage collaborators' } })));
+      component.selectedCollaboratorUserId = 200;
+
+      component.addCollaborator();
+
+      expect(component.collaboratorError).toBe('Only the job owner or a tenant admin can manage collaborators');
+    });
+
+    it('removes a collaborator and reloads the list', () => {
+      component.openDetailModal(makeItem(5, 'Deck A'));
+      collabSpy.removeCollaborator.and.returnValue(of({ status: 'removed' }));
+      collabSpy.getCollaborators.calls.reset();
+
+      component.removeCollaborator(300);
+
+      expect(collabSpy.removeCollaborator).toHaveBeenCalledWith(5, 300);
+      expect(collabSpy.getCollaborators).toHaveBeenCalledWith(5);
+    });
   });
 });

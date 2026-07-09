@@ -14,14 +14,9 @@ from sqlalchemy.orm import Session
 import models
 from auth.dependencies import check_job_tenant_access, get_current_user
 from database import get_db
+from services.core.portfolio_service import portfolio_display_name
 
 router = APIRouter(prefix="/api/library/portfolios", tags=["Library"])
-
-
-def _portfolio_display_name(job: models.GenerationJob) -> str:
-    if job.display_name:
-        return job.display_name
-    return os.path.basename(job.pptx_path) if job.pptx_path else f"Presentation_{job.id}.pptx"
 
 
 @router.get("/{job_id}")
@@ -36,7 +31,7 @@ def get_library_portfolio_detail(job_id: int, db: Session = Depends(get_db), cur
     return {
         "id": job.id,
         "filename": os.path.basename(job.pptx_path) if job.pptx_path else f"Presentation_{job.id}.pptx",
-        "display_name": _portfolio_display_name(job),
+        "display_name": portfolio_display_name(job),
         "created_at": job.created_at,
         "brand_id": job.brand_id,
         "prompt": job.prompt,

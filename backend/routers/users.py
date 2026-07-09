@@ -23,6 +23,15 @@ router = APIRouter(prefix="/api/users", tags=["Users"])
 _ADMIN_ROLES = (models.UserRole.ADMIN.value, models.UserRole.SUPERADMIN.value)
 
 
+def _tenant_scoped_users(db: Session, current_user: models.User):
+    """Query base compartida por list_users y list_user_directory: superadmin ve todos,
+    cualquier otro rol solo ve su propio tenant."""
+    query = db.query(models.User)
+    if current_user.role != models.UserRole.SUPERADMIN.value:
+        query = query.filter(models.User.tenant_id == current_user.tenant_id)
+    return query
+
+
 @router.post("", response_model=UserOut, status_code=201)
 def create_user(
     payload: CreateUserRequest,
@@ -63,10 +72,7 @@ def list_users(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role(*_ADMIN_ROLES)),
 ):
-    query = db.query(models.User)
-    if current_user.role != models.UserRole.SUPERADMIN.value:
-        query = query.filter(models.User.tenant_id == current_user.tenant_id)
-    return query.order_by(models.User.id).all()
+    return _tenant_scoped_users(db, current_user).order_by(models.User.id).all()
 
 
 class UserDirectoryEntry(BaseModel):
@@ -82,10 +88,7 @@ def list_user_directory(
     """Picker mínimo (id+email) para invitar colaboradores — a diferencia de GET /api/users
     (admin-only), cualquier usuario autenticado puede ver a sus pares de tenant: el owner de
     un job puede ser un 'cliente' y aun así necesita poder invitar (reviews-analitica-colaboracion)."""
-    query = db.query(models.User)
-    if current_user.role != models.UserRole.SUPERADMIN.value:
-        query = query.filter(models.User.tenant_id == current_user.tenant_id)
-    return query.order_by(models.User.email).all()
+    return _tenant_scoped_users(db, current_user).order_by(models.User.email).all()
 
 
 @router.patch("/{user_id}/deactivate", response_model=UserOut)

@@ -12,7 +12,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, contains_eager, joinedload
 
 import models
 from auth.dependencies import check_job_tenant_access, get_current_user, require_role
@@ -133,21 +133,23 @@ def list_reviews(job_id: int, db: Session = Depends(get_db), current_user: model
     job = db.query(models.GenerationJob).get(job_id)
     check_job_tenant_access(db, current_user, job)
 
-    query = db.query(models.PresentationReview).filter(
+    query = db.query(models.PresentationReview).options(joinedload(models.PresentationReview.user)).filter(
         models.PresentationReview.job_id == job_id,
         models.PresentationReview.is_deleted == False,
     )
     is_admin = current_user.role in (models.UserRole.ADMIN.value, models.UserRole.SUPERADMIN.value)
     if not is_admin:
-        query = query.filter(models.PresentationReview.moderation_status == "visible")
+        # 'flagged' es un auto-tag pendiente de revisión, no un ocultamiento — solo
+        # 'hidden' (acción explícita de un admin) saca una review de la vista normal.
+        query = query.filter(models.PresentationReview.moderation_status != "hidden")
 
     reviews = query.order_by(models.PresentationReview.created_at.desc()).all()
-    visible = [r for r in reviews if r.moderation_status == "visible"]
-    rating_average = round(sum(r.rating for r in visible) / len(visible), 2) if visible else None
+    counted = [r for r in reviews if r.moderation_status != "hidden"]
+    rating_average = round(sum(r.rating for r in counted) / len(counted), 2) if counted else None
     return {
         "reviews": [_serialize_review(r) for r in reviews],
         "rating_average": rating_average,
-        "rating_count": len(visible),
+        "rating_count": len(counted),
     }
 
 
@@ -162,7 +164,11 @@ def list_admin_reviews(
     if status_filter is not None and status_filter not in ("visible", "flagged", "hidden"):
         raise HTTPException(status_code=422, detail="status_filter must be 'visible', 'flagged' or 'hidden'")
 
-    query = db.query(models.PresentationReview).join(
+    # contains_eager (no joinedload) para .job: la tabla ya se joinea para el filtro de
+    # tenant de abajo — un joinedload aparte duplicaría el join en vez de reusarlo.
+    query = db.query(models.PresentationReview).options(
+        joinedload(models.PresentationReview.user), contains_eager(models.PresentationReview.job)
+    ).join(
         models.GenerationJob, models.GenerationJob.id == models.PresentationReview.job_id
     ).filter(models.PresentationReview.is_deleted == False)
 

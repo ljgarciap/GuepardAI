@@ -139,12 +139,14 @@ export class GeneratorComponent implements OnInit {
     this.prompt = text;
   }
 
-  /** Reemplaza el textarea con confirmación si ya había contenido manual (no se pierde trabajo en silencio). */
-  private applyPromptText(text: string) {
+  /** Reemplaza el textarea con confirmación si ya había contenido manual (no se pierde trabajo en silencio).
+   * Devuelve false si el usuario canceló — los callers no deben aplicar el resto de su efecto (metadata, cerrar modal) en ese caso. */
+  private applyPromptText(text: string): boolean {
     if (this.prompt.trim() && !confirm('This will replace your current prompt text. Continue?')) {
-      return;
+      return false;
     }
     this.prompt = text;
+    return true;
   }
 
   // --- AYUDA 1: Reutilizar indicación anterior ---
@@ -163,7 +165,7 @@ export class GeneratorComponent implements OnInit {
   useAsBase(jobId: number) {
     this.brandService.getPortfolioDetail(jobId).subscribe({
       next: (detail) => {
-        this.applyPromptText(detail.prompt);
+        if (!this.applyPromptText(detail.prompt)) return;
         this.promptMetadata = detail.prompt_metadata;
         this.showReuseModal = false;
       },
@@ -201,7 +203,7 @@ export class GeneratorComponent implements OnInit {
   }
 
   onComposerInsert(payload: { text: string; metadata: PromptMetadata }) {
-    this.applyPromptText(payload.text);
+    if (!this.applyPromptText(payload.text)) return;
     this.promptMetadata = payload.metadata;
     this.showComposerModal = false;
   }

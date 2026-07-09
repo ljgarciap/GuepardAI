@@ -68,7 +68,7 @@ def _aggregate_scope(db: Session, user_ids: list[int], period_start: datetime.da
     ).filter(
         models.GenerationJob.owner_id.in_(user_ids),
         models.PresentationReview.is_deleted == False,
-        models.PresentationReview.moderation_status == "visible",
+        models.PresentationReview.moderation_status != "hidden",
         models.PresentationReview.created_at >= period_start,
         models.PresentationReview.created_at < period_end,
     ).scalar()

@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 import models
 from auth.dependencies import check_job_tenant_access, get_current_user, require_role
@@ -50,8 +50,11 @@ def get_usage_analytics(
     current_user: models.User = Depends(require_role(*_ADMIN_ROLES)),
 ):
     """Agregado por usuario: presentaciones creadas, ediciones, tiempo invertido, rating
-    promedio recibido. Admin ve solo su tenant; superadmin ve todo (o filtra por tenant_id)."""
-    query = db.query(models.User)
+    promedio recibido. Admin ve solo su tenant; superadmin ve todo (o filtra por tenant_id).
+
+    Agregados en 4 queries GROUP BY (mas la lista de usuarios) en vez de un loop con 4-5
+    queries por usuario — antes era ~5N queries no acotadas, sin paginación de usuarios."""
+    query = db.query(models.User).options(joinedload(models.User.department))
     if current_user.role == models.UserRole.SUPERADMIN.value:
         if tenant_id is not None:
             query = query.filter(models.User.tenant_id == tenant_id)
@@ -60,40 +63,53 @@ def get_usage_analytics(
     else:
         query = query.filter(models.User.tenant_id == current_user.tenant_id)
     users = query.all()
+    user_ids = [u.id for u in users]
+
+    if not user_ids:
+        return {"users": []}
+
+    presentations_by_user = dict(
+        db.query(models.GenerationJob.owner_id, func.count(models.GenerationJob.id))
+        .filter(models.GenerationJob.owner_id.in_(user_ids))
+        .group_by(models.GenerationJob.owner_id)
+        .all()
+    )
+    edits_by_user = dict(
+        db.query(models.UserActivityEvent.user_id, func.coalesce(func.sum(models.UserActivityEvent.value), 0))
+        .filter(models.UserActivityEvent.user_id.in_(user_ids), models.UserActivityEvent.event_type == "slide_edit")
+        .group_by(models.UserActivityEvent.user_id)
+        .all()
+    )
+    time_by_user = dict(
+        db.query(models.UserActivityEvent.user_id, func.coalesce(func.sum(models.UserActivityEvent.value), 0))
+        .filter(models.UserActivityEvent.user_id.in_(user_ids), models.UserActivityEvent.event_type == "session_time_seconds")
+        .group_by(models.UserActivityEvent.user_id)
+        .all()
+    )
+    rating_by_user = dict(
+        db.query(models.GenerationJob.owner_id, func.avg(models.PresentationReview.rating))
+        .join(models.PresentationReview, models.PresentationReview.job_id == models.GenerationJob.id)
+        .filter(
+            models.GenerationJob.owner_id.in_(user_ids),
+            models.PresentationReview.is_deleted == False,
+            models.PresentationReview.moderation_status != "hidden",
+        )
+        .group_by(models.GenerationJob.owner_id)
+        .all()
+    )
 
     results = []
     for user in users:
-        presentations_created = db.query(func.count(models.GenerationJob.id)).filter(
-            models.GenerationJob.owner_id == user.id
-        ).scalar() or 0
-
-        edits = db.query(func.coalesce(func.sum(models.UserActivityEvent.value), 0)).filter(
-            models.UserActivityEvent.user_id == user.id,
-            models.UserActivityEvent.event_type == "slide_edit",
-        ).scalar() or 0
-
-        time_spent_seconds = db.query(func.coalesce(func.sum(models.UserActivityEvent.value), 0)).filter(
-            models.UserActivityEvent.user_id == user.id,
-            models.UserActivityEvent.event_type == "session_time_seconds",
-        ).scalar() or 0
-
-        rating_received = db.query(func.avg(models.PresentationReview.rating)).join(
-            models.GenerationJob, models.GenerationJob.id == models.PresentationReview.job_id
-        ).filter(
-            models.GenerationJob.owner_id == user.id,
-            models.PresentationReview.is_deleted == False,
-            models.PresentationReview.moderation_status == "visible",
-        ).scalar()
-
+        rating = rating_by_user.get(user.id)
         results.append({
             "user_id": user.id,
             "email": user.email,
             "department_id": user.department_id,
             "department_name": user.department.name if user.department else None,
-            "presentations_created": presentations_created,
-            "edits": edits,
-            "time_spent_seconds": time_spent_seconds,
-            "rating_average_received": round(rating_received, 2) if rating_received is not None else None,
+            "presentations_created": presentations_by_user.get(user.id, 0),
+            "edits": int(edits_by_user.get(user.id, 0)),
+            "time_spent_seconds": int(time_by_user.get(user.id, 0)),
+            "rating_average_received": round(rating, 2) if rating is not None else None,
         })
 
     return {"users": results}

@@ -6,7 +6,7 @@ Design: docs/designs/reviews-analitica-colaboracion.md §1
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 import models
 from auth.dependencies import check_job_tenant_access, get_current_user
@@ -83,7 +83,9 @@ def list_collaborators(job_id: int, db: Session = Depends(get_db), current_user:
     """Lista colaboradores. Cualquier owner/colaborador/admin del tenant del job puede ver."""
     job = db.query(models.GenerationJob).get(job_id)
     check_job_tenant_access(db, current_user, job)
-    collaborators = db.query(models.GenerationJobCollaborator).filter(
+    collaborators = db.query(models.GenerationJobCollaborator).options(
+        joinedload(models.GenerationJobCollaborator.user)
+    ).filter(
         models.GenerationJobCollaborator.job_id == job_id
     ).all()
     return [

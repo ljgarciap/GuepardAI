@@ -151,12 +151,20 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
   }
 
   loadKnowledgeSources(): void {
-    // brand_id=-1 → superuser visibility (same as Synthesis Studio default)
-    this.http.get<any>(`${environment.apiUrl}/available-knowledge?brand_id=-1`)
+    // Sin brand_id (null/undefined) el backend ya muestra todo para superadmin
+    // y solo lo público para el resto (main.py::list_available_knowledge) —
+    // el sentinel brand_id=-1 se eliminó junto con el resto de auth-multitenant
+    // (backend/tests/test_tenant_scoping.py) y daba 404 para admin/cliente.
+    const params = this.selectedBrandId ? `?brand_id=${this.selectedBrandId}` : '';
+    this.http.get<any>(`${environment.apiUrl}/available-knowledge${params}`)
       .subscribe({
         next: (data) => this.availableKnowledge = data?.sources || [],
         error: () => this.availableKnowledge = [],
       });
+  }
+
+  onBrandChange(): void {
+    this.loadKnowledgeSources();
   }
 
   // ── Template upload ───────────────────────────────────────────────────────

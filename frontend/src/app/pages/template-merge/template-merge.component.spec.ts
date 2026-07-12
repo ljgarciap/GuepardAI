@@ -268,3 +268,54 @@ describe('TemplateMergeComponent — History tab', () => {
     });
   });
 });
+
+describe('TemplateMergeComponent — Knowledge sources (regression: stale brand_id=-1 sentinel)', () => {
+  let fixture: ComponentFixture<TemplateMergeComponent>;
+  let component: TemplateMergeComponent;
+  let httpMock: HttpTestingController;
+
+  beforeEach(async () => {
+    const brandServiceSpy = jasmine.createSpyObj('BrandService', [
+      'getTemplateMergeHistory', 'renameTemplateMergeJob', 'deleteTemplateMergeJob', 'getBrands',
+    ]);
+    brandServiceSpy.getTemplateMergeHistory.and.returnValue(of({ items: [], total: 0, page: 1, page_size: 12 }));
+    brandServiceSpy.getBrands.and.returnValue(of([{ id: 1, name: 'Tesco' }, { id: 2, name: 'Acme' }]));
+
+    await TestBed.configureTestingModule({
+      imports: [TemplateMergeComponent, HttpClientTestingModule],
+      providers: [{ provide: BrandService, useValue: brandServiceSpy }, provideRouter([])],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(TemplateMergeComponent);
+    component = fixture.componentInstance;
+    httpMock = TestBed.inject(HttpTestingController);
+    fixture.detectChanges(); // ngOnInit -> loadTemplates() + loadKnowledgeSources()
+
+    // loadTemplates() no es parte de esta regresión — se drena sin inspeccionar.
+    httpMock.match(r => r.url.endsWith('/template-merge/templates')).forEach(req => req.flush([]));
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+  });
+
+  it('requests /available-knowledge WITHOUT brand_id on initial load (no selected brand yet)', () => {
+    const req = httpMock.expectOne(r => r.url.includes('/available-knowledge'));
+    expect(req.request.urlWithParams).not.toContain('brand_id=-1');
+    expect(req.request.urlWithParams).not.toContain('brand_id');
+    req.flush({ sources: [] });
+  });
+
+  it('onBrandChange() re-fetches /available-knowledge scoped to the selected brand', () => {
+    httpMock.expectOne(r => r.url.includes('/available-knowledge')).flush({ sources: [] });
+
+    component.selectedBrandId = 2;
+    component.onBrandChange();
+
+    const req = httpMock.expectOne(r => r.url.includes('/available-knowledge'));
+    expect(req.request.urlWithParams).toContain('brand_id=2');
+    req.flush({ sources: ['doc.pdf'] });
+
+    expect(component.availableKnowledge).toEqual(['doc.pdf']);
+  });
+});

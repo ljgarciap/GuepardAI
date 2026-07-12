@@ -46,7 +46,7 @@
           </div>
         </div>
 
-        <select [(ngModel)]="selectedBrandId" class="enterprise-select">
+        <select [(ngModel)]="selectedBrandId" (ngModelChange)="onBrandChange()" class="enterprise-select">
           <option [ngValue]="null" disabled>— choose brand —</option>
           <option *ngFor="let brand of brands" [ngValue]="brand.id">
             {{ brand.name }}

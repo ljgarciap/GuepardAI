@@ -170,12 +170,13 @@ class TestCreateJob:
         assert job is not None
         assert job.knowledge_filename == "doc.pdf"
 
-    def test_create_job_404_when_asset_missing(self, client, db_session):
+    def test_create_job_404_when_asset_missing(self, client, db_session, sample_brand):
         with patch("tasks.celery_run_template_merge.delay"):
             res = client.post("/api/template-merge/jobs", json={
                 "template_asset_id": 999999,
                 "knowledge_filename": "doc.pdf",
                 "prompt": "prompt",
+                "brand_id": sample_brand.id,
             })
         assert res.status_code == 404
 
@@ -186,8 +187,32 @@ class TestCreateJob:
                 "template_asset_id": asset.id,
                 "knowledge_filename": "doc.pdf",
                 "prompt": "prompt",
+                "brand_id": sample_brand.id,
             })
         assert res.status_code == 404
+
+    def test_create_job_422_when_brand_id_missing(self, client, db_session, sample_brand):
+        asset = _make_template_asset(db_session, brand_id=sample_brand.id)
+        with patch("tasks.celery_run_template_merge.delay"):
+            res = client.post("/api/template-merge/jobs", json={
+                "template_asset_id": asset.id,
+                "knowledge_filename": "doc.pdf",
+                "prompt": "prompt",
+            })
+        assert res.status_code == 422
+
+    def test_create_job_sets_owner_id(self, client, db_session, sample_brand):
+        asset = _make_template_asset(db_session, brand_id=sample_brand.id)
+        with patch("tasks.celery_run_template_merge.delay"):
+            res = client.post("/api/template-merge/jobs", json={
+                "template_asset_id": asset.id,
+                "knowledge_filename": "doc.pdf",
+                "prompt": "prompt",
+                "brand_id": sample_brand.id,
+            })
+        assert res.status_code == 200
+        job = db_session.query(models.TemplateMergeJob).get(res.json()["job_id"])
+        assert job.owner_id is not None
 
 
 # ---------------------------------------------------------------------------

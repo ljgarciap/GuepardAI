@@ -232,6 +232,7 @@ class TestLibraryScoping:
         tenant_intruder = _make_tenant(db_session, "TplIntruder")
         intruder = _make_user(db_session, models.UserRole.ADMIN.value, tenant_intruder.id)
         owner_brand = _make_brand(db_session, tenant_owner.id, "TplOwnerBrand")
+        intruder_brand = _make_brand(db_session, tenant_intruder.id, "TplIntruderBrand")
 
         template_asset = models.BrandAsset(
             brand_id=owner_brand.id,
@@ -248,7 +249,7 @@ class TestLibraryScoping:
                 "template_asset_id": template_asset.id,
                 "knowledge_filename": "k.pdf",
                 "prompt": "test",
-                "brand_id": None,
+                "brand_id": intruder_brand.id,
             },
             headers=_headers(intruder),
         )

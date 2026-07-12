@@ -29,7 +29,7 @@ The main presentation-generation workflow:
    PPTX or Executive Art PDF), and **ENGINE TIER** (Free grammar layouts or
    Premium layout clone).
 4. Write your request in the command box at the bottom, or use one of the
-   three prompt-support cards above it to build a stronger one:
+   four prompt-support cards above it to build a stronger one:
    - **Reuse Previous Prompt** — pick an earlier presentation and reload the
      prompt it was generated from (only presentations that have a saved
      prompt show up here).
@@ -43,11 +43,17 @@ The main presentation-generation workflow:
      assemble it into the command box (with a confirmation if you already
      had text there, so nothing is silently overwritten). The same panel has
      a short written guide on what makes a good prompt.
+   - **Load from Favorites** — pick from prompts you saved earlier (see
+     "Saving a favorite" below) and reload it into the command box.
 
    Optionally toggle "Use AI generated images" for AI-generated imagery when
    nothing suitable exists in your asset library.
-5. Click **CREATE PRESENTATION** and watch the live log until it finishes.
-6. **DOWNLOAD STRATEGIC PORTFOLIO** downloads the file. The first download
+5. **Saving a favorite**: once you have text in the command box, click
+   **☆ Save as favorite** next to it, give it a short title, and it's saved
+   for reuse from the "Load from Favorites" card above — yours only, unless
+   your organization's admin also needs to see it (see below).
+6. Click **CREATE PRESENTATION** and watch the live log until it finishes.
+7. **DOWNLOAD STRATEGIC PORTFOLIO** downloads the file. The first download
    prompts a quick 1–5 star rating with an optional comment — a separate,
    simpler mechanism from the collaborative reviews described below.
 
@@ -70,9 +76,15 @@ CRUD for your organization's brand records: name, core value/slogan, an
 
 ### Strategic Assets (`/library`)
 
-Four tabs — Images, Blueprints, Knowledge, Portfolios. Portfolios is where
-you search, rename, rate, view feedback, download, or permanently delete
-past presentations, with search-by-name and date-range filters.
+Five tabs — Images, Blueprints, Knowledge, Portfolios, Prompts. Portfolios is
+where you search, rename, rate, view feedback, download, or permanently
+delete past presentations, with search-by-name and date-range filters.
+
+**Prompts** lists your saved favorites (title, prompt text, who saved it) —
+edit the title/text inline with the pencil icon, or delete with the trash
+icon (asks for confirmation first). If your admin also sees favorites your
+teammates saved, they can view them here but cannot edit or delete anything
+that isn't theirs.
 
 Each item also has a **REVIEWS & TEAM** button that opens a presentation's
 collaborative detail:
@@ -99,10 +111,12 @@ presentations you've generated: **Starter** (5), **Expert** (10), **Genius**
 ### Template Merge (`/template-merge`)
 
 Keeps an existing PPTX's visual design and only replaces its text content
-from a knowledge-base document. Upload or reuse a `.pptx` template, pick a
-knowledge source, write a content directive, and download the result. Switch
-to the **HISTORY** tab to find, search, or download any merge you completed
-in a previous session — the "THIS SESSION" list only covers the current one.
+from a knowledge-base document. Pick a **brand** first (required — jobs
+without one won't save to your history), then upload or reuse a `.pptx`
+template, pick a knowledge source, write a content directive, and download
+the result. Switch to the **HISTORY** tab to find, search, or download any
+merge you completed in a previous session — the "THIS SESSION" list only
+covers the current one.
 
 ## What only an admin/superadmin can do
 

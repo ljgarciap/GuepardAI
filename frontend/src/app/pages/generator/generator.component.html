@@ -89,6 +89,11 @@
           <span class="compositor-card-title">Guide / Write My Own</span>
           <span class="compositor-card-desc">Build a strong prompt field by field, with a how-to guide</span>
         </button>
+        <button class="compositor-card" (click)="openFavoritesModal()">
+          <span class="compositor-card-icon">☆</span>
+          <span class="compositor-card-title">Load from Favorites</span>
+          <span class="compositor-card-desc">Start from a prompt you saved earlier</span>
+        </button>
       </div>
     </div>
 
@@ -163,7 +168,7 @@
   <!-- Command Input Area -->
   <div class="command-area">
     <div class="input-card">
-      <textarea 
+      <textarea
         placeholder="Enter synthesis command..."
         [(ngModel)]="prompt"
         [disabled]="isGenerating"
@@ -178,6 +183,9 @@
           <span class="toggle-label">Use ai generated images</span>
         </div>
         <div class="execution-controls">
+          <button class="btn-mini" [disabled]="!prompt || isGenerating" (click)="openSaveFavoriteModal()">
+            ☆ Save as favorite
+          </button>
           <span class="input-status" [class.ready]="prompt && selectedStyle && selectedKnowledge">
             {{ isGenerating ? 'BUSY' : 'STANDBY' }}
           </span>
@@ -307,6 +315,64 @@
             <li>Avoid buzzwords — be specific instead of generic corporate language.</li>
           </ul>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AYUDA 4: FAVORITES MODAL -->
+  <div class="feedback-modal-overlay" *ngIf="showFavoritesModal">
+    <div class="feedback-modal-card glass-panel slideUp wide-modal">
+      <button class="btn-close" (click)="showFavoritesModal = false">×</button>
+      <div class="feedback-modal-header">
+        <h4>Load from Favorites</h4>
+        <p class="question">Prompts you've saved for reuse.</p>
+      </div>
+
+      <div class="picker-list" *ngIf="!loadingFavorites; else loadingBlock3">
+        <div class="picker-empty" *ngIf="favoritesList.length === 0">
+          No favorites saved yet.
+        </div>
+        <div class="picker-item" *ngFor="let fav of favoritesList">
+          <div class="picker-item-info">
+            <span class="picker-item-title">{{ fav.title }}</span>
+            <span class="picker-item-date">{{ fav.owner_email }} · {{ fav.created_at | date:'medium' }}</span>
+          </div>
+          <button class="btn-mini" (click)="useFavorite(fav)">USE</button>
+        </div>
+      </div>
+      <ng-template #loadingBlock3>
+        <div class="picker-empty">Loading...</div>
+      </ng-template>
+    </div>
+  </div>
+
+  <!-- SAVE AS FAVORITE MODAL -->
+  <div class="feedback-modal-overlay" *ngIf="showSaveFavoriteModal">
+    <div class="feedback-modal-card glass-panel slideUp">
+      <button class="btn-close" (click)="showSaveFavoriteModal = false">×</button>
+      <div class="feedback-modal-header">
+        <h4>Save as Favorite</h4>
+        <p class="question">Give this prompt a name so you can find it again later.</p>
+      </div>
+
+      <div class="comments-container">
+        <label>TITLE</label>
+        <input
+          type="text"
+          [(ngModel)]="saveFavoriteTitle"
+          placeholder="e.g. Q3 Board Update"
+          class="feedback-textarea"
+          maxlength="120">
+      </div>
+      <p class="field-error" *ngIf="saveFavoriteError">{{ saveFavoriteError }}</p>
+
+      <div class="feedback-modal-actions">
+        <button
+          class="btn-primary-enterprise"
+          [disabled]="!saveFavoriteTitle.trim() || savingFavorite"
+          (click)="confirmSaveFavorite()">
+          {{ savingFavorite ? 'SAVING...' : 'SAVE FAVORITE' }}
+        </button>
       </div>
     </div>
   </div>

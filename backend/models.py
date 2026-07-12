@@ -597,6 +597,9 @@ class TemplateMergeJob(Base):
 
     id                  = Column(Integer, primary_key=True, index=True)
     brand_id            = Column(Integer, ForeignKey("brands.id"), nullable=True)
+    # Nullable: jobs históricos (previos a este fix) no tienen owner conocido —
+    # no se hace backfill, gap aceptado (mismo criterio que GenerationJob.owner_id).
+    owner_id            = Column(Integer, ForeignKey("users.id"), nullable=True)
     template_asset_id   = Column(Integer, ForeignKey("brand_assets.id"), nullable=False)
     knowledge_filename  = Column(String(512), nullable=False)
     prompt              = Column(Text, nullable=False)
@@ -615,6 +618,35 @@ class TemplateMergeJob(Base):
     updated_at          = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
     template_asset      = relationship("BrandAsset", foreign_keys=[template_asset_id])
+
+
+class PromptFavorite(Base):
+    """
+    Prompt guardado explícitamente por un usuario para reutilizar como punto
+    de partida (docs/specs/biblioteca-prompts-favoritos.md). Distinto de
+    "reutilizar indicación anterior" (soporte-indicaciones Ayuda 1): ese lee
+    GenerationJob.prompt de solo lectura; esto es una copia editable con
+    nombre propio, independiente del job de origen.
+    """
+    __tablename__ = "prompt_favorites"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    # Obligatorio: a diferencia de GenerationJob.owner_id, un favorito nace
+    # siempre con dueño (no hay filas históricas migradas sin owner).
+    user_id         = Column(Integer, ForeignKey("users.id"), nullable=False)
+    # Nullable solo para permitir que un superadmin (sin tenant) cree
+    # favoritos propios. Asignado del current_user al crear, nunca del body.
+    tenant_id       = Column(Integer, ForeignKey("tenants.id"), nullable=True)
+    title           = Column(String(120), nullable=False)
+    prompt_text     = Column(Text, nullable=False)
+    # Mismo shape que GenerationJob.prompt_metadata / interfaz TS PromptMetadata.
+    prompt_metadata = Column(JSONB, nullable=True)
+    # Sin ondelete a nivel DB (el proyecto no usa ondelete= en ningún FK) —
+    # la limpieza es explícita en delete_library_portfolio, mismo patrón que
+    # GenerationJobFeedback/ArtDirectorDecision.
+    source_job_id   = Column(Integer, ForeignKey("generation_jobs.id"), nullable=True)
+    created_at      = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at      = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
 
 class FooterConfig(Base):

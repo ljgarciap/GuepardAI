@@ -36,10 +36,28 @@
     <!-- ── Left: Configuration panel ─────────────────────────────────────── -->
     <div class="config-panel glass-panel">
 
-      <!-- Step 1: Template -->
+      <!-- Step 1: Brand -->
       <div class="step-block">
         <div class="step-header">
           <span class="step-number">01</span>
+          <div>
+            <h3 class="step-title">SELECT BRAND</h3>
+            <p class="step-desc">Jobs are scoped to a brand — required to save to your history</p>
+          </div>
+        </div>
+
+        <select [(ngModel)]="selectedBrandId" class="enterprise-select">
+          <option [ngValue]="null" disabled>— choose brand —</option>
+          <option *ngFor="let brand of brands" [ngValue]="brand.id">
+            {{ brand.name }}
+          </option>
+        </select>
+      </div>
+
+      <!-- Step 2: Template -->
+      <div class="step-block">
+        <div class="step-header">
+          <span class="step-number">02</span>
           <div>
             <h3 class="step-title">SELECT TEMPLATE</h3>
             <p class="step-desc">Choose the PPTX whose design you want to preserve</p>
@@ -73,10 +91,10 @@
         <p *ngIf="uploadError" class="field-error">{{ uploadError }}</p>
       </div>
 
-      <!-- Step 2: Knowledge source -->
+      <!-- Step 3: Knowledge source -->
       <div class="step-block">
         <div class="step-header">
-          <span class="step-number">02</span>
+          <span class="step-number">03</span>
           <div>
             <h3 class="step-title">KNOWLEDGE SOURCE</h3>
             <p class="step-desc">Select the ingested document that provides the content</p>
@@ -89,10 +107,10 @@
         </select>
       </div>
 
-      <!-- Step 3: Prompt -->
+      <!-- Step 4: Prompt -->
       <div class="step-block">
         <div class="step-header">
-          <span class="step-number">03</span>
+          <span class="step-number">04</span>
           <div>
             <h3 class="step-title">CONTENT DIRECTIVE</h3>
             <p class="step-desc">Describe what the presentation should communicate</p>
@@ -107,10 +125,10 @@
         </textarea>
       </div>
 
-      <!-- Step 4: Optional display name -->
+      <!-- Step 5: Optional display name -->
       <div class="step-block step-block--optional">
         <div class="step-header">
-          <span class="step-number">04</span>
+          <span class="step-number">05</span>
           <div>
             <h3 class="step-title">OUTPUT NAME <span class="optional-tag">optional</span></h3>
             <p class="step-desc">Label for the generated file</p>

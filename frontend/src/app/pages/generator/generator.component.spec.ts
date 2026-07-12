@@ -2,12 +2,14 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { GeneratorComponent } from './generator.component';
 import { BrandService } from '../../services/brand.service';
+import { PromptFavoritesService } from '../../services/prompt-favorites.service';
 import { AuthService } from '../../services/auth.service';
 
 describe('GeneratorComponent — prompt support (soporte-indicaciones)', () => {
   let fixture: ComponentFixture<GeneratorComponent>;
   let component: GeneratorComponent;
   let brandSpy: jasmine.SpyObj<BrandService>;
+  let favoritesSpy: jasmine.SpyObj<PromptFavoritesService>;
 
   beforeEach(async () => {
     brandSpy = jasmine.createSpyObj('BrandService', [
@@ -19,10 +21,15 @@ describe('GeneratorComponent — prompt support (soporte-indicaciones)', () => {
     brandSpy.getAvailableKnowledge.and.returnValue(of({ sources: [] }));
     brandSpy.getAvailableDialects.and.returnValue(of([]));
 
+    favoritesSpy = jasmine.createSpyObj('PromptFavoritesService', [
+      'listFavorites', 'createFavorite', 'updateFavorite', 'deleteFavorite',
+    ]);
+
     await TestBed.configureTestingModule({
       imports: [GeneratorComponent],
       providers: [
         { provide: BrandService, useValue: brandSpy },
+        { provide: PromptFavoritesService, useValue: favoritesSpy },
         { provide: AuthService, useValue: { currentUser: { role: 'cliente' } } },
       ],
     }).compileComponents();
@@ -209,6 +216,100 @@ describe('GeneratorComponent — prompt support (soporte-indicaciones)', () => {
       component.promptMetadata = { objective: 'X' };
       component.reset();
       expect(component.promptMetadata).toBeNull();
+    });
+  });
+
+  describe('Ayuda 4 — openFavoritesModal() / useFavorite()', () => {
+    it('loads favorites from the backend', () => {
+      favoritesSpy.listFavorites.and.returnValue(of([
+        { id: 1, title: 'Q3 Deck', prompt_text: 'x', prompt_metadata: null, source_job_id: null, owner_email: 'me@example.com', created_at: '', updated_at: '' },
+      ]));
+
+      component.openFavoritesModal();
+
+      expect(component.showFavoritesModal).toBeTrue();
+      expect(component.favoritesList.length).toBe(1);
+    });
+
+    it('useFavorite() applies prompt and metadata, and closes the modal on success', () => {
+      component.prompt = '';
+      component.showFavoritesModal = true;
+
+      component.useFavorite({
+        id: 1, title: 'Q3 Deck', prompt_text: 'Saved prompt', prompt_metadata: { objective: 'saved' },
+        source_job_id: null, owner_email: 'me@example.com', created_at: '', updated_at: '',
+      });
+
+      expect(component.prompt).toBe('Saved prompt');
+      expect(component.promptMetadata).toEqual({ objective: 'saved' });
+      expect(component.showFavoritesModal).toBeFalse();
+    });
+
+    it('useFavorite() leaves state untouched and modal open when the user cancels the overwrite', () => {
+      component.prompt = 'my own text';
+      component.promptMetadata = null;
+      component.showFavoritesModal = true;
+      spyOn(window, 'confirm').and.returnValue(false);
+
+      component.useFavorite({
+        id: 1, title: 'Q3 Deck', prompt_text: 'Saved prompt', prompt_metadata: { objective: 'saved' },
+        source_job_id: null, owner_email: 'me@example.com', created_at: '', updated_at: '',
+      });
+
+      expect(component.prompt).toBe('my own text');
+      expect(component.promptMetadata).toBeNull();
+      expect(component.showFavoritesModal).toBeTrue();
+    });
+  });
+
+  describe('Ayuda 4 — openSaveFavoriteModal() / confirmSaveFavorite()', () => {
+    it('opens the modal with a blank title and no error', () => {
+      component.saveFavoriteTitle = 'stale';
+      component.saveFavoriteError = 'stale error';
+
+      component.openSaveFavoriteModal();
+
+      expect(component.showSaveFavoriteModal).toBeTrue();
+      expect(component.saveFavoriteTitle).toBe('');
+      expect(component.saveFavoriteError).toBe('');
+    });
+
+    it('does nothing when the title is blank', () => {
+      component.saveFavoriteTitle = '   ';
+      component.confirmSaveFavorite();
+      expect(favoritesSpy.createFavorite).not.toHaveBeenCalled();
+    });
+
+    it('creates the favorite with the current prompt and metadata, then closes the modal', () => {
+      component.prompt = 'My current prompt';
+      component.promptMetadata = { objective: 'X' };
+      component.saveFavoriteTitle = 'My favorite';
+      component.showSaveFavoriteModal = true;
+      favoritesSpy.createFavorite.and.returnValue(of({
+        id: 1, title: 'My favorite', prompt_text: 'My current prompt', prompt_metadata: { objective: 'X' },
+        source_job_id: null, owner_email: 'me@example.com', created_at: '', updated_at: '',
+      }));
+
+      component.confirmSaveFavorite();
+
+      expect(favoritesSpy.createFavorite).toHaveBeenCalledWith({
+        title: 'My favorite', prompt_text: 'My current prompt', prompt_metadata: { objective: 'X' },
+      });
+      expect(component.showSaveFavoriteModal).toBeFalse();
+      expect(component.savingFavorite).toBeFalse();
+    });
+
+    it('sets an error message and keeps the modal open when the request fails', () => {
+      component.prompt = 'My current prompt';
+      component.saveFavoriteTitle = 'My favorite';
+      component.showSaveFavoriteModal = true;
+      favoritesSpy.createFavorite.and.returnValue(throwError(() => new Error('500')));
+
+      component.confirmSaveFavorite();
+
+      expect(component.saveFavoriteError).toContain('Could not save');
+      expect(component.showSaveFavoriteModal).toBeTrue();
+      expect(component.savingFavorite).toBeFalse();
     });
   });
 });

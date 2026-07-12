@@ -987,3 +987,9 @@ input:checked + .slider:before {
   transform: none;
   box-shadow: none;
 }
+
+.field-error {
+  font-size: 11px;
+  color: #dc2626;
+  margin: 0;
+}

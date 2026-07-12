@@ -21,6 +21,7 @@
         <button [class.active]="activeTab === 'blueprints'" (click)="setTab('blueprints')">BLUEPRINTS</button>
         <button [class.active]="activeTab === 'knowledge'" (click)="setTab('knowledge')">KNOWLEDGE</button>
         <button [class.active]="activeTab === 'portfolios'" (click)="setTab('portfolios')">PORTFOLIOS</button>
+        <button [class.active]="activeTab === 'prompts'" (click)="setTab('prompts')">PROMPTS</button>
       </div>
     </div>
   </header>
@@ -157,6 +158,51 @@
         <button class="btn-mini" (click)="goToPortfolioPage(portfolioPage - 1)" [disabled]="portfolioPage <= 1">← PREV</button>
         <span class="paginator-info">Page {{ portfolioPage }} of {{ portfolioTotalPages }} • {{ portfolioTotal }} presentations</span>
         <button class="btn-mini" (click)="goToPortfolioPage(portfolioPage + 1)" [disabled]="portfolioPage >= portfolioTotalPages">NEXT →</button>
+      </div>
+    </div>
+
+    <!-- PROMPT FAVORITES -->
+    <div class="list-container" *ngIf="activeTab === 'prompts'">
+      <div class="list-item glass-panel" *ngFor="let fav of favorites">
+        <div class="item-icon">☆</div>
+        <div class="item-details">
+          <ng-container *ngIf="editingFavoriteId !== fav.id; else favoriteEditor">
+            <h3>
+              {{ fav.title }}
+              <button class="btn-rename" (click)="startEditFavorite(fav)" title="Edit favorite">✏️</button>
+            </h3>
+            <div class="meta-row">
+              <span class="meta-date">Owner: {{ fav.owner_email }} • {{ fav.created_at | date:'medium' }}</span>
+            </div>
+            <p class="asset-meta">{{ fav.prompt_text }}</p>
+          </ng-container>
+          <ng-template #favoriteEditor>
+            <div class="rename-row">
+              <input
+                type="text"
+                class="rename-input"
+                [(ngModel)]="editFavoriteTitle"
+                maxlength="120"
+                placeholder="Title" />
+            </div>
+            <textarea
+              class="feedback-textarea"
+              rows="3"
+              [(ngModel)]="editFavoritePromptText"
+              placeholder="Prompt text"></textarea>
+            <div class="rename-row">
+              <button class="btn-mini" (click)="confirmEditFavorite()" [disabled]="!editFavoriteTitle.trim() || !editFavoritePromptText.trim()">SAVE</button>
+              <button class="btn-mini btn-ghost" (click)="cancelEditFavorite()">CANCEL</button>
+            </div>
+          </ng-template>
+        </div>
+        <div class="item-actions">
+          <button class="btn-mini btn-delete" (click)="deleteFavorite(fav)" title="Delete favorite">🗑️</button>
+        </div>
+      </div>
+
+      <div class="empty-state" *ngIf="favorites.length === 0">
+        <p>No saved prompts yet — save one from the Synthesis Studio generator.</p>
       </div>
     </div>
 

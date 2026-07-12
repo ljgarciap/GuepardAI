@@ -5,6 +5,7 @@ import { Subject, Subscription, debounceTime, distinctUntilChanged } from 'rxjs'
 import { BrandService, PortfolioItem } from '../../services/brand.service';
 import { AuthService } from '../../services/auth.service';
 import { CollaborationService, Collaborator, Review } from '../../services/collaboration.service';
+import { PromptFavoritesService, PromptFavorite } from '../../services/prompt-favorites.service';
 import { environment } from '../../../environments/environment';
 import { triggerBlobDownload } from '../../utils/download.util';
 
@@ -18,17 +19,24 @@ import { triggerBlobDownload } from '../../utils/download.util';
 export class AssetLibraryComponent implements OnInit, OnDestroy {
   private brandService = inject(BrandService);
   private collaborationService = inject(CollaborationService);
+  private promptFavoritesService = inject(PromptFavoritesService);
   private authService = inject(AuthService);
   baseUrl = environment.baseUrl;
 
   brands: any[] = [];
   selectedBrandId: number | null = null;
-  activeTab: 'images' | 'blueprints' | 'knowledge' | 'portfolios' = 'images';
+  activeTab: 'images' | 'blueprints' | 'knowledge' | 'portfolios' | 'prompts' = 'images';
 
   images: any[] = [];
   blueprints: any[] = [];
   knowledge: any[] = [];
   portfolios: PortfolioItem[] = [];
+
+  // --- PROMPT FAVORITES (biblioteca-prompts-favoritos) ---
+  favorites: PromptFavorite[] = [];
+  editingFavoriteId: number | null = null;
+  editFavoriteTitle = '';
+  editFavoritePromptText = '';
 
   // --- PORTFOLIO MANAGEMENT (búsqueda, paginación, rename, delete) ---
   portfolioSearch = '';
@@ -102,7 +110,7 @@ export class AssetLibraryComponent implements OnInit, OnDestroy {
     });
   }
 
-  setTab(tab: 'images' | 'blueprints' | 'knowledge' | 'portfolios') {
+  setTab(tab: 'images' | 'blueprints' | 'knowledge' | 'portfolios' | 'prompts') {
     this.activeTab = tab;
     this.refreshLibrary();
   }
@@ -132,6 +140,8 @@ export class AssetLibraryComponent implements OnInit, OnDestroy {
       this.brandService.getLibraryKnowledge(bId).subscribe(res => this.knowledge = res);
     } else if (this.activeTab === 'portfolios') {
       this.loadPortfolios();
+    } else if (this.activeTab === 'prompts') {
+      this.loadFavorites();
     }
   }
 
@@ -245,6 +255,53 @@ export class AssetLibraryComponent implements OnInit, OnDestroy {
     this.brandService.downloadPortfolio(p.id).subscribe({
       next: (blob) => triggerBlobDownload(blob, p.filename),
       error: (err) => console.error('[AssetLibrary] Error downloading portfolio:', err)
+    });
+  }
+
+  // --- PROMPT FAVORITES (biblioteca-prompts-favoritos) ---
+
+  loadFavorites() {
+    this.promptFavoritesService.listFavorites().subscribe({
+      next: (res) => this.favorites = res,
+      error: (err) => console.error('[AssetLibrary] Error loading favorites:', err)
+    });
+  }
+
+  startEditFavorite(fav: PromptFavorite) {
+    this.editingFavoriteId = fav.id;
+    this.editFavoriteTitle = fav.title;
+    this.editFavoritePromptText = fav.prompt_text;
+  }
+
+  cancelEditFavorite() {
+    this.editingFavoriteId = null;
+    this.editFavoriteTitle = '';
+    this.editFavoritePromptText = '';
+  }
+
+  confirmEditFavorite() {
+    const title = this.editFavoriteTitle.trim();
+    const promptText = this.editFavoritePromptText.trim();
+    if (!this.editingFavoriteId || !title || !promptText) return;
+
+    this.promptFavoritesService.updateFavorite(this.editingFavoriteId, {
+      title, prompt_text: promptText,
+    }).subscribe({
+      next: (updated) => {
+        const item = this.favorites.find(f => f.id === updated.id);
+        if (item) { item.title = updated.title; item.prompt_text = updated.prompt_text; }
+        this.cancelEditFavorite();
+      },
+      error: (err) => console.error('[AssetLibrary] Error updating favorite:', err)
+    });
+  }
+
+  deleteFavorite(fav: PromptFavorite) {
+    if (!confirm(`Delete favorite "${fav.title}"? This cannot be undone.`)) return;
+
+    this.promptFavoritesService.deleteFavorite(fav.id).subscribe({
+      next: () => { this.favorites = this.favorites.filter(f => f.id !== fav.id); },
+      error: (err) => console.error('[AssetLibrary] Error deleting favorite:', err)
     });
   }
 

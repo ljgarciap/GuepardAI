@@ -36,7 +36,7 @@ The main presentation-generation workflow:
    PPTX or Executive Art PDF), and **ENGINE TIER** (Free grammar layouts or
    Premium layout clone).
 4. Write your request in the command box at the bottom, or use one of the
-   three prompt-support cards above it to build a stronger one:
+   four prompt-support cards above it to build a stronger one:
    - **Reuse Previous Prompt** — pick an earlier presentation and reload the
      prompt it was generated from (only presentations that have a saved
      prompt show up here).
@@ -50,12 +50,16 @@ The main presentation-generation workflow:
      assemble it into the command box (with a confirmation if you already
      had text there, so nothing is silently overwritten). The same panel has
      a short written guide on what makes a good prompt.
+   - **Load from Favorites** — pick from any favorite saved by any user on
+     the platform (see Strategic Assets → Prompts below) and reload it.
 
    Optionally toggle "Use AI generated images" if you want AI-generated
    imagery when nothing suitable exists in the asset library.
-5. Click **CREATE PRESENTATION**. A live log shows each pipeline stage
+5. **Saving a favorite**: once you have text in the command box, click
+   **☆ Save as favorite** next to it and give it a short title.
+6. Click **CREATE PRESENTATION**. A live log shows each pipeline stage
    (analysis, design, writing) with a progress bar until it finishes.
-6. When done, **DOWNLOAD STRATEGIC PORTFOLIO** downloads the file. The first
+7. When done, **DOWNLOAD STRATEGIC PORTFOLIO** downloads the file. The first
    download opens a quick 1–5 star rating with an optional comment — this
    feedback is saved against the job and visible later in Strategic Assets →
    Portfolios. This is separate from the collaborative reviews described
@@ -85,7 +89,8 @@ no delete action here — brands are archived, not deleted, from this screen.
 
 ### Strategic Assets (`/library`) — browsing everything ingested
 
-Four tabs, each filterable by brand via the scope dropdown:
+Five tabs. Images/Blueprints/Knowledge/Portfolios are each filterable by
+brand via the scope dropdown; Prompts is the exception (not brand-scoped):
 - **Images** — every ingested/generated image; click one for its full
   detail (AI description, tags, source document, download link).
 - **Blueprints** — ingested visual-identity documents.
@@ -93,6 +98,9 @@ Four tabs, each filterable by brand via the scope dropdown:
 - **Portfolios** — every presentation ever generated: search by name,
   filter by date range, rename, download, rate (if not already rated), view
   feedback comments, or permanently delete.
+- **Prompts** — every favorite saved by any user across every tenant, with
+  who saved each one. You can only edit or delete favorites you saved
+  yourself — even as superadmin, someone else's favorite is view-only.
 
 ### Strategic Assets → Portfolios — reviews and collaborators
 
@@ -138,9 +146,11 @@ not just your own:
 
 An alternative to Synthesis Studio: instead of an AI-designed layout, you
 keep an existing PPTX's visual structure and only replace its text, driven
-by a knowledge-base document. Upload a `.pptx` template (or reuse one already
-uploaded), pick a knowledge source, write a content directive, and download
-the merged file. The "THIS SESSION" list only covers jobs launched in the
+by a knowledge-base document. Pick a **brand** first (required — jobs
+without one won't save to history), then upload a `.pptx` template (or reuse
+one already uploaded), pick a knowledge source, write a content directive,
+and download the merged file. The "THIS SESSION" list only covers jobs
+launched in the
 current browser session and resets on reload; switch to the **HISTORY** tab
 for a durable, searchable list of every completed merge across sessions
 (search by name, filter by date, rename, delete) — separate from Strategic

@@ -38,7 +38,10 @@ class TemplateMergeRequest(BaseModel):
     template_asset_id: int
     knowledge_filename: str
     prompt: str
-    brand_id: Optional[int] = None
+    # Obligatorio: un TemplateMergeJob sin brand_id queda invisible en el
+    # listado tenant-scoped (NULL IN (...) nunca es verdadero en SQL) y da
+    # 403 en check_job_tenant_access para roles no-superadmin.
+    brand_id: int
     display_name: Optional[str] = None
 
 
@@ -109,8 +112,7 @@ def create_template_merge_job(
     The template (a BrandAsset with category='pptx_template') and an already-
     ingested knowledge filename are combined to generate a new PPTX.
     """
-    if req.brand_id is not None:
-        check_brand_tenant_access(db, current_user, req.brand_id)
+    check_brand_tenant_access(db, current_user, req.brand_id)
     from tasks import celery_run_template_merge
 
     asset = db.query(models.BrandAsset).filter(
@@ -129,6 +131,7 @@ def create_template_merge_job(
 
     job = models.TemplateMergeJob(
         brand_id=req.brand_id,
+        owner_id=current_user.id,
         template_asset_id=req.template_asset_id,
         knowledge_filename=req.knowledge_filename,
         prompt=req.prompt,

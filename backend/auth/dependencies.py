@@ -94,13 +94,19 @@ def require_tenant_access(
 def check_job_tenant_access(db: Session, user: models.User, job) -> None:
     """
     Igual que check_brand_tenant_access pero a partir de un job ya cargado
-    por la ruta (GenerationJob o TemplateMergeJob, ambos con `brand_id`).
-    `job=None` se trata como 404 — el caller ya hizo el query, esto solo
-    decide si el resultado (existente o no) es visible para `user`.
+    por la ruta (GenerationJob o TemplateMergeJob, ambos con `brand_id` y
+    `owner_id`). `job=None` se trata como 404 — el caller ya hizo el query,
+    esto solo decide si el resultado (existente o no) es visible para `user`.
+
+    El owner del job siempre tiene acceso, incluso si `brand_id` es NULL o
+    quedó desalineado con su tenant actual (mismo fallback ya usado ad-hoc en
+    collaborators.py/reviews.py, centralizado acá).
     """
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     if user.role == models.UserRole.SUPERADMIN.value:
+        return
+    if getattr(job, "owner_id", None) is not None and job.owner_id == user.id:
         return
     brand = db.query(models.Brand).filter(models.Brand.id == job.brand_id).first() if job.brand_id else None
     if brand is None or brand.tenant_id is None or brand.tenant_id != user.tenant_id:

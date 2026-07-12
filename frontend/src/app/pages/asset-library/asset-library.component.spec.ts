@@ -13,6 +13,7 @@ import { of, throwError } from 'rxjs';
 import { AssetLibraryComponent } from './asset-library.component';
 import { BrandService, PortfolioItem, PortfolioPage } from '../../services/brand.service';
 import { CollaborationService } from '../../services/collaboration.service';
+import { PromptFavoritesService, PromptFavorite } from '../../services/prompt-favorites.service';
 import { AuthService } from '../../services/auth.service';
 
 describe('AssetLibraryComponent — Portfolio management', () => {
@@ -377,5 +378,120 @@ describe('AssetLibraryComponent — Presentation detail: reviews + collaborators
       expect(collabSpy.removeCollaborator).toHaveBeenCalledWith(5, 300);
       expect(collabSpy.getCollaborators).toHaveBeenCalledWith(5);
     });
+  });
+});
+
+describe('AssetLibraryComponent — Prompt Favorites tab (biblioteca-prompts-favoritos)', () => {
+  let fixture: ComponentFixture<AssetLibraryComponent>;
+  let component: AssetLibraryComponent;
+  let favoritesSpy: jasmine.SpyObj<PromptFavoritesService>;
+
+  const makeFavorite = (id: number, title: string, ownerEmail = 'me@example.com'): PromptFavorite => ({
+    id, title, prompt_text: `Prompt for ${title}`, prompt_metadata: null,
+    source_job_id: null, owner_email: ownerEmail, created_at: '2026-07-12T10:00:00', updated_at: '2026-07-12T10:00:00',
+  });
+
+  beforeEach(async () => {
+    const brandServiceSpy = jasmine.createSpyObj('BrandService', [
+      'getBrands', 'getLibraryImages', 'getLibraryBlueprints', 'getLibraryKnowledge', 'getLibraryPortfolios',
+    ]);
+    brandServiceSpy.getBrands.and.returnValue(of([]));
+    brandServiceSpy.getLibraryImages.and.returnValue(of([]));
+    brandServiceSpy.getLibraryBlueprints.and.returnValue(of([]));
+    brandServiceSpy.getLibraryKnowledge.and.returnValue(of([]));
+    brandServiceSpy.getLibraryPortfolios.and.returnValue(of({ items: [], total: 0, page: 1, page_size: 12 }));
+
+    const collabSpy = jasmine.createSpyObj('CollaborationService', [
+      'getReviews', 'getCollaborators', 'getUserDirectory',
+    ]);
+    collabSpy.getReviews.and.returnValue(of({ reviews: [], rating_average: null, rating_count: 0 }));
+    collabSpy.getCollaborators.and.returnValue(of([]));
+    collabSpy.getUserDirectory.and.returnValue(of([]));
+
+    favoritesSpy = jasmine.createSpyObj('PromptFavoritesService', [
+      'listFavorites', 'createFavorite', 'updateFavorite', 'deleteFavorite',
+    ]);
+    favoritesSpy.listFavorites.and.returnValue(of([makeFavorite(1, 'Q3 Deck')]));
+
+    await TestBed.configureTestingModule({
+      imports: [AssetLibraryComponent, HttpClientTestingModule],
+      providers: [
+        { provide: BrandService, useValue: brandServiceSpy },
+        { provide: CollaborationService, useValue: collabSpy },
+        { provide: PromptFavoritesService, useValue: favoritesSpy },
+        { provide: AuthService, useValue: { currentUser: { id: 100, role: 'cliente' } } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(AssetLibraryComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+  });
+
+  it('loads favorites when switching to the prompts tab', () => {
+    component.setTab('prompts');
+
+    expect(favoritesSpy.listFavorites).toHaveBeenCalled();
+    expect(component.favorites.length).toBe(1);
+    expect(component.favorites[0].title).toBe('Q3 Deck');
+  });
+
+  it('startEditFavorite() / cancelEditFavorite() toggle the inline editor state', () => {
+    component.setTab('prompts');
+    const fav = component.favorites[0];
+
+    component.startEditFavorite(fav);
+    expect(component.editingFavoriteId).toBe(fav.id);
+    expect(component.editFavoriteTitle).toBe(fav.title);
+    expect(component.editFavoritePromptText).toBe(fav.prompt_text);
+
+    component.cancelEditFavorite();
+    expect(component.editingFavoriteId).toBeNull();
+  });
+
+  it('confirmEditFavorite() updates the item in place and closes the editor', () => {
+    component.setTab('prompts');
+    const fav = component.favorites[0];
+    component.startEditFavorite(fav);
+    component.editFavoriteTitle = 'Renamed';
+    component.editFavoritePromptText = 'New prompt text';
+    favoritesSpy.updateFavorite.and.returnValue(of({ ...fav, title: 'Renamed', prompt_text: 'New prompt text' }));
+
+    component.confirmEditFavorite();
+
+    expect(favoritesSpy.updateFavorite).toHaveBeenCalledWith(fav.id, { title: 'Renamed', prompt_text: 'New prompt text' });
+    expect(component.favorites[0].title).toBe('Renamed');
+    expect(component.editingFavoriteId).toBeNull();
+  });
+
+  it('confirmEditFavorite() does nothing when the title is blank', () => {
+    component.setTab('prompts');
+    component.startEditFavorite(component.favorites[0]);
+    component.editFavoriteTitle = '   ';
+
+    component.confirmEditFavorite();
+
+    expect(favoritesSpy.updateFavorite).not.toHaveBeenCalled();
+  });
+
+  it('deleteFavorite() asks for confirmation and removes the item from the list on success', () => {
+    spyOn(window, 'confirm').and.returnValue(true);
+    component.setTab('prompts');
+    favoritesSpy.deleteFavorite.and.returnValue(of({ deleted: true, id: 1 }));
+
+    component.deleteFavorite(component.favorites[0]);
+
+    expect(favoritesSpy.deleteFavorite).toHaveBeenCalledWith(1);
+    expect(component.favorites.length).toBe(0);
+  });
+
+  it('deleteFavorite() does nothing when the user cancels the confirmation', () => {
+    spyOn(window, 'confirm').and.returnValue(false);
+    component.setTab('prompts');
+
+    component.deleteFavorite(component.favorites[0]);
+
+    expect(favoritesSpy.deleteFavorite).not.toHaveBeenCalled();
+    expect(component.favorites.length).toBe(1);
   });
 });

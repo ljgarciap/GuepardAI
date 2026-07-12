@@ -30,7 +30,7 @@ The main presentation-generation workflow:
    PPTX or Executive Art PDF), and **ENGINE TIER** (Free grammar layouts or
    Premium layout clone).
 4. Write your request in the command box at the bottom, or use one of the
-   three prompt-support cards above it to build a stronger one:
+   four prompt-support cards above it to build a stronger one:
    - **Reuse Previous Prompt** — pick an earlier presentation and reload the
      prompt it was generated from (only presentations that have a saved
      prompt show up here).
@@ -44,11 +44,16 @@ The main presentation-generation workflow:
      assemble it into the command box (with a confirmation if you already
      had text there, so nothing is silently overwritten). The same panel has
      a short written guide on what makes a good prompt.
+   - **Load from Favorites** — pick from prompts saved earlier (yours, plus
+     any your teammates saved — see Strategic Assets → Prompts below) and
+     reload it into the command box.
 
    Optionally toggle "Use AI generated images" for AI-generated imagery when
    nothing suitable exists in your asset library.
-5. Click **CREATE PRESENTATION** and watch the live log until it finishes.
-6. **DOWNLOAD STRATEGIC PORTFOLIO** downloads the file. The first download
+5. **Saving a favorite**: once you have text in the command box, click
+   **☆ Save as favorite** next to it and give it a short title.
+6. Click **CREATE PRESENTATION** and watch the live log until it finishes.
+7. **DOWNLOAD STRATEGIC PORTFOLIO** downloads the file. The first download
    prompts a quick 1–5 star rating with an optional comment — a separate,
    simpler mechanism from the collaborative reviews described below.
 
@@ -76,10 +81,17 @@ is no delete action here.
 
 ### Strategic Assets (`/library`)
 
-Four tabs — Images, Blueprints, Knowledge, Portfolios — scoped to your
-organization's brands via the scope dropdown. Portfolios is where you
-search, rename, rate, view feedback, download, or permanently delete past
-presentations, with search-by-name and date-range filters plus pagination.
+Five tabs — Images, Blueprints, Knowledge, Portfolios, Prompts — scoped to
+your organization's brands via the scope dropdown (Prompts is the exception:
+it's not brand-scoped, see below). Portfolios is where you search, rename,
+rate, view feedback, download, or permanently delete past presentations,
+with search-by-name and date-range filters plus pagination.
+
+**Prompts** lists every favorite saved by anyone in your organization (not
+just yours — this is the one place where being an admin gives you broader
+visibility than a `cliente`), with who saved each one. You can only edit or
+delete the ones you saved yourself — a teammate's favorite is view-only for
+you, same restriction they'd have on yours.
 
 Each item also has a **REVIEWS & TEAM** button that opens a presentation's
 collaborative detail:
@@ -128,8 +140,9 @@ Four tabs, visible only to `admin`/`superadmin`:
 
 Keeps an existing PPTX's visual design and only replaces its text content
 from a knowledge-base document — an alternative to the fully AI-designed
-Synthesis Studio flow. Upload or reuse a `.pptx` template, pick a knowledge
-source, write a content directive, and download the result. The "THIS
+Synthesis Studio flow. Pick a **brand** first (required — jobs without one
+won't save to your history), then upload or reuse a `.pptx` template, pick a
+knowledge source, write a content directive, and download the result. The "THIS
 SESSION" list only covers jobs launched in the current browser session; switch
 to the **HISTORY** tab for a durable, searchable list of every completed merge
 (search by name, filter by date, rename, delete) — this is separate from

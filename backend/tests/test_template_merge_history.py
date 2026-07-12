@@ -43,9 +43,10 @@ def _make_template_asset(db, brand_id=None, local_path="templates/test_deck.pptx
 
 
 def _make_job(db, brand_id, asset_id, *, days_ago=0, display_name=None, filename=None,
-              status="completed", output_path=None):
+              status="completed", output_path=None, owner_id=None):
     job = models.TemplateMergeJob(
         brand_id=brand_id,
+        owner_id=owner_id,
         template_asset_id=asset_id,
         knowledge_filename="doc.pdf",
         prompt="test",
@@ -329,5 +330,33 @@ class TestTemplateMergeHistoryTenantScoping:
             json={"display_name": "hacked"},
             headers=self._headers(intruder),
         )
+
+        assert resp.status_code == 403
+
+    def test_status_accessible_by_owner_despite_null_brand_id(self, scoping_client, db_session):
+        """Regresión: un job huérfano (brand_id=NULL, pre-fix) sigue siendo
+        visible para su owner vía el fallback en check_job_tenant_access,
+        aunque no haya brand/tenant al que anclarse."""
+        tenant = self._make_tenant(db_session, "TmOwnerFallback")
+        owner = self._make_user(db_session, models.UserRole.CLIENTE.value, tenant.id)
+        asset = _make_template_asset(db_session)
+        job = _make_job(db_session, None, asset.id, filename="orphan.pptx", owner_id=owner.id)
+        db_session.commit()
+
+        resp = scoping_client.get(f"/api/template-merge/jobs/{job.id}", headers=self._headers(owner))
+
+        assert resp.status_code == 200
+
+    def test_status_null_brand_id_still_rejects_non_owner(self, scoping_client, db_session):
+        """El fallback de owner_id no debe abrir el job a cualquiera: un
+        no-owner sigue recibiendo 403 si brand_id es NULL."""
+        tenant = self._make_tenant(db_session, "TmOrphanIntruder")
+        owner = self._make_user(db_session, models.UserRole.CLIENTE.value, tenant.id)
+        intruder = self._make_user(db_session, models.UserRole.CLIENTE.value, tenant.id)
+        asset = _make_template_asset(db_session)
+        job = _make_job(db_session, None, asset.id, filename="orphan2.pptx", owner_id=owner.id)
+        db_session.commit()
+
+        resp = scoping_client.get(f"/api/template-merge/jobs/{job.id}", headers=self._headers(intruder))
 
         assert resp.status_code == 403

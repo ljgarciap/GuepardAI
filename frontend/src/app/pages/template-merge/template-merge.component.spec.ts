@@ -35,9 +35,10 @@ describe('TemplateMergeComponent — History tab', () => {
 
   beforeEach(async () => {
     brandServiceSpy = jasmine.createSpyObj('BrandService', [
-      'getTemplateMergeHistory', 'renameTemplateMergeJob', 'deleteTemplateMergeJob',
+      'getTemplateMergeHistory', 'renameTemplateMergeJob', 'deleteTemplateMergeJob', 'getBrands',
     ]);
     brandServiceSpy.getTemplateMergeHistory.and.returnValue(of(makePage([makeItem(1, 'Merge A')], 1)));
+    brandServiceSpy.getBrands.and.returnValue(of([{ id: 1, name: 'Tesco' }, { id: 2, name: 'Acme' }]));
 
     await TestBed.configureTestingModule({
       imports: [TemplateMergeComponent, HttpClientTestingModule],
@@ -170,6 +171,36 @@ describe('TemplateMergeComponent — History tab', () => {
     component.confirmHistoryRename();
 
     expect(brandServiceSpy.renameTemplateMergeJob).not.toHaveBeenCalled();
+  });
+
+  // ── Brand selection & submit() ─────────────────────────────────────────────
+
+  describe('brand selection & submit()', () => {
+    it('loads brands and does not auto-select when there is more than one', () => {
+      expect(component.brands.length).toBe(2);
+      expect(component.selectedBrandId).toBeNull();
+    });
+
+    it('canSubmit is false without a selected brand even if the rest of the form is filled', () => {
+      component.selectedTemplateId = 1;
+      component.selectedKnowledge = 'doc.pdf';
+      component.prompt = 'Some prompt';
+
+      expect(component.canSubmit).toBeFalse();
+    });
+
+    it('submit() includes brand_id in the POST payload', () => {
+      component.selectedBrandId = 2;
+      component.selectedTemplateId = 1;
+      component.selectedKnowledge = 'doc.pdf';
+      component.prompt = 'Some prompt';
+
+      component.submit();
+
+      const req = httpMock.expectOne(r => r.url.endsWith('/template-merge/jobs') && r.method === 'POST');
+      expect(req.request.body.brand_id).toBe(2);
+      req.flush({ job_id: 1, status: 'pending', message: 'ok' });
+    });
   });
 
   // ── Merge report summary (v2) ──────────────────────────────────────────────

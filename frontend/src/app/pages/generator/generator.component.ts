@@ -2,6 +2,7 @@ import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BrandService, PortfolioItem, PromptIntent, PromptMetadata } from '../../services/brand.service';
+import { PromptFavoritesService, PromptFavorite } from '../../services/prompt-favorites.service';
 import { AuthService } from '../../services/auth.service';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { interval, switchMap, takeWhile } from 'rxjs';
@@ -18,6 +19,7 @@ import { PromptComposerComponent } from '../../components/generator/prompt-compo
 })
 export class GeneratorComponent implements OnInit {
   brandService = inject(BrandService);
+  promptFavoritesService = inject(PromptFavoritesService);
   authService = inject(AuthService);
   sanitizer = inject(DomSanitizer);
 
@@ -71,6 +73,16 @@ export class GeneratorComponent implements OnInit {
 
   showComposerModal: boolean = false;
   composerInitialValues: Partial<PromptMetadata> | null = null;
+
+  // --- AYUDA 4: Prompts favoritos (biblioteca-prompts-favoritos) ---
+  showFavoritesModal: boolean = false;
+  favoritesList: PromptFavorite[] = [];
+  loadingFavorites: boolean = false;
+
+  showSaveFavoriteModal: boolean = false;
+  saveFavoriteTitle: string = '';
+  savingFavorite: boolean = false;
+  saveFavoriteError: string = '';
 
   ngOnInit() {
     this.loadBrands();
@@ -206,6 +218,51 @@ export class GeneratorComponent implements OnInit {
     if (!this.applyPromptText(payload.text)) return;
     this.promptMetadata = payload.metadata;
     this.showComposerModal = false;
+  }
+
+  // --- AYUDA 4: Prompts favoritos ---
+  openFavoritesModal() {
+    this.showFavoritesModal = true;
+    this.loadingFavorites = true;
+    this.promptFavoritesService.listFavorites().subscribe({
+      next: (res) => {
+        this.favoritesList = res || [];
+        this.loadingFavorites = false;
+      },
+      error: () => { this.loadingFavorites = false; }
+    });
+  }
+
+  useFavorite(fav: PromptFavorite) {
+    if (!this.applyPromptText(fav.prompt_text)) return;
+    this.promptMetadata = fav.prompt_metadata;
+    this.showFavoritesModal = false;
+  }
+
+  openSaveFavoriteModal() {
+    this.saveFavoriteTitle = '';
+    this.saveFavoriteError = '';
+    this.showSaveFavoriteModal = true;
+  }
+
+  confirmSaveFavorite() {
+    if (!this.saveFavoriteTitle.trim()) return;
+    this.savingFavorite = true;
+    this.saveFavoriteError = '';
+    this.promptFavoritesService.createFavorite({
+      title: this.saveFavoriteTitle.trim(),
+      prompt_text: this.prompt,
+      prompt_metadata: this.promptMetadata,
+    }).subscribe({
+      next: () => {
+        this.savingFavorite = false;
+        this.showSaveFavoriteModal = false;
+      },
+      error: () => {
+        this.savingFavorite = false;
+        this.saveFavoriteError = 'Could not save this favorite. Please try again.';
+      }
+    });
   }
 
   generate() {

@@ -30,6 +30,47 @@ cuando el guard esté apagado (ejecución manual con los scripts de `utils/`).
 
 ---
 
+## Iteración 9 — Hotfix: Template Merge jobs huérfanos (tenant scoping) (2026-07-12)
+
+**Hallazgo** (reportado por revisión de arquitectura externa, verificado contra
+código): `template-merge.component.ts::submit()` nunca enviaba `brand_id` al
+crear un job — todo `TemplateMergeJob` se creaba con `brand_id=NULL`. Esto
+rompía dos cosas para roles no-superadmin: (1) el listado de historial
+(`brand_id.in_(tenant_ids)` — `NULL IN (...)` nunca es verdadero en SQL, el job
+queda invisible aunque el usuario recargue), y (2) `check_job_tenant_access`
+devolvía 403 al hacer polling de estado o descargar el propio job recién
+creado (`brand=None` porque `job.brand_id` era NULL).
+
+**Sin comandos manuales.** Alineación automática al arrancar:
+- Columna `template_merge_jobs.owner_id` (nullable) → auto-ALTER genérico vía
+  `reconcile_additive_columns()`.
+- Sin alineación de datos para los jobs históricos: **mismo criterio ya
+  establecido para `GenerationJob.owner_id`** ("jobs históricos no tienen owner
+  conocido — no se hace backfill, gap aceptado"). No hay forma de determinar
+  a qué tenant pertenece un `TemplateMergeJob` con `brand_id=NULL` creado antes
+  de este fix (la columna `owner_id` no existía todavía) — cualquier
+  reasignación sería una suposición, no un hecho verificable. Estos jobs
+  quedan visibles solo para `superadmin` (comportamiento ya existente),
+  documentado acá como gap conocido y aceptado. Decisión confirmada con Luis
+  el 2026-07-12.
+
+**Corrección de código** (no requiere pasos manuales, va en el mismo deploy):
+- `TemplateMergeRequest.brand_id` pasó de opcional a obligatorio (422 si falta).
+- `create_template_merge_job` setea `owner_id=current_user.id`.
+- `check_job_tenant_access` (`auth/dependencies.py`) ahora tiene fallback
+  centralizado por `owner_id` — el dueño de un job siempre puede verlo, aunque
+  `brand_id` sea NULL o esté desalineado (mismo patrón ya usado ad-hoc en
+  `collaborators.py`/`reviews.py`, ahora compartido por `GenerationJob` y
+  `TemplateMergeJob`).
+- Frontend: nuevo selector de brand en `/template-merge` (Step 01), obligatorio
+  para habilitar "Generate".
+
+**Verificación**: `SELECT count(*) FROM template_merge_jobs WHERE brand_id IS NULL;`
+— cualquier fila devuelta por esta query de acá en adelante sería una
+regresión (antes del fix, era esperable que devolviera >0).
+
+---
+
 ## Iteración 8 — Template Merge v2 Fase 1+2 (2026-07-07)
 
 **Sin comandos manuales.** Convergencia automática al arrancar:

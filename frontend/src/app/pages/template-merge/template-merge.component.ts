@@ -64,6 +64,8 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
   private brandService = inject(BrandService);
 
   // ── Form state ──────────────────────────────────────────────────────────────
+  brands: any[] = [];
+  selectedBrandId: number | null = null;
   selectedTemplateId: number | null = null;
   selectedKnowledge: string = '';
   prompt: string = '';
@@ -103,6 +105,7 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
   private historySearchSub?: Subscription;
 
   ngOnInit(): void {
+    this.loadBrands();
     this.loadTemplates();
     this.loadKnowledgeSources();
     this.historySearchSub = this.historySearch$
@@ -119,6 +122,16 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
   }
 
   // ── Data loading ─────────────────────────────────────────────────────────
+
+  loadBrands(): void {
+    this.brandService.getBrands().subscribe({
+      next: (res: any[]) => {
+        this.brands = res.filter((b: any) => b.id !== -1);
+        if (this.brands.length === 1) this.selectedBrandId = this.brands[0].id;
+      },
+      error: () => this.brands = [],
+    });
+  }
 
   loadTemplates(): void {
     this.http.get<TemplateAsset[]>(`${environment.apiUrl}/template-merge/templates`)
@@ -190,6 +203,7 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
 
   get canSubmit(): boolean {
     return !!(
+      this.selectedBrandId &&
       this.selectedTemplateId &&
       this.selectedKnowledge &&
       this.prompt.trim() &&
@@ -208,6 +222,7 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
       knowledge_filename: this.selectedKnowledge,
       prompt: this.prompt.trim(),
       display_name: this.displayName.trim() || null,
+      brand_id: this.selectedBrandId,
     };
 
     this.http.post<any>(`${environment.apiUrl}/template-merge/jobs`, payload)

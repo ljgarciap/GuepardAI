@@ -261,6 +261,54 @@
   text-align: left;
 }
 
+/* Prompt Support — composer modal (fields + guide side by side, own width so it doesn't affect the picker/intent modals above) */
+/* Selector combined with .feedback-modal-card so specificity wins the tie against the base card's own width/max-width, regardless of source order */
+.feedback-modal-card.composer-modal-card {
+  width: 94%;
+  max-width: 1440px;
+  text-align: left;
+}
+
+.composer-modal-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  align-items: stretch;
+}
+
+.composer-modal-guide {
+  border-top: none;
+  padding-top: 0;
+  border-left: none;
+  margin-top: 0;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-color);
+  border-radius: 14px;
+  padding: 20px;
+}
+
+.composer-modal-guide-title {
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: var(--text-title);
+  margin-bottom: 14px;
+}
+
+@media (max-width: 880px) {
+  .feedback-modal-card.composer-modal-card {
+    max-width: 640px;
+  }
+
+  .composer-modal-body {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .composer-modal-guide {
+    margin-top: 0;
+  }
+}
+
 .wide-modal .feedback-modal-header {
   text-align: left;
 }
@@ -379,13 +427,6 @@
   border-top: 1px solid var(--border-color);
   padding-top: 16px;
   text-align: left;
-}
-
-.static-guide summary {
-  font-weight: 800;
-  font-size: 0.8rem;
-  color: var(--text-title);
-  cursor: pointer;
 }
 
 .static-guide ul {
@@ -826,6 +867,8 @@ input:checked + .slider:before {
   padding: 36px;
   width: 90%;
   max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
   box-shadow: 0 30px 70px rgba(0, 0, 0, 0.15);
   position: relative;
   text-align: center;

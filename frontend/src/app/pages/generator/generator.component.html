@@ -281,31 +281,33 @@
 
   <!-- AYUDA 3: COMPOSER + STATIC GUIDE MODAL -->
   <div class="feedback-modal-overlay" *ngIf="showComposerModal">
-    <div class="feedback-modal-card glass-panel slideUp wide-modal">
+    <div class="feedback-modal-card glass-panel slideUp composer-modal-card">
       <button class="btn-close" (click)="showComposerModal = false">×</button>
       <div class="feedback-modal-header">
         <h4>Build Your Prompt</h4>
         <p class="question">A strong prompt = Objective + Tone + Audience + Slide type + Story + Visual rules + Output format.</p>
       </div>
 
-      <app-prompt-composer
-        [initialValues]="composerInitialValues"
-        (insert)="onComposerInsert($event)">
-      </app-prompt-composer>
+      <div class="composer-modal-body">
+        <app-prompt-composer
+          [initialValues]="composerInitialValues"
+          (insert)="onComposerInsert($event)">
+        </app-prompt-composer>
 
-      <details class="static-guide">
-        <summary>How to write a good prompt</summary>
-        <ul>
-          <li><strong>Objective</strong> — what is this presentation for? e.g. "CEO Board Update on Q3 performance".</li>
-          <li><strong>Tone</strong> — Factual, engaging, optimistic, sense of urgency, financial...</li>
-          <li><strong>Audience</strong> — Internal team, Board, CEO, client...</li>
-          <li><strong>Slide type</strong> — cover, data grid, pillars, case study...</li>
-          <li><strong>Story</strong> — customer-centric, creative, data-driven narrative...</li>
-          <li><strong>Visual rules</strong> — use only library assets, use external assets, no restrictions...</li>
-          <li><strong>Output format</strong> — data driven, storytelling, creative, action oriented...</li>
-          <li>Avoid buzzwords — be specific instead of generic corporate language.</li>
-        </ul>
-      </details>
+        <div class="static-guide composer-modal-guide">
+          <div class="composer-modal-guide-title">How to write a good prompt</div>
+          <ul>
+            <li><strong>Objective</strong> — what is this presentation for? e.g. "CEO Board Update on Q3 performance".</li>
+            <li><strong>Tone</strong> — Factual, engaging, optimistic, sense of urgency, financial...</li>
+            <li><strong>Audience</strong> — Internal team, Board, CEO, client...</li>
+            <li><strong>Slide type</strong> — cover, data grid, pillars, case study...</li>
+            <li><strong>Story</strong> — customer-centric, creative, data-driven narrative...</li>
+            <li><strong>Visual rules</strong> — use only library assets, use external assets, no restrictions...</li>
+            <li><strong>Output format</strong> — data driven, storytelling, creative, action oriented...</li>
+            <li>Avoid buzzwords — be specific instead of generic corporate language.</li>
+          </ul>
+        </div>
+      </div>
     </div>
   </div>
 </div>

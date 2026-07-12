@@ -117,12 +117,25 @@
           </div>
         </div>
 
+        <app-prompt-support
+          #promptSupport
+          mode="template-merge"
+          [brandId]="selectedBrandId"
+          [currentText]="prompt"
+          [currentMetadata]="promptMetadata"
+          (applyText)="onPromptSupportApply($event)"
+          (loadError)="submitError = $event">
+        </app-prompt-support>
+
         <textarea
           [(ngModel)]="prompt"
           class="enterprise-textarea"
           rows="4"
           placeholder="e.g. Create a presentation for the Tesco Annual Results highlighting financial performance, market position and sustainability initiatives.">
         </textarea>
+        <button class="btn-mini" [disabled]="!prompt" (click)="promptSupport.openSaveFavoriteModal()">
+          ☆ Save as favorite
+        </button>
       </div>
 
       <!-- Step 5: Optional display name -->

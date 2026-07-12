@@ -236,6 +236,15 @@ class TestJobStatus:
         assert body["status"] == "pending"
         assert body["output_url"] is None
 
+    def test_status_exposes_prompt_for_reuse(self, client, db_session, sample_brand):
+        """Reuse Previous Prompt (modo template-merge) depende de este campo."""
+        asset = _make_template_asset(db_session, brand_id=sample_brand.id)
+        job = _make_job(db_session, asset.id, brand_id=sample_brand.id)
+
+        res = client.get(f"/api/template-merge/jobs/{job.id}")
+
+        assert res.json()["prompt"] == "Write about our Q3 results"
+
     def test_status_completed_job_exposes_output_url(self, client, db_session, sample_brand, storage_tree):
         asset = _make_template_asset(db_session, brand_id=sample_brand.id)
         out_dir = st.job_dir("tm_status_test")

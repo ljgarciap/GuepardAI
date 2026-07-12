@@ -53,6 +53,9 @@ const OUTPUT_FORMAT_OPTIONS: SelectOption[] = [
 })
 export class PromptComposerComponent implements OnChanges {
   @Input() initialValues: Partial<PromptMetadata> | null = null;
+  /** 'template-merge' oculta Slide Type/Visual Rules — ese pipeline no elige
+   * layout ni assets, el template ya los fija (docs/designs/biblioteca-prompts-favoritos.md). */
+  @Input() mode: 'synthesis' | 'template-merge' = 'synthesis';
   @Output() insert = new EventEmitter<{ text: string; metadata: PromptMetadata }>();
 
   readonly OTHER = OTHER;

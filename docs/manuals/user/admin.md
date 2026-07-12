@@ -142,8 +142,15 @@ Keeps an existing PPTX's visual design and only replaces its text content
 from a knowledge-base document — an alternative to the fully AI-designed
 Synthesis Studio flow. Pick a **brand** first (required — jobs without one
 won't save to your history), then upload or reuse a `.pptx` template, pick a
-knowledge source, write a content directive, and download the result. The "THIS
-SESSION" list only covers jobs launched in the current browser session; switch
+knowledge source, write a content directive, and download the result.
+
+Same 4 prompt-support cards as Synthesis Studio here — **Reuse Previous
+Prompt** pulls from past Template Merge jobs instead of Synthesis Studio
+ones, the composer under **Guide / Write My Own** skips Slide Type and
+Visual Rules (no layout/asset choice in this pipeline — your template
+already fixes both), and **Favorites** are shared between both screens.
+
+The "THIS SESSION" list only covers jobs launched in the current browser session; switch
 to the **HISTORY** tab for a durable, searchable list of every completed merge
 (search by name, filter by date, rename, delete) — this is separate from
 Strategic Assets → Portfolios, which only lists Synthesis Studio output.

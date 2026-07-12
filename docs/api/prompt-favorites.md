@@ -103,14 +103,18 @@ copiado en `prompt_text`/`prompt_metadata`).
 
 ## Frontend — dónde vive esto
 
-- `generator.component` (`/`): 4ta tarjeta "Load from Favorites" (junto a
-  Reuse/Intent Library/Guide) — lista los favoritos visibles y aplica
-  `prompt_text`/`prompt_metadata` con el mismo flujo de confirmación que las
-  otras tres ayudas (`applyPromptText`). Botón "☆ Save as favorite" junto al
-  textarea del prompt (`command-area`), abre un modal mínimo que solo pide
-  `title` y llama `POST /api/prompts/favorites` con el prompt actual.
+- `PromptSupportComponent` (`components/prompt-support/`) — 4ta tarjeta
+  "Load from Favorites" (junto a Reuse/Intent Library/Guide) y el botón
+  "☆ Save as favorite". Compartido entre `generator.component` (`/`,
+  `mode="synthesis"`) y `template-merge.component` (`/template-merge`,
+  `mode="template-merge"`) — un favorito guardado desde cualquiera de las dos
+  pantallas aparece en ambas (ver
+  `docs/designs/biblioteca-prompts-favoritos.md` §"Extensión: facilidad
+  compartida" para el diseño completo de este componente).
 - `asset-library.component` (`/library`): pestaña "PROMPTS" — lista con
-  columna Owner, edición inline (título + texto), borrado con `confirm()`
-  nativo.
-- Servicio: `services/prompt-favorites.service.ts` (separado de
-  `brand.service.ts`, mismo criterio que `collaboration.service.ts`).
+  columna Owner, edición inline (título + texto), borrado con confirmación
+  vía `ConfirmDialogService` (modal propio, no `window.confirm()`).
+- Servicios: `services/prompt-favorites.service.ts` (separado de
+  `brand.service.ts`, mismo criterio que `collaboration.service.ts`),
+  `services/confirm-dialog.service.ts` (modal de confirmación compartido por
+  toda la app, no exclusivo de esta feature).

@@ -24,7 +24,7 @@
     <input *ngIf="audienceSelect === OTHER" type="text" [(ngModel)]="audienceOther" placeholder="Custom audience" class="composer-input">
   </div>
 
-  <div class="composer-field">
+  <div class="composer-field" *ngIf="mode === 'synthesis'">
     <label>SLIDE TYPE</label>
     <input type="text" [(ngModel)]="slideType" placeholder="e.g. cover, data grid, pillars" class="composer-input">
   </div>
@@ -39,7 +39,7 @@
     <input *ngIf="storySelect === OTHER" type="text" [(ngModel)]="storyOther" placeholder="Custom story style" class="composer-input">
   </div>
 
-  <div class="composer-field">
+  <div class="composer-field" *ngIf="mode === 'synthesis'">
     <label>VISUAL RULES</label>
     <select [(ngModel)]="visualRulesSelect" class="composer-select">
       <option value="" disabled>Select...</option>

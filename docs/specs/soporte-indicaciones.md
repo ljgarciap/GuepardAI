@@ -5,6 +5,18 @@
 **Status**: Draft
 **Project**: GuepardAI
 
+**Actualización (2026-07-12)**: las 3 ayudas originales de esta spec, más la
+4ta (Favoritos, `docs/specs/biblioteca-prompts-favoritos.md`), pasaron de ser
+exclusivas de Synthesis Studio a ser una facilidad **compartida** con
+Template Merge — Luis pidió no tener dos implementaciones separadas de "lo
+mismo". El componente `PromptSupportComponent`
+(`frontend/src/app/components/prompt-support/`) reemplaza el markup/estado
+que antes vivía solo en `generator.component`, parametrizado por
+`mode: 'synthesis' | 'template-merge'`. Ver
+`docs/designs/biblioteca-prompts-favoritos.md` §"Extensión: facilidad
+compartida" para el diseño completo de este cambio (incluye el reemplazo de
+`window.confirm()` por un modal propio, `ConfirmDialogService`).
+
 ## Problem
 
 Hoy el punto de partida de una generación es un único `<textarea>` de texto libre

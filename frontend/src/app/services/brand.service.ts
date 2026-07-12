@@ -76,6 +76,12 @@ export interface TemplateMergeHistoryPage {
   page_size: number;
 }
 
+export interface TemplateMergeJobDetail {
+  job_id: number;
+  display_name: string | null;
+  prompt: string;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -227,6 +233,10 @@ export class BrandService {
 
   deleteTemplateMergeJob(jobId: number): Observable<{ deleted: boolean; id: number }> {
     return this.http.delete<{ deleted: boolean; id: number }>(`${this.apiUrl}/template-merge/jobs/${jobId}`);
+  }
+
+  getTemplateMergeJobDetail(jobId: number): Observable<TemplateMergeJobDetail> {
+    return this.http.get<TemplateMergeJobDetail>(`${this.apiUrl}/template-merge/jobs/${jobId}`);
   }
 
   resetDatabase(): Observable<any> {

@@ -1,25 +1,23 @@
 import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { BrandService, PortfolioItem, PromptIntent, PromptMetadata } from '../../services/brand.service';
-import { PromptFavoritesService, PromptFavorite } from '../../services/prompt-favorites.service';
+import { BrandService, PromptMetadata } from '../../services/brand.service';
 import { AuthService } from '../../services/auth.service';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { interval, switchMap, takeWhile } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { triggerBlobDownload } from '../../utils/download.util';
-import { PromptComposerComponent } from '../../components/generator/prompt-composer/prompt-composer.component';
+import { PromptSupportComponent } from '../../components/prompt-support/prompt-support.component';
 
 @Component({
   selector: 'app-generator',
   standalone: true,
-  imports: [CommonModule, FormsModule, PromptComposerComponent],
+  imports: [CommonModule, FormsModule, PromptSupportComponent],
   templateUrl: './generator.component.html',
   styleUrl: './generator.component.css'
 })
 export class GeneratorComponent implements OnInit {
   brandService = inject(BrandService);
-  promptFavoritesService = inject(PromptFavoritesService);
   authService = inject(AuthService);
   sanitizer = inject(DomSanitizer);
 
@@ -60,29 +58,10 @@ export class GeneratorComponent implements OnInit {
   progress: number = 0;
   currentStatus: string = '';
 
-  // --- PROMPT SUPPORT (soporte-indicaciones) ---
+  // --- PROMPT SUPPORT (soporte-indicaciones, biblioteca-prompts-favoritos) ---
+  // Las 4 ayudas viven en <app-prompt-support> (compartido con Template Merge);
+  // este componente solo guarda el resultado aplicado.
   promptMetadata: PromptMetadata | null = null;
-
-  showReuseModal: boolean = false;
-  reusablePortfolios: PortfolioItem[] = [];
-  loadingReusable: boolean = false;
-
-  showIntentModal: boolean = false;
-  promptIntents: PromptIntent[] = [];
-  loadingIntents: boolean = false;
-
-  showComposerModal: boolean = false;
-  composerInitialValues: Partial<PromptMetadata> | null = null;
-
-  // --- AYUDA 4: Prompts favoritos (biblioteca-prompts-favoritos) ---
-  showFavoritesModal: boolean = false;
-  favoritesList: PromptFavorite[] = [];
-  loadingFavorites: boolean = false;
-
-  showSaveFavoriteModal: boolean = false;
-  saveFavoriteTitle: string = '';
-  savingFavorite: boolean = false;
-  saveFavoriteError: string = '';
 
   ngOnInit() {
     this.loadBrands();
@@ -151,118 +130,9 @@ export class GeneratorComponent implements OnInit {
     this.prompt = text;
   }
 
-  /** Reemplaza el textarea con confirmación si ya había contenido manual (no se pierde trabajo en silencio).
-   * Devuelve false si el usuario canceló — los callers no deben aplicar el resto de su efecto (metadata, cerrar modal) en ese caso. */
-  private applyPromptText(text: string): boolean {
-    if (this.prompt.trim() && !confirm('This will replace your current prompt text. Continue?')) {
-      return false;
-    }
-    this.prompt = text;
-    return true;
-  }
-
-  // --- AYUDA 1: Reutilizar indicación anterior ---
-  openReuseModal() {
-    this.showReuseModal = true;
-    this.loadingReusable = true;
-    this.brandService.getLibraryPortfolios(this.selectedBrandId || undefined, { pageSize: 50 }).subscribe({
-      next: (res) => {
-        this.reusablePortfolios = (res.items || []).filter(p => p.has_prompt);
-        this.loadingReusable = false;
-      },
-      error: () => { this.loadingReusable = false; }
-    });
-  }
-
-  useAsBase(jobId: number) {
-    this.brandService.getPortfolioDetail(jobId).subscribe({
-      next: (detail) => {
-        if (!this.applyPromptText(detail.prompt)) return;
-        this.promptMetadata = detail.prompt_metadata;
-        this.showReuseModal = false;
-      },
-      error: () => { this.errorMessage = 'Could not load that presentation as a base.'; }
-    });
-  }
-
-  // --- AYUDA 2: Biblioteca de intenciones ---
-  openIntentModal() {
-    this.showIntentModal = true;
-    this.loadingIntents = true;
-    this.brandService.getPromptIntents().subscribe({
-      next: (res) => {
-        this.promptIntents = res || [];
-        this.loadingIntents = false;
-      },
-      error: () => { this.loadingIntents = false; }
-    });
-  }
-
-  selectIntent(intent: PromptIntent) {
-    this.composerInitialValues = {
-      objective: intent.label,
-      tone: intent.expected_tone,
-      story: intent.narrative_style,
-      slide_type: intent.preferred_layouts?.[0] || '',
-    };
-    this.showIntentModal = false;
-    this.showComposerModal = true;
-  }
-
-  // --- AYUDA 3: Compositor guiado + guía ---
-  openComposerModal() {
-    this.showComposerModal = true;
-  }
-
-  onComposerInsert(payload: { text: string; metadata: PromptMetadata }) {
-    if (!this.applyPromptText(payload.text)) return;
-    this.promptMetadata = payload.metadata;
-    this.showComposerModal = false;
-  }
-
-  // --- AYUDA 4: Prompts favoritos ---
-  openFavoritesModal() {
-    this.showFavoritesModal = true;
-    this.loadingFavorites = true;
-    this.promptFavoritesService.listFavorites().subscribe({
-      next: (res) => {
-        this.favoritesList = res || [];
-        this.loadingFavorites = false;
-      },
-      error: () => { this.loadingFavorites = false; }
-    });
-  }
-
-  useFavorite(fav: PromptFavorite) {
-    if (!this.applyPromptText(fav.prompt_text)) return;
-    this.promptMetadata = fav.prompt_metadata;
-    this.showFavoritesModal = false;
-  }
-
-  openSaveFavoriteModal() {
-    this.saveFavoriteTitle = '';
-    this.saveFavoriteError = '';
-    this.showSaveFavoriteModal = true;
-  }
-
-  confirmSaveFavorite() {
-    if (!this.saveFavoriteTitle.trim()) return;
-    this.savingFavorite = true;
-    this.saveFavoriteError = '';
-    this.promptFavoritesService.createFavorite({
-      title: this.saveFavoriteTitle.trim(),
-      prompt_text: this.prompt,
-      prompt_metadata: this.promptMetadata,
-    }).subscribe({
-      next: () => {
-        this.savingFavorite = false;
-        this.showSaveFavoriteModal = false;
-      },
-      error: () => {
-        this.savingFavorite = false;
-        this.saveFavoriteError = 'Could not save this favorite. Please try again.';
-      }
-    });
+  onPromptSupportApply(event: { text: string; metadata: PromptMetadata | null }) {
+    this.prompt = event.text;
+    this.promptMetadata = event.metadata;
   }
 
   generate() {

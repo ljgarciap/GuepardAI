@@ -14,6 +14,7 @@ import { AssetLibraryComponent } from './asset-library.component';
 import { BrandService, PortfolioItem, PortfolioPage } from '../../services/brand.service';
 import { CollaborationService } from '../../services/collaboration.service';
 import { PromptFavoritesService, PromptFavorite } from '../../services/prompt-favorites.service';
+import { ConfirmDialogService } from '../../services/confirm-dialog.service';
 import { AuthService } from '../../services/auth.service';
 
 describe('AssetLibraryComponent — Portfolio management', () => {
@@ -385,6 +386,7 @@ describe('AssetLibraryComponent — Prompt Favorites tab (biblioteca-prompts-fav
   let fixture: ComponentFixture<AssetLibraryComponent>;
   let component: AssetLibraryComponent;
   let favoritesSpy: jasmine.SpyObj<PromptFavoritesService>;
+  let confirmSpy: jasmine.SpyObj<ConfirmDialogService>;
 
   const makeFavorite = (id: number, title: string, ownerEmail = 'me@example.com'): PromptFavorite => ({
     id, title, prompt_text: `Prompt for ${title}`, prompt_metadata: null,
@@ -413,12 +415,16 @@ describe('AssetLibraryComponent — Prompt Favorites tab (biblioteca-prompts-fav
     ]);
     favoritesSpy.listFavorites.and.returnValue(of([makeFavorite(1, 'Q3 Deck')]));
 
+    confirmSpy = jasmine.createSpyObj('ConfirmDialogService', ['confirm']);
+    confirmSpy.confirm.and.returnValue(of(true));
+
     await TestBed.configureTestingModule({
       imports: [AssetLibraryComponent, HttpClientTestingModule],
       providers: [
         { provide: BrandService, useValue: brandServiceSpy },
         { provide: CollaborationService, useValue: collabSpy },
         { provide: PromptFavoritesService, useValue: favoritesSpy },
+        { provide: ConfirmDialogService, useValue: confirmSpy },
         { provide: AuthService, useValue: { currentUser: { id: 100, role: 'cliente' } } },
       ],
     }).compileComponents();
@@ -475,18 +481,19 @@ describe('AssetLibraryComponent — Prompt Favorites tab (biblioteca-prompts-fav
   });
 
   it('deleteFavorite() asks for confirmation and removes the item from the list on success', () => {
-    spyOn(window, 'confirm').and.returnValue(true);
+    confirmSpy.confirm.and.returnValue(of(true));
     component.setTab('prompts');
     favoritesSpy.deleteFavorite.and.returnValue(of({ deleted: true, id: 1 }));
 
     component.deleteFavorite(component.favorites[0]);
 
+    expect(confirmSpy.confirm).toHaveBeenCalled();
     expect(favoritesSpy.deleteFavorite).toHaveBeenCalledWith(1);
     expect(component.favorites.length).toBe(0);
   });
 
   it('deleteFavorite() does nothing when the user cancels the confirmation', () => {
-    spyOn(window, 'confirm').and.returnValue(false);
+    confirmSpy.confirm.and.returnValue(of(false));
     component.setTab('prompts');
 
     component.deleteFavorite(component.favorites[0]);

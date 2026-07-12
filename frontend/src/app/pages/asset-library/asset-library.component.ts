@@ -6,6 +6,7 @@ import { BrandService, PortfolioItem } from '../../services/brand.service';
 import { AuthService } from '../../services/auth.service';
 import { CollaborationService, Collaborator, Review } from '../../services/collaboration.service';
 import { PromptFavoritesService, PromptFavorite } from '../../services/prompt-favorites.service';
+import { ConfirmDialogService } from '../../services/confirm-dialog.service';
 import { environment } from '../../../environments/environment';
 import { triggerBlobDownload } from '../../utils/download.util';
 
@@ -20,6 +21,7 @@ export class AssetLibraryComponent implements OnInit, OnDestroy {
   private brandService = inject(BrandService);
   private collaborationService = inject(CollaborationService);
   private promptFavoritesService = inject(PromptFavoritesService);
+  private confirmDialogService = inject(ConfirmDialogService);
   private authService = inject(AuthService);
   baseUrl = environment.baseUrl;
 
@@ -297,11 +299,12 @@ export class AssetLibraryComponent implements OnInit, OnDestroy {
   }
 
   deleteFavorite(fav: PromptFavorite) {
-    if (!confirm(`Delete favorite "${fav.title}"? This cannot be undone.`)) return;
-
-    this.promptFavoritesService.deleteFavorite(fav.id).subscribe({
-      next: () => { this.favorites = this.favorites.filter(f => f.id !== fav.id); },
-      error: (err) => console.error('[AssetLibrary] Error deleting favorite:', err)
+    this.confirmDialogService.confirm(`Delete favorite "${fav.title}"? This cannot be undone.`).subscribe((ok) => {
+      if (!ok) return;
+      this.promptFavoritesService.deleteFavorite(fav.id).subscribe({
+        next: () => { this.favorites = this.favorites.filter(f => f.id !== fav.id); },
+        error: (err) => console.error('[AssetLibrary] Error deleting favorite:', err)
+      });
     });
   }
 

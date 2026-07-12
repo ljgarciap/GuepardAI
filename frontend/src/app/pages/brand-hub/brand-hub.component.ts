@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BrandService } from '../../services/brand.service';
 import { AuthService } from '../../services/auth.service';
+import { ConfirmDialogService } from '../../services/confirm-dialog.service';
 import { interval, Subscription, switchMap, takeWhile } from 'rxjs';
 
 interface JobState {
@@ -29,6 +30,7 @@ interface JobState {
 export class BrandHubComponent implements OnInit, OnDestroy {
   brandService = inject(BrandService);
   authService = inject(AuthService);
+  confirmDialogService = inject(ConfirmDialogService);
 
   get isSuperadmin(): boolean {
     return this.authService.currentUser?.role === 'superadmin';
@@ -232,17 +234,21 @@ export class BrandHubComponent implements OnInit, OnDestroy {
   }
 
   resetAll() {
-    if (!confirm('⚠️ This will DELETE all official brands, assets, and neural profiles.\n\nAre you sure?')) return;
-    this.resetLoading = true;
-    this.brandService.resetDatabase().subscribe({
-      next: () => {
-        this.resetLoading = false;
-        this.identityState = this.initialState();
-        this.knowledgeState = this.initialState();
-        this.assetState = this.initialState();
-        this.loadBrands();
-      },
-      error: () => { this.resetLoading = false; }
+    this.confirmDialogService.confirm(
+      '⚠️ This will DELETE all official brands, assets, and neural profiles.\n\nAre you sure?'
+    ).subscribe((ok) => {
+      if (!ok) return;
+      this.resetLoading = true;
+      this.brandService.resetDatabase().subscribe({
+        next: () => {
+          this.resetLoading = false;
+          this.identityState = this.initialState();
+          this.knowledgeState = this.initialState();
+          this.assetState = this.initialState();
+          this.loadBrands();
+        },
+        error: () => { this.resetLoading = false; }
+      });
     });
   }
 
@@ -320,15 +326,17 @@ export class BrandHubComponent implements OnInit, OnDestroy {
   }
 
   deleteFooter(id: number) {
-    if (!confirm('Are you sure you want to delete this footer template?')) return;
-    this.brandService.deleteFooter(id).subscribe({
-      next: () => {
-        if (this.newFooter.id === id) {
-          this.clearFooterForm();
-        }
-        this.loadFooters();
-      },
-      error: (err) => alert(err.error?.detail || 'Error deleting footer')
+    this.confirmDialogService.confirm('Are you sure you want to delete this footer template?').subscribe((ok) => {
+      if (!ok) return;
+      this.brandService.deleteFooter(id).subscribe({
+        next: () => {
+          if (this.newFooter.id === id) {
+            this.clearFooterForm();
+          }
+          this.loadFooters();
+        },
+        error: (err) => alert(err.error?.detail || 'Error deleting footer')
+      });
     });
   }
 

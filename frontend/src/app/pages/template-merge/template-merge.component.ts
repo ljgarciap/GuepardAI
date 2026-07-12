@@ -7,7 +7,8 @@ import { Subject, Subscription, interval } from 'rxjs';
 import { debounceTime, distinctUntilChanged, switchMap, takeWhile } from 'rxjs/operators';
 import { environment } from '../../../environments/environment';
 import { triggerBlobDownload } from '../../utils/download.util';
-import { BrandService, TemplateMergeHistoryItem } from '../../services/brand.service';
+import { BrandService, PromptMetadata, TemplateMergeHistoryItem } from '../../services/brand.service';
+import { PromptSupportComponent } from '../../components/prompt-support/prompt-support.component';
 
 interface TemplateAsset {
   id: number;
@@ -55,7 +56,7 @@ interface MergeJobStatus {
 @Component({
   selector: 'app-template-merge',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, PromptSupportComponent],
   templateUrl: './template-merge.component.html',
   styleUrl: './template-merge.component.css'
 })
@@ -69,6 +70,9 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
   selectedTemplateId: number | null = null;
   selectedKnowledge: string = '';
   prompt: string = '';
+  // No se envía a TemplateMergeRequest (ese pipeline no lo consume) — solo se
+  // guarda para que "Save as favorite" pueda incluir la selección estructurada.
+  promptMetadata: PromptMetadata | null = null;
   displayName: string = '';
 
   // ── Upload state ─────────────────────────────────────────────────────────
@@ -131,6 +135,11 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
       },
       error: () => this.brands = [],
     });
+  }
+
+  onPromptSupportApply(event: { text: string; metadata: PromptMetadata | null }): void {
+    this.prompt = event.text;
+    this.promptMetadata = event.metadata;
   }
 
   loadTemplates(): void {

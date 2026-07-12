@@ -236,6 +236,7 @@ def get_template_merge_job_status(
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "merge_report": job.merge_report,
         "merge_summary": (job.merge_report or {}).get("summary"),
+        "prompt": job.prompt,
     }
 
 

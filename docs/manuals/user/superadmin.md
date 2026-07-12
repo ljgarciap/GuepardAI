@@ -149,8 +149,15 @@ keep an existing PPTX's visual structure and only replace its text, driven
 by a knowledge-base document. Pick a **brand** first (required — jobs
 without one won't save to history), then upload a `.pptx` template (or reuse
 one already uploaded), pick a knowledge source, write a content directive,
-and download the merged file. The "THIS SESSION" list only covers jobs
-launched in the
+and download the merged file.
+
+Same 4 prompt-support cards as Synthesis Studio — **Reuse Previous Prompt**
+pulls from past Template Merge jobs here instead of Synthesis Studio ones,
+the composer skips Slide Type and Visual Rules (no layout/asset choice in
+this pipeline), and **Favorites** are shared across both screens for every
+user on the platform.
+
+The "THIS SESSION" list only covers jobs launched in the
 current browser session and resets on reload; switch to the **HISTORY** tab
 for a durable, searchable list of every completed merge across sessions
 (search by name, filter by date, rename, delete) — separate from Strategic

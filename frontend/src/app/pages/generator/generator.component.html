@@ -72,29 +72,6 @@
         <h2 class="hero-title-clean">Ready for <span class="highlight">Synthesis</span></h2>
         <p class="hero-desc-clean">Enter your strategic requirements below to begin the generation process.</p>
       </div>
-      
-      <div class="compositor-cards">
-        <button class="compositor-card" (click)="openReuseModal()">
-          <span class="compositor-card-icon">↺</span>
-          <span class="compositor-card-title">Reuse Previous Prompt</span>
-          <span class="compositor-card-desc">Pick a past presentation and start from its prompt</span>
-        </button>
-        <button class="compositor-card" (click)="openIntentModal()">
-          <span class="compositor-card-icon">▦</span>
-          <span class="compositor-card-title">Intent Library</span>
-          <span class="compositor-card-desc">Choose what you're building — tone and structure are set for you</span>
-        </button>
-        <button class="compositor-card" (click)="openComposerModal()">
-          <span class="compositor-card-icon">✎</span>
-          <span class="compositor-card-title">Guide / Write My Own</span>
-          <span class="compositor-card-desc">Build a strong prompt field by field, with a how-to guide</span>
-        </button>
-        <button class="compositor-card" (click)="openFavoritesModal()">
-          <span class="compositor-card-icon">☆</span>
-          <span class="compositor-card-title">Load from Favorites</span>
-          <span class="compositor-card-desc">Start from a prompt you saved earlier</span>
-        </button>
-      </div>
     </div>
 
     <!-- Active Generation / Results -->
@@ -165,6 +142,17 @@
     </div>
   </div>
 
+  <app-prompt-support
+    #promptSupport
+    mode="synthesis"
+    [showCards]="!isGenerating && !downloadUrl && !errorMessage"
+    [brandId]="selectedBrandId"
+    [currentText]="prompt"
+    [currentMetadata]="promptMetadata"
+    (applyText)="onPromptSupportApply($event)"
+    (loadError)="errorMessage = $event">
+  </app-prompt-support>
+
   <!-- Command Input Area -->
   <div class="command-area">
     <div class="input-card">
@@ -183,7 +171,7 @@
           <span class="toggle-label">Use ai generated images</span>
         </div>
         <div class="execution-controls">
-          <button class="btn-mini" [disabled]="!prompt || isGenerating" (click)="openSaveFavoriteModal()">
+          <button class="btn-mini" [disabled]="!prompt || isGenerating" (click)="promptSupport.openSaveFavoriteModal()">
             ☆ Save as favorite
           </button>
           <span class="input-status" [class.ready]="prompt && selectedStyle && selectedKnowledge">
@@ -238,142 +226,4 @@
     </div>
   </div>
 
-  <!-- AYUDA 1: REUSE PREVIOUS PROMPT MODAL -->
-  <div class="feedback-modal-overlay" *ngIf="showReuseModal">
-    <div class="feedback-modal-card glass-panel slideUp wide-modal">
-      <button class="btn-close" (click)="showReuseModal = false">×</button>
-      <div class="feedback-modal-header">
-        <h4>Reuse a Previous Prompt</h4>
-        <p class="question">Only presentations with a saved prompt are shown.</p>
-      </div>
-
-      <div class="picker-list" *ngIf="!loadingReusable; else loadingBlock">
-        <div class="picker-empty" *ngIf="reusablePortfolios.length === 0">
-          No reusable prompts found yet.
-        </div>
-        <div class="picker-item" *ngFor="let p of reusablePortfolios">
-          <div class="picker-item-info">
-            <span class="picker-item-title">{{ p.display_name }}</span>
-            <span class="picker-item-date">{{ p.created_at | date:'medium' }}</span>
-          </div>
-          <button class="btn-mini" (click)="useAsBase(p.id)">USE AS BASE</button>
-        </div>
-      </div>
-      <ng-template #loadingBlock>
-        <div class="picker-empty">Loading...</div>
-      </ng-template>
-    </div>
-  </div>
-
-  <!-- AYUDA 2: INTENT LIBRARY MODAL -->
-  <div class="feedback-modal-overlay" *ngIf="showIntentModal">
-    <div class="feedback-modal-card glass-panel slideUp wide-modal">
-      <button class="btn-close" (click)="showIntentModal = false">×</button>
-      <div class="feedback-modal-header">
-        <h4>Intent Library</h4>
-        <p class="question">Pick what you're building — tone, story and layout suggestions load automatically.</p>
-      </div>
-
-      <div class="intent-grid" *ngIf="!loadingIntents; else loadingBlock2">
-        <button class="intent-card" *ngFor="let intent of promptIntents" (click)="selectIntent(intent)">
-          <span class="intent-card-title">{{ intent.label }}</span>
-          <span class="intent-card-tone">{{ intent.expected_tone }}</span>
-          <span class="intent-card-duration">{{ intent.expected_duration_label }}</span>
-        </button>
-      </div>
-      <ng-template #loadingBlock2>
-        <div class="picker-empty">Loading...</div>
-      </ng-template>
-    </div>
-  </div>
-
-  <!-- AYUDA 3: COMPOSER + STATIC GUIDE MODAL -->
-  <div class="feedback-modal-overlay" *ngIf="showComposerModal">
-    <div class="feedback-modal-card glass-panel slideUp composer-modal-card">
-      <button class="btn-close" (click)="showComposerModal = false">×</button>
-      <div class="feedback-modal-header">
-        <h4>Build Your Prompt</h4>
-        <p class="question">A strong prompt = Objective + Tone + Audience + Slide type + Story + Visual rules + Output format.</p>
-      </div>
-
-      <div class="composer-modal-body">
-        <app-prompt-composer
-          [initialValues]="composerInitialValues"
-          (insert)="onComposerInsert($event)">
-        </app-prompt-composer>
-
-        <div class="static-guide composer-modal-guide">
-          <div class="composer-modal-guide-title">How to write a good prompt</div>
-          <ul>
-            <li><strong>Objective</strong> — what is this presentation for? e.g. "CEO Board Update on Q3 performance".</li>
-            <li><strong>Tone</strong> — Factual, engaging, optimistic, sense of urgency, financial...</li>
-            <li><strong>Audience</strong> — Internal team, Board, CEO, client...</li>
-            <li><strong>Slide type</strong> — cover, data grid, pillars, case study...</li>
-            <li><strong>Story</strong> — customer-centric, creative, data-driven narrative...</li>
-            <li><strong>Visual rules</strong> — use only library assets, use external assets, no restrictions...</li>
-            <li><strong>Output format</strong> — data driven, storytelling, creative, action oriented...</li>
-            <li>Avoid buzzwords — be specific instead of generic corporate language.</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- AYUDA 4: FAVORITES MODAL -->
-  <div class="feedback-modal-overlay" *ngIf="showFavoritesModal">
-    <div class="feedback-modal-card glass-panel slideUp wide-modal">
-      <button class="btn-close" (click)="showFavoritesModal = false">×</button>
-      <div class="feedback-modal-header">
-        <h4>Load from Favorites</h4>
-        <p class="question">Prompts you've saved for reuse.</p>
-      </div>
-
-      <div class="picker-list" *ngIf="!loadingFavorites; else loadingBlock3">
-        <div class="picker-empty" *ngIf="favoritesList.length === 0">
-          No favorites saved yet.
-        </div>
-        <div class="picker-item" *ngFor="let fav of favoritesList">
-          <div class="picker-item-info">
-            <span class="picker-item-title">{{ fav.title }}</span>
-            <span class="picker-item-date">{{ fav.owner_email }} · {{ fav.created_at | date:'medium' }}</span>
-          </div>
-          <button class="btn-mini" (click)="useFavorite(fav)">USE</button>
-        </div>
-      </div>
-      <ng-template #loadingBlock3>
-        <div class="picker-empty">Loading...</div>
-      </ng-template>
-    </div>
-  </div>
-
-  <!-- SAVE AS FAVORITE MODAL -->
-  <div class="feedback-modal-overlay" *ngIf="showSaveFavoriteModal">
-    <div class="feedback-modal-card glass-panel slideUp">
-      <button class="btn-close" (click)="showSaveFavoriteModal = false">×</button>
-      <div class="feedback-modal-header">
-        <h4>Save as Favorite</h4>
-        <p class="question">Give this prompt a name so you can find it again later.</p>
-      </div>
-
-      <div class="comments-container">
-        <label>TITLE</label>
-        <input
-          type="text"
-          [(ngModel)]="saveFavoriteTitle"
-          placeholder="e.g. Q3 Board Update"
-          class="feedback-textarea"
-          maxlength="120">
-      </div>
-      <p class="field-error" *ngIf="saveFavoriteError">{{ saveFavoriteError }}</p>
-
-      <div class="feedback-modal-actions">
-        <button
-          class="btn-primary-enterprise"
-          [disabled]="!saveFavoriteTitle.trim() || savingFavorite"
-          (click)="confirmSaveFavorite()">
-          {{ savingFavorite ? 'SAVING...' : 'SAVE FAVORITE' }}
-        </button>
-      </div>
-    </div>
-  </div>
 </div>

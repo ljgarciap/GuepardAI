@@ -1,0 +1,12 @@
+<div class="feedback-modal-overlay" *ngIf="(state$ | async)?.visible">
+  <div class="feedback-modal-card confirm-modal-card slideUp">
+    <div class="feedback-modal-header">
+      <h4>Please confirm</h4>
+      <p class="question">{{ (state$ | async)?.message }}</p>
+    </div>
+    <div class="feedback-modal-actions confirm-modal-actions">
+      <button class="btn-secondary" (click)="respond(false)">CANCEL</button>
+      <button class="btn-primary-enterprise" (click)="respond(true)">CONTINUE</button>
+    </div>
+  </div>
+</div>

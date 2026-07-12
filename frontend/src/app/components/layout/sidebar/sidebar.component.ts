@@ -5,6 +5,7 @@ import { BrandService } from '../../../services/brand.service';
 import { ThemeService } from '../../../services/theme.service';
 import { AuthService } from '../../../services/auth.service';
 import { CollaborationService, MyBadges } from '../../../services/collaboration.service';
+import { ConfirmDialogService } from '../../../services/confirm-dialog.service';
 
 @Component({
   selector: 'app-sidebar',
@@ -19,6 +20,7 @@ export class SidebarComponent implements OnInit {
   constructor(
     private brandService: BrandService,
     private collaborationService: CollaborationService,
+    private confirmDialogService: ConfirmDialogService,
     public themeService: ThemeService,
     public authService: AuthService
   ) {}
@@ -59,7 +61,10 @@ export class SidebarComponent implements OnInit {
   }
 
   resetSystem(): void {
-    if (confirm('Are you sure you want to COMPLETELY wipe the database and all uploaded files? This action cannot be undone.')) {
+    this.confirmDialogService.confirm(
+      'Are you sure you want to COMPLETELY wipe the database and all uploaded files? This action cannot be undone.'
+    ).subscribe((ok) => {
+      if (!ok) return;
       this.brandService.resetDatabase().subscribe({
         next: (res) => {
           alert('System successfully wiped and reset.');
@@ -70,6 +75,6 @@ export class SidebarComponent implements OnInit {
           alert('Error while trying to reset the system.');
         }
       });
-    }
+    });
   }
 }

@@ -234,3 +234,86 @@ prompt libre vive en el `command-area` persistente
   Library): 1.5–2 días.
 - Tech Writer (doc de API + actualización de manuales de usuario): 0.5 día,
   en paralelo.
+
+---
+
+## Extensión: facilidad compartida con Template Merge + modal de confirmación estilizado (2026-07-12)
+
+**Feedback de Luis sobre lo ya entregado**: (1) el alert de "reemplazar tu
+prompt" era el `window.confirm()` genérico del navegador, no un modal propio;
+(2) Template Merge no tenía ninguna de las 4 ayudas (era un textarea suelto)
+y no tiene sentido mantener dos implementaciones de lo mismo — pidió una sola
+facilidad compartida entre las dos pantallas de generación.
+
+**Decisiones confirmadas con Luis**:
+- Modal de confirmación propio (mismo estilo `.feedback-modal-card`), no
+  SweetAlert2 — sin dependencia nueva, reemplaza los 5 `confirm()` nativos de
+  toda la app (no solo el de prompts).
+- Componente común reusado por ambas rutas existentes (`/` y
+  `/template-merge`) — no se fusionan en una vista con tabs, cambio acotado
+  que no toca sidebar/routing/manuales de navegación.
+- Slide Type y Visual Rules del compositor guiado se ocultan en modo
+  `template-merge` (ese pipeline no elige layout ni assets, el template ya
+  los fija) en vez de mostrarse siempre.
+
+### `ConfirmDialogService` + `ConfirmModalComponent`
+
+`frontend/src/app/services/confirm-dialog.service.ts` — `confirm(message):
+Observable<boolean>`, backed por un `BehaviorSubject` de estado
+`{visible, message}`. `frontend/src/app/components/shared/confirm-modal/` —
+componente montado una sola vez en `app.component.html` (fuera del
+`*ngIf="showShell()"`, visible en cualquier ruta). Reemplazó los 5
+`confirm()` nativos existentes: `sidebar.component.ts` (reset de DB),
+`brand-hub.component.ts` (reset de brands, borrado de footer),
+`asset-library.component.ts` (borrado de favorito), y el de
+`applyPromptText` (ahora dentro del componente compartido de abajo). Los
+callers pasan de `if (!confirm(...)) return;` síncrono a
+`.confirm(...).subscribe(ok => { if (!ok) return; ... })`.
+
+### `PromptSupportComponent`
+
+`frontend/src/app/components/prompt-support/` — extraído íntegro de
+`generator.component` (las 4 tarjetas + sus 5 modales + todo el estado que
+antes vivía ahí). Contrato:
+- `@Input() mode: 'synthesis' | 'template-merge'`
+- `@Input() brandId`, `@Input() currentText`, `@Input() currentMetadata` —
+  el padre sigue siendo el único dueño del textarea real.
+- `@Input() showCards` — permite al padre ocultar la grilla de tarjetas (ej.
+  durante generación/resultados en Synthesis Studio) sin desmontar el
+  componente, para que una template reference variable (`#promptSupport`)
+  siga siendo alcanzable desde fuera de cualquier `*ngIf` — el botón
+  "☆ Save as favorite" la usa para abrir el modal de guardado sin duplicar
+  ese modal en cada página.
+- `@Output() applyText` — `{text, metadata}` a aplicar, ya resuelto el
+  confirm-antes-de-sobreescribir.
+- `@Output() loadError` — el padre decide cómo mostrarlo (cada pantalla ya
+  tenía su propio campo de error, no se inventó uno nuevo).
+
+**Reuse Previous Prompt por modo**: en `synthesis` lee `GenerationJob` vía
+`getLibraryPortfolios`/`getPortfolioDetail` (igual que antes). En
+`template-merge` lee `TemplateMergeJob` vía `getTemplateMergeHistory`
+(listado ya existente) y el nuevo campo `prompt` agregado a
+`GET /api/template-merge/jobs/{id}` (antes esa respuesta no lo incluía).
+Reusar el prompt de un `TemplateMergeJob` no trae `prompt_metadata` (ese
+pipeline nunca lo persistió — no hay nada que leer).
+
+**Favoritos guardados desde Template Merge**: siguen sin `source_job_id`
+(decisión ya tomada arriba, sin cambios) — `prompt_metadata` sí se guarda
+si el usuario usó el compositor, aunque `TemplateMergeRequest` no lo consuma;
+es solo para que un favorito guardado ahí conserve la selección estructurada
+si se reutiliza después.
+
+**`PromptComposerComponent`**: ganó `@Input() mode` (mismo valor que el
+padre) para condicionar Slide Type/Visual Rules — `assemble()` no necesitó
+cambios, un campo oculto nunca tiene texto que incluir en el ensamblado.
+
+### Verificación
+
+Playwright real contra la stack local: favorito guardado en Synthesis Studio
+aparece en Template Merge y viceversa (biblioteca realmente compartida);
+modal de confirmación estilizado se dispara al sobreescribir (cero
+`window.confirm()` nativo capturado); Slide Type/Visual Rules ausentes del
+compositor en modo `template-merge`. 42 tests nuevos/actualizados de
+Angular (`confirm-dialog.service`, `confirm-modal.component`,
+`prompt-support.component`, ajustes en `generator`/`asset-library`/
+`template-merge` specs).

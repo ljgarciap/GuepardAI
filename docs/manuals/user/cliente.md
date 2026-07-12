@@ -114,7 +114,18 @@ Keeps an existing PPTX's visual design and only replaces its text content
 from a knowledge-base document. Pick a **brand** first (required — jobs
 without one won't save to your history), then upload or reuse a `.pptx`
 template, pick a knowledge source, write a content directive, and download
-the result. Switch to the **HISTORY** tab to find, search, or download any
+the result.
+
+The content directive has the same 4 prompt-support cards as Synthesis
+Studio — **Reuse Previous Prompt** here pulls from your past Template Merge
+jobs (not Synthesis Studio ones), **Intent Library** and **Guide / Write My
+Own** work the same way except the composer skips Slide Type and Visual
+Rules (this pipeline doesn't choose a layout or pick assets — your uploaded
+template already fixes both), and **Load from Favorites**/**☆ Save as
+favorite** share the exact same list as Synthesis Studio — a favorite saved
+from either screen shows up in both.
+
+Switch to the **HISTORY** tab to find, search, or download any
 merge you completed in a previous session — the "THIS SESSION" list only
 covers the current one.
 

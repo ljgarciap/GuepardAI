@@ -148,6 +148,33 @@ class TestListUsers:
         assert "a2.cliente@example.com" in emails
         assert "b2.cliente@example.com" in emails
 
+    def test_superadmin_can_filter_by_tenant_id(self, client, db_session):
+        tenant_a = _make_tenant(db_session, "Tenant A3f")
+        tenant_b = _make_tenant(db_session, "Tenant B3f")
+        superadmin = _make_user(db_session, models.UserRole.SUPERADMIN.value, tenant_id=None)
+        _make_user(db_session, models.UserRole.CLIENTE.value, tenant_id=tenant_a.id, email="a3f.cliente@example.com")
+        _make_user(db_session, models.UserRole.CLIENTE.value, tenant_id=tenant_b.id, email="b3f.cliente@example.com")
+
+        resp = client.get(f"/api/users?tenant_id={tenant_a.id}", headers=_auth_headers(superadmin))
+
+        emails = {u["email"] for u in resp.json()}
+        assert emails == {"a3f.cliente@example.com"}
+
+    def test_admin_tenant_id_filter_is_ignored(self, client, db_session):
+        """Un admin no-superadmin sigue viendo solo su propio tenant aunque pase tenant_id — el filtro
+        explícito solo lo honra un superadmin (auth/dependencies.py, mismo criterio que departments.py)."""
+        tenant_a = _make_tenant(db_session, "Tenant A3g")
+        tenant_b = _make_tenant(db_session, "Tenant B3g")
+        admin_a = _make_user(db_session, models.UserRole.ADMIN.value, tenant_id=tenant_a.id)
+        _make_user(db_session, models.UserRole.CLIENTE.value, tenant_id=tenant_a.id, email="a3g.cliente@example.com")
+        _make_user(db_session, models.UserRole.CLIENTE.value, tenant_id=tenant_b.id, email="b3g.cliente@example.com")
+
+        resp = client.get(f"/api/users?tenant_id={tenant_b.id}", headers=_auth_headers(admin_a))
+
+        emails = {u["email"] for u in resp.json()}
+        assert "a3g.cliente@example.com" in emails
+        assert "b3g.cliente@example.com" not in emails
+
 
 @pytest.mark.integration
 class TestDeactivateUser:

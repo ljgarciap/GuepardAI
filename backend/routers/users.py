@@ -69,10 +69,14 @@ def create_user(
 
 @router.get("", response_model=List[UserOut])
 def list_users(
+    tenant_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role(*_ADMIN_ROLES)),
 ):
-    return _tenant_scoped_users(db, current_user).order_by(models.User.id).all()
+    query = _tenant_scoped_users(db, current_user)
+    if current_user.role == models.UserRole.SUPERADMIN.value and tenant_id is not None:
+        query = query.filter(models.User.tenant_id == tenant_id)
+    return query.order_by(models.User.id).all()
 
 
 class UserDirectoryEntry(BaseModel):

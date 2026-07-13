@@ -48,17 +48,36 @@
 
     <!-- DEPARTMENTS -->
     <div class="admin-section" *ngIf="activeTab === 'departments'">
+      <div class="admin-card glass-panel" *ngIf="isSuperadmin">
+        <h5>Managing Tenant</h5>
+        <p class="detail-hint">Pick a tenant to manage its departments and users — everything below is scoped to it.</p>
+        <div class="admin-form-row">
+          <select [(ngModel)]="selectedTenantId" (ngModelChange)="onTenantScopeChange()" class="enterprise-select">
+            <option [ngValue]="null" disabled>Select tenant...</option>
+            <option *ngFor="let t of tenants" [ngValue]="t.id">{{ t.name }}</option>
+          </select>
+        </div>
+      </div>
+
       <div class="admin-card glass-panel">
         <h5>Create Department</h5>
         <div class="admin-form-row">
           <input type="text" [(ngModel)]="newDepartmentName" placeholder="Department name" class="admin-input">
-          <select *ngIf="isSuperadmin" [(ngModel)]="newDepartmentTenantId" class="enterprise-select admin-input-narrow">
-            <option [ngValue]="null" disabled>Select tenant...</option>
-            <option *ngFor="let t of tenants" [ngValue]="t.id">{{ t.name }}</option>
-          </select>
-          <button class="btn-mini" [disabled]="!newDepartmentName.trim()" (click)="createDepartment()">CREATE</button>
+          <button class="btn-mini" [disabled]="!newDepartmentName.trim() || (isSuperadmin && !selectedTenantId)" (click)="createDepartment()">CREATE</button>
         </div>
+        <p class="detail-hint" *ngIf="isSuperadmin && !selectedTenantId">Select a tenant above first.</p>
         <p class="detail-error" *ngIf="departmentError">{{ departmentError }}</p>
+      </div>
+
+      <div class="admin-card glass-panel">
+        <h5>Create User</h5>
+        <div class="admin-form-row">
+          <input type="email" [(ngModel)]="newUserEmail" placeholder="User email" class="admin-input">
+          <input type="password" [(ngModel)]="newUserPassword" placeholder="Password (min 8 chars)" class="admin-input">
+          <button class="btn-mini" [disabled]="!newUserEmail.trim() || !newUserPassword || (isSuperadmin && !selectedTenantId)" (click)="createUser()">CREATE</button>
+        </div>
+        <p class="detail-hint" *ngIf="isSuperadmin && !selectedTenantId">Select a tenant above first.</p>
+        <p class="detail-error" *ngIf="userError">{{ userError }}</p>
       </div>
 
       <div class="admin-card glass-panel">
@@ -78,6 +97,7 @@
 
       <div class="admin-card glass-panel">
         <h5>Assign Department to User</h5>
+        <p class="detail-hint" *ngIf="isSuperadmin && !selectedTenantId">Select a tenant above first.</p>
         <div class="admin-form-row">
           <select [(ngModel)]="assignUserId" class="enterprise-select">
             <option [ngValue]="null" disabled>Select user...</option>

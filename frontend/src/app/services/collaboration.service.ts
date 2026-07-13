@@ -133,8 +133,14 @@ export class CollaborationService {
   }
 
   // --- Users (admin management) ---
-  getUsers(): Observable<UserOut[]> {
-    return this.http.get<UserOut[]>(`${this.apiUrl}/users`);
+  getUsers(tenantId?: number): Observable<UserOut[]> {
+    let params = new HttpParams();
+    if (tenantId !== undefined) params = params.set('tenant_id', tenantId);
+    return this.http.get<UserOut[]>(`${this.apiUrl}/users`, { params });
+  }
+
+  createUser(email: string, password: string, tenantId?: number): Observable<UserOut> {
+    return this.http.post<UserOut>(`${this.apiUrl}/users`, { email, password, tenant_id: tenantId });
   }
 
   // --- User directory (any authenticated user, minimal fields — collaborator picker) ---

@@ -15,7 +15,7 @@ describe('AdminComponent', () => {
     collabSpy = jasmine.createSpyObj('CollaborationService', [
       'getDepartments', 'getUsers', 'createDepartment', 'deleteDepartment', 'updateUserDepartment',
       'getAdminReviews', 'updateReviewModeration', 'getModerationBlocklist', 'updateModerationBlocklist',
-      'getUsageAnalytics', 'getUsageReports', 'getTenants', 'createTenant',
+      'getUsageAnalytics', 'getUsageReports', 'getTenants', 'createTenant', 'createUser',
     ]);
     collabSpy.getDepartments.and.returnValue(of([]));
     collabSpy.getUsers.and.returnValue(of([]));
@@ -204,6 +204,73 @@ describe('AdminComponent', () => {
       expect(component.tenantName(5)).toBe('Acme');
       expect(component.tenantName(999)).toBe('—');
       expect(component.tenantName(null)).toBe('—');
+    });
+
+    it('createDepartment() is a no-op without a tenant scope selected', () => {
+      component.selectedTenantId = null;
+      component.newDepartmentName = 'Sales';
+      component.createDepartment();
+      expect(collabSpy.createDepartment).not.toHaveBeenCalled();
+    });
+
+    it('createDepartment() scopes to the selected tenant once one is chosen', () => {
+      collabSpy.createDepartment.and.returnValue(of({ id: 1, tenant_id: 5, tenant_name: 'Acme', name: 'Sales' }));
+      component.selectedTenantId = 5;
+      component.newDepartmentName = 'Sales';
+      component.createDepartment();
+      expect(collabSpy.createDepartment).toHaveBeenCalledWith('Sales', 5);
+    });
+
+    it('createUser() is a no-op without a tenant scope selected', () => {
+      component.selectedTenantId = null;
+      component.newUserEmail = 'new.user@example.com';
+      component.newUserPassword = 'supersecret1';
+      component.createUser();
+      expect(collabSpy.createUser).not.toHaveBeenCalled();
+    });
+
+    it('createUser() calls the service, clears the form, and reloads users on success', () => {
+      collabSpy.createUser.and.returnValue(of({ id: 8, email: 'new.user@example.com', role: 'cliente', tenant_id: 5, is_active: 1, department_id: null }));
+      collabSpy.getUsers.calls.reset();
+      component.selectedTenantId = 5;
+      component.newUserEmail = 'new.user@example.com';
+      component.newUserPassword = 'supersecret1';
+
+      component.createUser();
+
+      expect(collabSpy.createUser).toHaveBeenCalledWith('new.user@example.com', 'supersecret1', 5);
+      expect(component.newUserEmail).toBe('');
+      expect(component.newUserPassword).toBe('');
+      expect(collabSpy.getUsers).toHaveBeenCalledTimes(1); // reload
+    });
+
+    it('createUser() surfaces the backend error message', () => {
+      collabSpy.createUser.and.returnValue(
+        // @ts-ignore — simulamos un error HTTP
+        { subscribe: (handlers: any) => handlers.error({ error: { detail: 'Email already in use' } }) }
+      );
+      component.selectedTenantId = 5;
+      component.newUserEmail = 'taken@example.com';
+      component.newUserPassword = 'supersecret1';
+
+      component.createUser();
+
+      expect(component.userError).toBe('Email already in use');
+    });
+
+    it('onTenantScopeChange() clears stale assign selections and reloads departments + users scoped to the new tenant', () => {
+      collabSpy.getDepartments.calls.reset();
+      collabSpy.getUsers.calls.reset();
+      component.assignUserId = 3;
+      component.assignDepartmentId = 9;
+      component.selectedTenantId = 7;
+
+      component.onTenantScopeChange();
+
+      expect(component.assignUserId).toBeNull();
+      expect(component.assignDepartmentId).toBeNull();
+      expect(collabSpy.getDepartments).toHaveBeenCalledWith(7);
+      expect(collabSpy.getUsers).toHaveBeenCalledWith(7);
     });
   });
 });

@@ -78,6 +78,36 @@ Added `Tenant` / `TenantCreateResponse` interfaces and `getTenants()` /
   list, report scope tag) with a `—` fallback, mirroring the existing
   `departmentName(id)` helper already in the component.
 
+## Follow-up: shared tenant scope for Departments + Users (same day)
+
+### `routers/users.py`
+
+`list_users` gained an optional `tenant_id` query param, honored only for
+`SUPERADMIN` (identical pattern to `departments.py::list_departments`):
+
+```python
+def list_users(tenant_id: Optional[int] = None, ...):
+    query = _tenant_scoped_users(db, current_user)
+    if current_user.role == SUPERADMIN and tenant_id is not None:
+        query = query.filter(models.User.tenant_id == tenant_id)
+    return query...
+```
+
+### `admin.component.ts`
+
+`newDepartmentTenantId` (create-department-only) became `selectedTenantId` —
+one piece of state now driving four things for a superadmin: the Departments
+list filter, the Users list filter, and the target tenant for both "Create
+Department" and the new "Create User". `onTenantScopeChange()` reloads both
+lists and clears `assignUserId`/`assignDepartmentId` so a stale cross-tenant
+pick can't survive a scope switch. This makes the 403 structurally
+unreachable through the UI: the two dropdowns feeding `assignDepartment()`
+can never contain entries from different tenants once a scope is selected.
+
+`admin.component.html` gained a "Managing Tenant" card (superadmin-only, top
+of the Departments tab) and a "Create User" card (email + password,
+`createUser()` → `POST /api/users`).
+
 ## Testing
 
 - `backend/tests/test_tenants_routes.py` — role gating (403 for admin/cliente),

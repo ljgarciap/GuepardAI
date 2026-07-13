@@ -37,13 +37,20 @@ export class AdminComponent implements OnInit {
   tenantError = '';
   tenantCreated = '';
 
-  // --- DEPARTMENTS ---
+  // --- DEPARTMENTS & USERS (share one tenant scope, superadmin only) ---
+  // A superadmin must pick which tenant they're managing before departments/users
+  // load, so the two lists are always drawn from the same tenant — picking a user
+  // from one tenant and a department from another used to 403 on assign.
+  selectedTenantId: number | null = null;
+
   departments: Department[] = [];
   newDepartmentName = '';
-  newDepartmentTenantId: number | null = null;
   departmentError = '';
 
   users: UserOut[] = [];
+  newUserEmail = '';
+  newUserPassword = '';
+  userError = '';
   assignUserId: number | null = null;
   assignDepartmentId: number | null = null;
   assignError = '';
@@ -110,17 +117,25 @@ export class AdminComponent implements OnInit {
     return this.tenants.find(t => t.id === id)?.name || '—';
   }
 
-  // --- DEPARTMENTS ---
+  // --- DEPARTMENTS & USERS ---
+
+  onTenantScopeChange() {
+    // Switching tenant invalidates any user/department picked from the old scope.
+    this.assignUserId = null;
+    this.assignDepartmentId = null;
+    this.loadDepartments();
+    this.loadUsers();
+  }
 
   loadDepartments() {
-    this.collaborationService.getDepartments(this.isSuperadmin && this.newDepartmentTenantId ? this.newDepartmentTenantId : undefined).subscribe({
+    this.collaborationService.getDepartments(this.isSuperadmin && this.selectedTenantId ? this.selectedTenantId : undefined).subscribe({
       next: (res) => this.departments = res,
       error: () => {}
     });
   }
 
   loadUsers() {
-    this.collaborationService.getUsers().subscribe({
+    this.collaborationService.getUsers(this.isSuperadmin && this.selectedTenantId ? this.selectedTenantId : undefined).subscribe({
       next: (res) => this.users = res,
       error: () => {}
     });
@@ -129,8 +144,9 @@ export class AdminComponent implements OnInit {
   createDepartment() {
     const name = this.newDepartmentName.trim();
     if (!name) return;
+    if (this.isSuperadmin && !this.selectedTenantId) return;
     this.departmentError = '';
-    this.collaborationService.createDepartment(name, this.isSuperadmin ? (this.newDepartmentTenantId ?? undefined) : undefined).subscribe({
+    this.collaborationService.createDepartment(name, this.isSuperadmin ? (this.selectedTenantId ?? undefined) : undefined).subscribe({
       next: () => {
         this.newDepartmentName = '';
         this.loadDepartments();
@@ -144,6 +160,21 @@ export class AdminComponent implements OnInit {
     this.collaborationService.deleteDepartment(d.id).subscribe({
       next: () => this.loadDepartments(),
       error: (err) => { this.departmentError = err.error?.detail || 'Could not delete department.'; }
+    });
+  }
+
+  createUser() {
+    const email = this.newUserEmail.trim();
+    if (!email || !this.newUserPassword) return;
+    if (this.isSuperadmin && !this.selectedTenantId) return;
+    this.userError = '';
+    this.collaborationService.createUser(email, this.newUserPassword, this.isSuperadmin ? (this.selectedTenantId ?? undefined) : undefined).subscribe({
+      next: () => {
+        this.newUserEmail = '';
+        this.newUserPassword = '';
+        this.loadUsers();
+      },
+      error: (err) => { this.userError = err.error?.detail || 'Could not create user.'; }
     });
   }
 

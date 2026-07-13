@@ -73,6 +73,34 @@ frontend, solo la implementación interna de esa función.
       `POST /api/users`).
 - [x] Password < 8 caracteres → 422 (mismo mínimo que el resto del sistema de auth).
 
+## Follow-up fix (2026-07-12, mismo día): scope compartido de tenant para Departments/Users
+
+Luis reportó, al usar la feature recién construida por primera vez de punta a
+punta: asignar un usuario a un departamento que él mismo acababa de crear
+devolvía `403 Department belongs to a different tenant`. Causa raíz:
+`GET /api/users` no aceptaba `tenant_id` (a diferencia de `GET
+/api/admin/departments`, que sí), así que para un superadmin la lista de
+usuarios siempre traía TODOS los tenants mezclados mientras que la lista de
+departamentos podía estar filtrada a uno solo — nada impedía elegir un usuario
+de un tenant y un departamento de otro. Además, seguía sin existir ninguna
+vista para crear usuarios (`POST /api/users` no tenía consumidor en el
+frontend) — Luis lo señaló en la misma sesión.
+
+Fix:
+- `GET /api/users` gana `tenant_id` (mismo criterio que `departments.py`:
+  solo lo honra un superadmin).
+- El Admin Panel gana un selector único "Managing Tenant" (superadmin-only,
+  arriba de todo en la pestaña Departments) que ahora escopea **ambas** listas
+  (`departments` y `users`) y el tenant destino de **ambas** altas (crear
+  departamento, crear usuario) — un solo estado (`selectedTenantId`) en vez de
+  dos independientes. Cambiar de tenant limpia cualquier selección de
+  usuario/departamento ya hecha en "Assign", para no arrastrar una combinación
+  inválida.
+- Nueva card "Create User" (email + password) — llama a `POST /api/users`,
+  cerrando el segundo gap que Luis señaló.
+- Para `admin` (no superadmin) no cambia nada: su scope siempre fue —y sigue
+  siendo— implícito a su propio tenant en ambas listas.
+
 ## Out of scope (este ciclo)
 
 - Invitación por email con password temporal (ver decisión arriba).

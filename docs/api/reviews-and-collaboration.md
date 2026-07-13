@@ -100,6 +100,18 @@ promedio hasta que un admin la pase explícitamente a `hidden`.
 
 **Respuesta**: `200` → `{ reviews: [...], rating_average: float | null, rating_count: int }`
 
+### Agregados en `GET /api/library/portfolios` (2026-07-13)
+
+Cada item del listado expone el mismo agregado que el detalle, batcheado a la
+página: `rating_average` (float | null), `rating_count` (int) y `my_rating`
+(int | null — la review propia del usuario actual, incluida una `hidden`, para
+que la tarjeta no re-ofrezca "RATE IT" a quien ya calificó; una review borrada
+por el propio usuario sí devuelve null y permite recalificar). Los campos
+legacy `rating`/`comment` (satisfacción `GenerationJobFeedback`) ya no se
+devuelven: el rating del creador es su review individual (esquema unificado —
+el histórico se migró con la alineación `feedback_to_reviews_v1`, ver
+`docs/operations/post-deploy-alignment.md` Iteración 10).
+
 ## Moderación (solo admin/superadmin)
 
 ### `GET /api/admin/reviews?status_filter=`

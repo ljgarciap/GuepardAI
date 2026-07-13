@@ -65,9 +65,7 @@ export class AssetLibraryComponent implements OnInit, OnDestroy {
   ratingJobId: number | null = null;
   selectedRating = 0;
   feedbackComment = '';
-
-  selectedComment = '';
-  showCommentModal = false;
+  ratingError = '';
 
   // --- PRESENTATION DETAIL: reviews + collaborators (reviews-analitica-colaboracion) ---
   showDetailModal = false;
@@ -312,6 +310,7 @@ export class AssetLibraryComponent implements OnInit, OnDestroy {
     this.ratingJobId = jobId;
     this.selectedRating = 0;
     this.feedbackComment = '';
+    this.ratingError = '';
     this.showRatingModal = true;
   }
 
@@ -322,27 +321,20 @@ export class AssetLibraryComponent implements OnInit, OnDestroy {
   submitFeedback() {
     if (!this.ratingJobId || this.selectedRating === 0) return;
 
-    this.brandService.submitFeedback(this.ratingJobId, this.selectedRating, this.feedbackComment).subscribe({
-      next: (res) => {
-        console.log("[AssetLibrary] Feedback submitted successfully:", res);
+    // Esquema unificado: RATE IT es la review individual del usuario
+    // (PresentationReview) — mismo upsert que el modal REVIEWS & TEAM.
+    this.ratingError = '';
+    this.collaborationService.upsertReview(this.ratingJobId, this.selectedRating, this.feedbackComment).subscribe({
+      next: () => {
         this.showRatingModal = false;
         this.refreshLibrary();
       },
       error: (err) => {
-        console.error("[AssetLibrary] Error submitting feedback:", err);
-        this.showRatingModal = false;
+        // Autorización server-side (solo owner/colaboradores pueden calificar) —
+        // mostrar el detalle en el modal en vez de cerrarlo en silencio.
+        this.ratingError = err.error?.detail || 'Could not submit your review.';
       }
     });
-  }
-
-  viewComment(comment: string) {
-    this.selectedComment = comment;
-    this.showCommentModal = true;
-  }
-
-  closeCommentModal() {
-    this.showCommentModal = false;
-    this.selectedComment = '';
   }
 
   // --- PRESENTATION DETAIL: reviews + collaborators ---

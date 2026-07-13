@@ -2,6 +2,7 @@ import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BrandService, PromptMetadata } from '../../services/brand.service';
+import { CollaborationService } from '../../services/collaboration.service';
 import { AuthService } from '../../services/auth.service';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { interval, switchMap, takeWhile } from 'rxjs';
@@ -18,6 +19,7 @@ import { PromptSupportComponent } from '../../components/prompt-support/prompt-s
 })
 export class GeneratorComponent implements OnInit {
   brandService = inject(BrandService);
+  collaborationService = inject(CollaborationService);
   authService = inject(AuthService);
   sanitizer = inject(DomSanitizer);
 
@@ -259,14 +261,16 @@ export class GeneratorComponent implements OnInit {
   submitFeedback() {
     if (!this.currentJobId || this.selectedRating === 0) return;
 
-    this.brandService.submitFeedback(this.currentJobId, this.selectedRating, this.feedbackComment).subscribe({
+    // Esquema unificado: el rating del creador es su review individual
+    // (PresentationReview) y entra al promedio del team, visible en Portfolios.
+    this.collaborationService.upsertReview(this.currentJobId, this.selectedRating, this.feedbackComment).subscribe({
       next: (res) => {
-        console.log("[SynthesisStudio] Feedback submitted successfully:", res);
+        console.log("[SynthesisStudio] Review submitted successfully:", res);
         this.feedbackSubmitted = true;
         this.showFeedbackModal = false;
       },
       error: (err) => {
-        console.error("[SynthesisStudio] Error submitting feedback:", err);
+        console.error("[SynthesisStudio] Error submitting review:", err);
         this.showFeedbackModal = false;
       }
     });

@@ -482,25 +482,17 @@
   color: #f59e0b; /* Gold star */
 }
 
-.btn-comment-view {
-  background: var(--brand-accent-soft);
-  border: 1px solid rgba(224, 138, 52, 0.2);
-  color: var(--brand-accent);
-  padding: 4px 10px;
-  border-radius: 6px;
+.rating-average-label {
   font-size: 0.75rem;
-  font-weight: 750;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  transition: all 0.2s;
+  font-weight: 700;
+  color: var(--text-muted-2);
+  white-space: nowrap;
 }
 
-.btn-comment-view:hover {
-  background: rgba(224, 138, 52, 0.18);
-  border-color: var(--brand-accent);
-  transform: translateY(-1px);
+.field-error {
+  font-size: 11px;
+  color: #dc2626;
+  margin: 0 0 12px;
 }
 
 .btn-rate {

@@ -29,8 +29,9 @@ describe('AssetLibraryComponent — Portfolio management', () => {
     display_name: name,
     created_at: '2026-06-11T10:00:00',
     brand_id: null,
-    rating: null,
-    comment: null,
+    rating_average: null,
+    rating_count: 0,
+    my_rating: null,
     has_prompt: true,
   });
 
@@ -41,7 +42,7 @@ describe('AssetLibraryComponent — Portfolio management', () => {
   beforeEach(async () => {
     brandServiceSpy = jasmine.createSpyObj('BrandService', [
       'getBrands', 'getLibraryImages', 'getLibraryBlueprints', 'getLibraryKnowledge',
-      'getLibraryPortfolios', 'renamePortfolio', 'deletePortfolio', 'submitFeedback',
+      'getLibraryPortfolios', 'renamePortfolio', 'deletePortfolio',
     ]);
     brandServiceSpy.getBrands.and.returnValue(of([]));
     brandServiceSpy.getLibraryImages.and.returnValue(of([]));
@@ -193,7 +194,7 @@ describe('AssetLibraryComponent — Presentation detail: reviews + collaborators
 
   const makeItem = (id: number, name: string): PortfolioItem => ({
     id, filename: `Presentation_${id}.pptx`, display_name: name, created_at: '2026-06-11T10:00:00',
-    brand_id: null, rating: null, comment: null, has_prompt: true,
+    brand_id: null, rating_average: null, rating_count: 0, my_rating: null, has_prompt: true,
   });
 
   beforeEach(async () => {
@@ -378,6 +379,33 @@ describe('AssetLibraryComponent — Presentation detail: reviews + collaborators
 
       expect(collabSpy.removeCollaborator).toHaveBeenCalledWith(5, 300);
       expect(collabSpy.getCollaborators).toHaveBeenCalledWith(5);
+    });
+  });
+
+  describe('submitFeedback() — RATE IT unificado sobre PresentationReview', () => {
+    it('upserts the review, closes the modal and refreshes the library', () => {
+      component.ratingJobId = 5;
+      component.selectedRating = 4;
+      component.feedbackComment = 'Nice one';
+      component.showRatingModal = true;
+      collabSpy.upsertReview.and.returnValue(of({} as any));
+
+      component.submitFeedback();
+
+      expect(collabSpy.upsertReview).toHaveBeenCalledWith(5, 4, 'Nice one');
+      expect(component.showRatingModal).toBeFalse();
+    });
+
+    it('keeps the modal open and surfaces the server detail on error (e.g. 403 non-collaborator)', () => {
+      component.ratingJobId = 5;
+      component.selectedRating = 4;
+      component.showRatingModal = true;
+      collabSpy.upsertReview.and.returnValue(throwError(() => ({ error: { detail: 'Only the job owner or a collaborator can review this presentation' } })));
+
+      component.submitFeedback();
+
+      expect(component.showRatingModal).toBeTrue();
+      expect(component.ratingError).toBe('Only the job owner or a collaborator can review this presentation');
     });
   });
 });

@@ -226,3 +226,97 @@ class TestPortfolioDelete:
 
         assert client.delete(f"/api/library/portfolios/{job_id}").status_code == 200
         assert client.delete(f"/api/library/portfolios/{job_id}").status_code == 404
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RATING AGREGADO (PresentationReview) EN EL LISTADO
+# Modelo unificado (confirmado 2026-07-13): el rating del creador es su review
+# individual; la tarjeta muestra el promedio del team. 'hidden' y borradas
+# quedan fuera del promedio; 'flagged' (auto-tag pendiente) cuenta.
+# ─────────────────────────────────────────────────────────────────────────────
+import uuid
+
+from auth import security
+
+
+def _make_user(db, tenant_id=None, role=models.UserRole.CLIENTE.value):
+    user = models.User(
+        email=f"user_{uuid.uuid4().hex}@example.com",
+        hashed_password=security.hash_password("irrelevant-password"),
+        role=role,
+        tenant_id=tenant_id,
+        is_active=1,
+    )
+    db.add(user)
+    db.flush()
+    return user
+
+
+def _headers(user):
+    return {"Authorization": f"Bearer {security.create_access_token(user.id, user.role, user.tenant_id)}"}
+
+
+def _add_review(db, job_id, user_id, rating, moderation_status="visible", is_deleted=False):
+    review = models.PresentationReview(
+        job_id=job_id, user_id=user_id, rating=rating,
+        moderation_status=moderation_status, is_deleted=is_deleted,
+    )
+    db.add(review)
+    db.flush()
+    return review
+
+
+@pytest.mark.integration
+class TestPortfolioRatingAggregates:
+
+    def _scenario(self, db):
+        tenant = models.Tenant(name=f"Tenant_{uuid.uuid4().hex}")
+        db.add(tenant)
+        db.flush()
+        brand = models.Brand(name=f"Brand_{uuid.uuid4().hex}", tenant_id=tenant.id)
+        db.add(brand)
+        db.flush()
+        owner = _make_user(db, tenant_id=tenant.id)
+        job = _make_job(db, brand.id, filename="team_rated.pptx")
+        job.owner_id = owner.id
+        db.flush()
+        return tenant, brand, owner, job
+
+    def test_average_count_and_my_rating(self, client, db_session):
+        tenant, brand, owner, job = self._scenario(db_session)
+        teammate = _make_user(db_session, tenant_id=tenant.id)
+        _add_review(db_session, job.id, owner.id, 5)
+        _add_review(db_session, job.id, teammate.id, 3, moderation_status="flagged")  # flagged cuenta
+
+        item = client.get("/api/library/portfolios", headers=_headers(owner)).json()["items"][0]
+        assert item["rating_average"] == 4.0
+        assert item["rating_count"] == 2
+        assert item["my_rating"] == 5  # habilita/oculta el RATE IT de la tarjeta
+
+        item = client.get("/api/library/portfolios", headers=_headers(teammate)).json()["items"][0]
+        assert item["my_rating"] == 3
+
+    def test_hidden_and_deleted_excluded_from_average(self, client, db_session):
+        tenant, brand, owner, job = self._scenario(db_session)
+        hidden_user = _make_user(db_session, tenant_id=tenant.id)
+        deleted_user = _make_user(db_session, tenant_id=tenant.id)
+        _add_review(db_session, job.id, owner.id, 4)
+        _add_review(db_session, job.id, hidden_user.id, 1, moderation_status="hidden")
+        _add_review(db_session, job.id, deleted_user.id, 1, is_deleted=True)
+
+        item = client.get("/api/library/portfolios", headers=_headers(owner)).json()["items"][0]
+        assert item["rating_average"] == 4.0
+        assert item["rating_count"] == 1
+
+        # La review propia hidden sigue contando como "ya calificó" (no re-mostrar RATE IT);
+        # la borrada no — el usuario decidió retirarla y puede volver a calificar.
+        assert client.get("/api/library/portfolios", headers=_headers(hidden_user)).json()["items"][0]["my_rating"] == 1
+        assert client.get("/api/library/portfolios", headers=_headers(deleted_user)).json()["items"][0]["my_rating"] is None
+
+    def test_job_without_reviews(self, client, db_session):
+        tenant, brand, owner, job = self._scenario(db_session)
+
+        item = client.get("/api/library/portfolios", headers=_headers(owner)).json()["items"][0]
+        assert item["rating_average"] is None
+        assert item["rating_count"] == 0
+        assert item["my_rating"] is None

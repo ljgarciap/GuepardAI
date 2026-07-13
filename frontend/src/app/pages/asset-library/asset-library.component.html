@@ -125,20 +125,20 @@
           </ng-template>
           <div class="meta-row">
             <span class="meta-date">Strategic Synthesis • {{ p.created_at | date:'medium' }}</span>
-            <span class="meta-divider" *ngIf="p.rating">•</span>
-            <div class="portfolio-rating" *ngIf="p.rating">
+            <span class="meta-divider" *ngIf="p.rating_count > 0">•</span>
+            <div class="portfolio-rating" *ngIf="p.rating_count > 0">
               <span class="rating-stars">
-                <span *ngFor="let star of [1, 2, 3, 4, 5]" class="star-static" [class.filled]="p.rating >= star">★</span>
+                <span *ngFor="let star of [1, 2, 3, 4, 5]" class="star-static" [class.filled]="(p.rating_average ?? 0) >= star - 0.5">★</span>
               </span>
-              <button *ngIf="p.comment" class="btn-comment-view" (click)="viewComment(p.comment)" title="View Observations">
-                💬 View observations
-              </button>
+              <span class="rating-average-label">
+                {{ p.rating_average }} / 5 ({{ p.rating_count }} review{{ p.rating_count === 1 ? '' : 's' }})
+              </span>
             </div>
           </div>
         </div>
         <div class="item-actions">
           <button class="btn-mini" (click)="openDetailModal(p)">REVIEWS &amp; TEAM</button>
-          <button *ngIf="!p.rating" class="btn-mini btn-rate" (click)="openRatingModal(p.id)">★ RATE IT</button>
+          <button *ngIf="p.my_rating == null" class="btn-mini btn-rate" (click)="openRatingModal(p.id)">★ RATE IT</button>
           <button class="btn-mini" (click)="downloadPortfolio(p)">DOWNLOAD</button>
           <button class="btn-mini btn-delete" (click)="askDeletePortfolio(p)" title="Delete presentation">🗑️</button>
         </div>
@@ -309,31 +309,15 @@
         </textarea>
       </div>
 
+      <p class="field-error" *ngIf="ratingError">{{ ratingError }}</p>
+
       <div class="feedback-modal-actions">
-        <button 
-          class="btn-primary-enterprise" 
-          [disabled]="selectedRating === 0" 
+        <button
+          class="btn-primary-enterprise"
+          [disabled]="selectedRating === 0"
           (click)="submitFeedback()">
           SUBMIT REVIEW
         </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- VIEW COMMENTS MODAL -->
-  <div class="feedback-modal-overlay" *ngIf="showCommentModal" (click)="closeCommentModal()">
-    <div class="feedback-modal-card glass-panel slideUp" (click)="$event.stopPropagation()">
-      <button class="btn-close" (click)="closeCommentModal()">×</button>
-      
-      <div class="feedback-modal-header" style="text-align: left;">
-        <h4 style="margin-bottom: 16px;">User Observations</h4>
-        <div style="background: rgba(0,0,0,0.03); border: 1px solid var(--border-light); padding: 18px; border-radius: 12px; max-height: 250px; overflow-y: auto;">
-          <p style="font-size: 0.9rem; line-height: 1.6; color: var(--text-main); margin: 0; white-space: pre-wrap;">{{ selectedComment }}</p>
-        </div>
-      </div>
-
-      <div class="feedback-modal-actions" style="margin-top: 24px;">
-        <button class="btn-primary-enterprise" (click)="closeCommentModal()">CLOSE</button>
       </div>
     </div>
   </div>

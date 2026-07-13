@@ -1,7 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { GeneratorComponent } from './generator.component';
 import { BrandService } from '../../services/brand.service';
+import { CollaborationService } from '../../services/collaboration.service';
 import { PromptFavoritesService } from '../../services/prompt-favorites.service';
 import { AuthService } from '../../services/auth.service';
 
@@ -9,6 +10,7 @@ describe('GeneratorComponent — prompt support (soporte-indicaciones, bibliotec
   let fixture: ComponentFixture<GeneratorComponent>;
   let component: GeneratorComponent;
   let brandSpy: jasmine.SpyObj<BrandService>;
+  let collabSpy: jasmine.SpyObj<CollaborationService>;
 
   beforeEach(async () => {
     brandSpy = jasmine.createSpyObj('BrandService', [
@@ -19,6 +21,8 @@ describe('GeneratorComponent — prompt support (soporte-indicaciones, bibliotec
     brandSpy.getAvailableKnowledge.and.returnValue(of({ sources: [] }));
     brandSpy.getAvailableDialects.and.returnValue(of([]));
 
+    collabSpy = jasmine.createSpyObj('CollaborationService', ['upsertReview']);
+
     // PromptSupportComponent (embebido) también inyecta BrandService/PromptFavoritesService,
     // pero no dispara ninguna llamada hasta que se abre una de sus 4 tarjetas — no hace falta
     // stubear esos métodos acá, solo evitar que Angular falle construyendo el spy real.
@@ -28,6 +32,7 @@ describe('GeneratorComponent — prompt support (soporte-indicaciones, bibliotec
       imports: [GeneratorComponent],
       providers: [
         { provide: BrandService, useValue: brandSpy },
+        { provide: CollaborationService, useValue: collabSpy },
         { provide: PromptFavoritesService, useValue: favoritesSpy },
         { provide: AuthService, useValue: { currentUser: { role: 'cliente' } } },
       ],
@@ -89,6 +94,32 @@ describe('GeneratorComponent — prompt support (soporte-indicaciones, bibliotec
       component.promptMetadata = { objective: 'X' };
       component.reset();
       expect(component.promptMetadata).toBeNull();
+    });
+  });
+
+  describe('submitFeedback() — esquema unificado: el rating del creador es su PresentationReview', () => {
+    it('upserts the review via CollaborationService and closes the modal', () => {
+      component.currentJobId = 7;
+      component.selectedRating = 4;
+      component.feedbackComment = 'Solid deck';
+      component.showFeedbackModal = true;
+      collabSpy.upsertReview.and.returnValue(of({} as any));
+
+      component.submitFeedback();
+
+      expect(collabSpy.upsertReview).toHaveBeenCalledWith(7, 4, 'Solid deck');
+      expect(component.feedbackSubmitted).toBeTrue();
+      expect(component.showFeedbackModal).toBeFalse();
+    });
+
+    it('does not mark as submitted when the review call fails', () => {
+      component.currentJobId = 7;
+      component.selectedRating = 4;
+      collabSpy.upsertReview.and.returnValue(throwError(() => ({ error: { detail: 'nope' } })));
+
+      component.submitFeedback();
+
+      expect(component.feedbackSubmitted).toBeFalse();
     });
   });
 });

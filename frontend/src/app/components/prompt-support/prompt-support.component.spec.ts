@@ -43,8 +43,8 @@ describe('PromptSupportComponent', () => {
       component.mode = 'synthesis';
       brandSpy.getLibraryPortfolios.and.returnValue(of({
         items: [
-          { id: 1, filename: 'a.pptx', display_name: 'a', created_at: '', brand_id: null, rating: null, comment: null, has_prompt: true },
-          { id: 2, filename: 'b.pptx', display_name: 'b', created_at: '', brand_id: null, rating: null, comment: null, has_prompt: false },
+          { id: 1, filename: 'a.pptx', display_name: 'a', created_at: '', brand_id: null, rating_average: null, rating_count: 0, my_rating: null, has_prompt: true },
+          { id: 2, filename: 'b.pptx', display_name: 'b', created_at: '', brand_id: null, rating_average: null, rating_count: 0, my_rating: null, has_prompt: false },
         ],
         total: 2, page: 1, page_size: 50,
       }));

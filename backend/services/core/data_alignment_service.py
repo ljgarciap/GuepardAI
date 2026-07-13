@@ -251,12 +251,71 @@ def _run_stale_fallback_model_fix() -> dict:
         db.close()
 
 
+def _run_feedback_to_reviews() -> dict:
+    """
+    Migra el rating legacy de satisfacción (GenerationJobFeedback, 1 fila por
+    job SIN autor) al esquema unificado de reviews (PresentationReview, 1 por
+    usuario), atribuyéndolo al owner del job — según el modelo confirmado por
+    Luis 2026-07-13: el rating del creador es su review individual y entra al
+    promedio del team. Idempotente: si el owner ya tiene review en el job (
+    orgánica o migrada, incluso borrada — no resucitar decisiones del usuario),
+    se salta. Jobs sin owner_id (pre-auth) se reportan y quedan como están.
+    No consume tokens LLM.
+    Spec: docs/specs/reviews-analitica-colaboracion.md (unificación post-spec)
+    """
+    from services.core import content_moderation_service
+
+    summary = {"migrated": 0, "skipped_existing": 0, "no_owner": 0, "failed": 0}
+    db = SessionLocal()
+    try:
+        question = db.query(models.SurveyQuestion).filter(
+            models.SurveyQuestion.key == "presentation_satisfaction"
+        ).first()
+        if question is None:
+            return summary
+
+        feedbacks = db.query(models.GenerationJobFeedback).filter(
+            models.GenerationJobFeedback.question_id == question.id,
+            models.GenerationJobFeedback.rating.isnot(None),
+        ).all()
+        for f in feedbacks:
+            try:
+                job = db.query(models.GenerationJob).get(f.job_id)
+                if job is None or job.owner_id is None:
+                    summary["no_owner"] += 1
+                    continue
+                existing = db.query(models.PresentationReview).filter(
+                    models.PresentationReview.job_id == f.job_id,
+                    models.PresentationReview.user_id == job.owner_id,
+                ).first()
+                if existing is not None:
+                    summary["skipped_existing"] += 1
+                    continue
+                db.add(models.PresentationReview(
+                    job_id=f.job_id,
+                    user_id=job.owner_id,
+                    rating=max(1, min(5, f.rating)),
+                    comment=f.comment,
+                    created_at=f.created_at,
+                    moderation_status=content_moderation_service.evaluate(db, f.comment or ""),
+                ))
+                summary["migrated"] += 1
+            except Exception as e:
+                summary["failed"] += 1
+                logger.warning(f"[FeedbackToReviews] Feedback {f.id} failed: {e}")
+        db.commit()
+        return summary
+    finally:
+        db.close()
+
+
 ALIGNMENT_REGISTRY: Dict[str, Callable[[], dict]] = {
     "visual_profile_backfill_v1": _run_visual_profile_backfill,
     "file_reorganization_v1": _run_file_reorganization,
     "perceptual_hash_backfill_v1": _run_perceptual_hash_backfill,
     "tenant_backfill_v1": _run_tenant_backfill,
     "stale_fallback_model_fix_v1": _run_stale_fallback_model_fix,
+    "feedback_to_reviews_v1": _run_feedback_to_reviews,
 }
 
 

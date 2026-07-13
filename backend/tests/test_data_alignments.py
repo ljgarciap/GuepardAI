@@ -337,3 +337,120 @@ class TestStaleFallbackModelFix:
         config_db.expire_all()
         row = config_db.query(models.SystemConfig).filter(models.SystemConfig.key == self.KEYS[0]).first()
         assert row.value == clean
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ALINEACIÓN: feedback_to_reviews_v1 (unificación de rating — 2026-07-13)
+# El rating legacy de satisfacción (GenerationJobFeedback, sin autor) se migra
+# como review individual del OWNER del job (PresentationReview).
+# ─────────────────────────────────────────────────────────────────────────────
+@pytest.fixture()
+def feedback_migration_db(create_test_schema, require_db):
+    """Sesión real (la alineación usa SessionLocal); limpia todo lo que crea."""
+    from database import SessionLocal
+    db = SessionLocal()
+    created = {"tenants": [], "users": [], "brands": [], "jobs": []}
+
+    yield db, created
+
+    for job_id in created["jobs"]:
+        db.query(models.PresentationReview).filter(models.PresentationReview.job_id == job_id).delete()
+        db.query(models.GenerationJobFeedback).filter(models.GenerationJobFeedback.job_id == job_id).delete()
+        db.query(models.GenerationJob).filter(models.GenerationJob.id == job_id).delete()
+    for brand_id in created["brands"]:
+        db.query(models.Brand).filter(models.Brand.id == brand_id).delete()
+    for user_id in created["users"]:
+        db.query(models.User).filter(models.User.id == user_id).delete()
+    for tenant_id in created["tenants"]:
+        db.query(models.Tenant).filter(models.Tenant.id == tenant_id).delete()
+    db.query(models.DataAlignment).filter(models.DataAlignment.name == "feedback_to_reviews_v1").delete()
+    db.commit()
+    db.close()
+
+
+@pytest.mark.integration
+class TestFeedbackToReviews:
+
+    def _run(self):
+        from services.core.data_alignment_service import _run_feedback_to_reviews
+        return _run_feedback_to_reviews()
+
+    def _scenario(self, db, created, *, with_owner=True):
+        from auth import security
+        suffix = os.urandom(3).hex()
+        tenant = models.Tenant(name=f"FeedbackMigTenant_{suffix}")
+        db.add(tenant)
+        db.flush()
+        created["tenants"].append(tenant.id)
+
+        owner = None
+        if with_owner:
+            owner = models.User(
+                email=f"owner_{suffix}@example.com",
+                hashed_password=security.hash_password("irrelevant-password"),
+                role=models.UserRole.CLIENTE.value,
+                tenant_id=tenant.id,
+                is_active=1,
+            )
+            db.add(owner)
+            db.flush()
+            created["users"].append(owner.id)
+
+        brand = models.Brand(name=f"FeedbackMigBrand_{suffix}", tenant_id=tenant.id)
+        db.add(brand)
+        db.flush()
+        created["brands"].append(brand.id)
+
+        job = models.GenerationJob(
+            brand_id=brand.id,
+            owner_id=owner.id if owner else None,
+            status=models.GenerationJobStatus.COMPLETED,
+        )
+        db.add(job)
+        db.flush()
+        created["jobs"].append(job.id)
+
+        question = db.query(models.SurveyQuestion).filter(
+            models.SurveyQuestion.key == "presentation_satisfaction").first()
+        if not question:
+            question = models.SurveyQuestion(key="presentation_satisfaction", question_text="?", is_active=True)
+            db.add(question)
+            db.flush()
+        db.add(models.GenerationJobFeedback(job_id=job.id, question_id=question.id, rating=5, comment="Legacy note"))
+        db.commit()
+        return owner, job
+
+    def test_migrates_feedback_as_owner_review(self, feedback_migration_db):
+        db, created = feedback_migration_db
+        owner, job = self._scenario(db, created)
+
+        summary = self._run()
+
+        assert summary["migrated"] >= 1
+        db.expire_all()
+        review = db.query(models.PresentationReview).filter_by(job_id=job.id, user_id=owner.id).first()
+        assert review is not None
+        assert review.rating == 5
+        assert review.comment == "Legacy note"
+        assert review.moderation_status == "visible"
+
+    def test_idempotent_and_respects_existing_owner_review(self, feedback_migration_db):
+        db, created = feedback_migration_db
+        owner, job = self._scenario(db, created)
+
+        self._run()
+        second = self._run()
+
+        assert second["skipped_existing"] >= 1
+        db.expire_all()
+        assert db.query(models.PresentationReview).filter_by(job_id=job.id, user_id=owner.id).count() == 1
+
+    def test_job_without_owner_reported_not_migrated(self, feedback_migration_db):
+        db, created = feedback_migration_db
+        _, job = self._scenario(db, created, with_owner=False)
+
+        summary = self._run()
+
+        assert summary["no_owner"] >= 1
+        db.expire_all()
+        assert db.query(models.PresentationReview).filter_by(job_id=job.id).count() == 0

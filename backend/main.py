@@ -671,15 +671,31 @@ def list_library_portfolios(
                  .limit(page_size)
                  .all())
 
-    # Pre-fetch satisfaction feedback, acotado a los jobs de la página
-    satisfaction_q = db.query(models.SurveyQuestion).filter(models.SurveyQuestion.key == "presentation_satisfaction").first()
-    feedbacks_dict = {}
-    if satisfaction_q and jobs:
-        feedbacks = db.query(models.GenerationJobFeedback).filter(
-            models.GenerationJobFeedback.question_id == satisfaction_q.id,
-            models.GenerationJobFeedback.job_id.in_([j.id for j in jobs])
+    # Rating del team (PresentationReview): promedio + conteo por job, batcheado a
+    # la página. Mismo criterio que GET /api/presentations/{id}/reviews — 'flagged'
+    # cuenta (auto-tag pendiente), solo 'hidden' (acción de admin) queda fuera.
+    aggregates_dict = {}
+    my_reviews_dict = {}
+    if jobs:
+        job_ids = [j.id for j in jobs]
+        visible_reviews = db.query(
+            models.PresentationReview.job_id,
+            func.avg(models.PresentationReview.rating),
+            func.count(models.PresentationReview.id),
+        ).filter(
+            models.PresentationReview.job_id.in_(job_ids),
+            models.PresentationReview.is_deleted == False,
+            models.PresentationReview.moderation_status != "hidden",
+        ).group_by(models.PresentationReview.job_id).all()
+        aggregates_dict = {job_id: {"avg": round(float(avg), 2), "count": count} for job_id, avg, count in visible_reviews}
+
+        # La review propia (aunque esté hidden) — habilita el "RATE IT" de la tarjeta
+        my_reviews = db.query(models.PresentationReview).filter(
+            models.PresentationReview.job_id.in_(job_ids),
+            models.PresentationReview.user_id == current_user.id,
+            models.PresentationReview.is_deleted == False,
         ).all()
-        feedbacks_dict = {f.job_id: {"rating": f.rating, "comment": f.comment} for f in feedbacks}
+        my_reviews_dict = {r.job_id: r for r in my_reviews}
 
     items = [{
         "id": j.id,
@@ -687,8 +703,9 @@ def list_library_portfolios(
         "display_name": _portfolio_display_name(j),
         "created_at": j.created_at,
         "brand_id": j.brand_id,
-        "rating": feedbacks_dict.get(j.id, {}).get("rating"),
-        "comment": feedbacks_dict.get(j.id, {}).get("comment"),
+        "rating_average": aggregates_dict.get(j.id, {}).get("avg"),
+        "rating_count": aggregates_dict.get(j.id, {}).get("count", 0),
+        "my_rating": my_reviews_dict[j.id].rating if j.id in my_reviews_dict else None,
         "has_prompt": bool(j.prompt),
     } for j in jobs]
 

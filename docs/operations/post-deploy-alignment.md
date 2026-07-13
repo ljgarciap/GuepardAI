@@ -30,6 +30,44 @@ cuando el guard esté apagado (ejecución manual con los scripts de `utils/`).
 
 ---
 
+## Iteración 10 — Unificación de rating: feedback legacy → reviews (2026-07-13)
+
+**Contexto**: convivían dos sistemas de rating sobre presentaciones: el legacy
+de satisfacción (`GenerationJobFeedback` — 1 fila por job, **sin autor**,
+escrito por "RATE IT" en Portfolios y el modal post-generación del Synthesis
+Studio) y el de reviews de Priority 4 (`PresentationReview` — por usuario, con
+moderación y promedio). La tarjeta de Portfolios mostraba el legacy, por lo que
+la review propia de un colaborador y el promedio del team eran invisibles.
+Modelo unificado confirmado por Luis: el rating del creador ES su review
+individual; todos los implicados ven el promedio histórico.
+
+**Sin comandos manuales.** Alineación automática al arrancar:
+- `feedback_to_reviews_v1` — migra cada feedback de satisfacción con rating a
+  una `PresentationReview` del **owner** del job (comentario incluido, pasado
+  por el filtro de moderación). Idempotente: si el owner ya tiene review en el
+  job (orgánica, migrada, o borrada por él) se salta. Jobs sin `owner_id`
+  (pre-auth) se reportan en `detail` como `no_owner` y conservan su feedback
+  legacy — mismo criterio de "sin owner conocido, sin backfill" de las
+  iteraciones 7/9. No consume tokens LLM.
+
+**Corrección de código** (mismo deploy):
+- `GET /api/library/portfolios` ahora expone `rating_average`/`rating_count`
+  (promedio del team desde `PresentationReview`, excluye `hidden` y borradas,
+  `flagged` cuenta) y `my_rating`; los campos legacy `rating`/`comment`
+  desaparecen de la respuesta.
+- "RATE IT" y el modal post-generación escriben vía
+  `POST /api/presentations/{job_id}/reviews` (los endpoints legacy de feedback
+  quedan sin consumidores en la UI; no se eliminan en este deploy).
+- Fix Template Merge: el auto-select de brand único no recargaba el dropdown
+  de knowledge scopeado al brand (quedaba solo lo público — vacío).
+
+**Verificación**:
+```sql
+SELECT detail FROM data_alignments WHERE name = 'feedback_to_reviews_v1';
+```
+
+---
+
 ## Iteración 9 — Hotfix: Template Merge jobs huérfanos (tenant scoping) (2026-07-12)
 
 **Hallazgo** (reportado por revisión de arquitectura externa, verificado contra

@@ -1,12 +1,20 @@
 """
-seed_test_users.py — Siembra una organización y usuarios de prueba
-(admin + cliente) para QA manual. Idempotente y deshabilitado por defecto.
+seed_test_users.py — Siembra usuarios de prueba (admin + cliente) para QA
+manual, asociados al tenant base ("Guepard", ver seed_superadmin.py).
+Idempotente y deshabilitado por defecto.
 
 Solo corre si TEST_ADMIN_EMAIL/TEST_ADMIN_PASSWORD están seteados. A
 propósito NO se setean en el .env de EC2 — este seed nunca debe crear
 cuentas en producción real, aunque el código viva en `master` (mismo
 criterio de "requiere env var explícita" que seed_superadmin.py, pero acá
 la intención es que el `.env` de producción JAMÁS las tenga).
+
+Ajuste 2026-07-12: ya NO crea su propio tenant ("Test Organization") — se
+asocia al tenant base que siembra seed_default_tenant(), para que la DB no
+acumule tenants de demo (decisión de Luis: solo superadmin + un tenant).
+Requiere que seed_default_tenant() haya corrido antes (main.py lo garantiza
+en el orden de arranque); si el tenant base no existe todavía, se salta con
+un warning en vez de crear uno propio.
 
 Spec: docs/specs/autenticacion-multiusuario-multitenant.md
 """
@@ -17,6 +25,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import SessionLocal
 import models
 from auth.security import hash_password
+from utils.seed_superadmin import DEFAULT_TENANT_NAME
 
 
 def seed_test_users():
@@ -30,12 +39,11 @@ def seed_test_users():
     try:
         admin = db.query(models.User).filter(models.User.email == admin_email).first()
         if admin is None:
-            tenant_name = os.getenv("TEST_TENANT_NAME", "Test Organization")
+            tenant_name = os.getenv("TEST_TENANT_NAME", DEFAULT_TENANT_NAME)
             tenant = db.query(models.Tenant).filter(models.Tenant.name == tenant_name).first()
             if tenant is None:
-                tenant = models.Tenant(name=tenant_name)
-                db.add(tenant)
-                db.flush()  # asigna tenant.id sin cerrar la transacción
+                print(f"  [Seed] Skipped test users: tenant '{tenant_name}' not found — seed_default_tenant() must run first.")
+                return
             admin = models.User(
                 email=admin_email,
                 hashed_password=hash_password(admin_password),

@@ -70,10 +70,11 @@ try:
 except Exception as e:
     print(f"  [System] Warning: Seeding failed: {e}")
 try:
-    from utils.seed_superadmin import seed_superadmin
+    from utils.seed_superadmin import seed_superadmin, seed_default_tenant
     seed_superadmin()
+    seed_default_tenant()
 except Exception as e:
-    print(f"  [System] Warning: Superadmin seeding failed: {e}")
+    print(f"  [System] Warning: Superadmin/default tenant seeding failed: {e}")
 try:
     from utils.seed_test_users import seed_test_users
     seed_test_users()
@@ -1079,10 +1080,15 @@ def reset_database(admin_token: str = None, db: Session = Depends(get_db), curre
                 except Exception as e:
                     logger.warning(f"Failed to delete output file {file_path}: {e}")
         
-        # Run seed.py to re-populate configs
+        # Re-populate configs, then the superadmin + base tenant — otherwise the
+        # very superadmin who called this endpoint would be wiped out along with
+        # everything else, locking everyone out until someone reseeds by hand.
         from utils.seed import seed_data
+        from utils.seed_superadmin import seed_superadmin, seed_default_tenant
         seed_data()
-        
+        seed_superadmin()
+        seed_default_tenant()
+
         return {"status": "success", "message": "Database and temporary files reset and seeded successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -131,7 +131,13 @@ export class TemplateMergeComponent implements OnInit, OnDestroy {
     this.brandService.getBrands().subscribe({
       next: (res: any[]) => {
         this.brands = res.filter((b: any) => b.id !== -1);
-        if (this.brands.length === 1) this.selectedBrandId = this.brands[0].id;
+        if (this.brands.length === 1) {
+          this.selectedBrandId = this.brands[0].id;
+          // Asignación programática: no dispara (ngModelChange), así que la
+          // recarga scopeada al brand hay que pedirla explícitamente — sin esto
+          // un admin con un solo brand ve únicamente knowledge público (vacío).
+          this.loadKnowledgeSources();
+        }
       },
       error: () => this.brands = [],
     });

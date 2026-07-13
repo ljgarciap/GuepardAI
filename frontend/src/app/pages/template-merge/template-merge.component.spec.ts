@@ -319,3 +319,46 @@ describe('TemplateMergeComponent — Knowledge sources (regression: stale brand_
     expect(component.availableKnowledge).toEqual(['doc.pdf']);
   });
 });
+
+describe('TemplateMergeComponent — Knowledge sources (regression: single-brand auto-select never rescoped the list)', () => {
+  // Bug 2026-07-13: con un único brand, loadBrands() lo auto-selecciona
+  // programáticamente y eso NO dispara (ngModelChange) — el dropdown quedaba
+  // solo con knowledge público (vacío para un admin con knowledge privado).
+  let fixture: ComponentFixture<TemplateMergeComponent>;
+  let component: TemplateMergeComponent;
+  let httpMock: HttpTestingController;
+
+  beforeEach(async () => {
+    const brandServiceSpy = jasmine.createSpyObj('BrandService', [
+      'getTemplateMergeHistory', 'renameTemplateMergeJob', 'deleteTemplateMergeJob', 'getBrands',
+    ]);
+    brandServiceSpy.getTemplateMergeHistory.and.returnValue(of({ items: [], total: 0, page: 1, page_size: 12 }));
+    brandServiceSpy.getBrands.and.returnValue(of([{ id: 1, name: 'Tesco' }]));
+
+    await TestBed.configureTestingModule({
+      imports: [TemplateMergeComponent, HttpClientTestingModule],
+      providers: [{ provide: BrandService, useValue: brandServiceSpy }, provideRouter([])],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(TemplateMergeComponent);
+    component = fixture.componentInstance;
+    httpMock = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+
+    httpMock.match(r => r.url.endsWith('/template-merge/templates')).forEach(req => req.flush([]));
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+  });
+
+  it('auto-selecting the only brand re-fetches /available-knowledge scoped to it', () => {
+    expect(component.selectedBrandId).toBe(1);
+
+    const requests = httpMock.match(r => r.url.includes('/available-knowledge'));
+    expect(requests.some(r => r.request.urlWithParams.includes('brand_id=1'))).toBeTrue();
+    requests.forEach(r => r.flush({ sources: ['Tesco Annual Report.pdf'] }));
+
+    expect(component.availableKnowledge).toEqual(['Tesco Annual Report.pdf']);
+  });
+});

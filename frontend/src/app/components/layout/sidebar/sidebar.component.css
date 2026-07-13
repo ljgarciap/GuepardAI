@@ -12,6 +12,7 @@
   gap: 12px;
   margin-bottom: 48px;
   padding: 0 12px;
+  flex-shrink: 0;
 }
 
 .logo-wrapper-elite {
@@ -46,9 +47,15 @@
 
 .nav-menu {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.sidebar-footer {
+  flex-shrink: 0;
 }
 
 .nav-item-elite {

@@ -497,6 +497,12 @@
   background: var(--bg-surface);
 }
 
+.detail-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted-2);
+  margin: 6px 0 0;
+}
+
 .error-lite {
   background: rgba(229, 62, 62, 0.08);
   color: var(--danger-text);

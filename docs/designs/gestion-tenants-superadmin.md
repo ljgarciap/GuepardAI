@@ -108,13 +108,59 @@ can never contain entries from different tenants once a scope is selected.
 of the Departments tab) and a "Create User" card (email + password,
 `createUser()` → `POST /api/users`).
 
+## Follow-up #2: a new Tenant was invisible without a Brand
+
+### `main.py` — `/api/brands`
+
+`_serialize_brand()` gained `tenant_id`/`tenant_name` (`Brand.tenant` was
+already a relationship — `back_populates="brands"` on `Tenant`, unlike
+`Department.tenant` which is one-directional). `list_brands()` now accepts an
+optional `tenant_id`, honored only for superadmin, with `joinedload` to avoid
+N+1 — same pattern as `departments.py`/`users.py`. `create_brand()` now 422s
+if a superadmin omits `tenant_id`, closing the path that silently produced an
+"unaligned" Brand (`tenant_id IS NULL`, invisible to `admin`/`cliente` since
+their list query is `tenant_id == current_user.tenant_id`, never `IS NULL`).
+`admin`/`cliente` callers are unaffected — `tenant_id` was already implicit to
+`current_user.tenant_id` for them and still is.
+
+These are edits to existing legacy routes, not new ones — stayed in `main.py`
+rather than moving to `routers/`, consistent with "new routes go in
+`routers/`, existing legacy routes stay where they are" from CLAUDE.md.
+
+### `brand.service.ts` / `brand-hub.component.ts` / `.html`
+
+Same shape as the Departments/Users fix: `getBrands(tenantId?)` /
+`createBrand(..., tenantId?)` gain the parameter; `BrandHubComponent` gains
+`tenants: Tenant[]`, `selectedTenantId`, `loadTenants()` (superadmin only,
+loaded in `ngOnInit`), and `onTenantScopeChange()` that reloads `officialBrands`
+scoped to the new tenant. `createNewBrand()` blocks (with an `alert()`,
+matching this component's existing error-handling convention — it doesn't use
+the `.detail-error` paragraph pattern `admin.component.ts` uses) when a
+superadmin hasn't picked a tenant. The selector renders as a second
+`.brand-registry-pill` in the page header, `*ngIf="isSuperadmin"`.
+
+`brand-hub.component.spec.ts` is new — the component had zero test coverage
+before this change. Scope was kept to the tenant-scoping logic actually added
+(not a full retrofit of the pre-existing upload/polling/footer logic, which
+was out of scope for this fix).
+
 ## Testing
 
 - `backend/tests/test_tenants_routes.py` — role gating (403 for admin/cliente),
   successful creation, duplicate email (409), short password (422), list
   scoping.
 - `backend/tests/test_departments_routes.py` — added a `tenant_name` assertion.
+- `backend/tests/test_users_routes.py` — `tenant_id` filter (superadmin-only,
+  ignored for admin).
+- `backend/tests/test_tenant_scoping.py` — `tenant_id` filter on `/api/brands`,
+  `tenant_name` in response, 422 when superadmin omits `tenant_id`, successful
+  targeted creation.
 - `frontend/.../admin.component.spec.ts` — tenant load on init, `createTenant()`
-  success/error/blank-field paths, `tenantName()` resolution.
-- Manual verification: Playwright against the local Docker stack (superadmin
-  login → Tenants tab → create tenant → appears in Departments dropdown).
+  success/error/blank-field paths, `tenantName()` resolution, `createUser()`,
+  `onTenantScopeChange()`.
+- `frontend/.../brand-hub.component.spec.ts` (new) — tenant load on init,
+  scoped `createNewBrand()`/`onTenantScopeChange()`.
+- Manual verification: Playwright against the local Docker stack for all three
+  rounds (Tenants tab → dropdowns; Departments/Users scope + assign; Brand
+  Directory scope + blocked-without-tenant), including the negative case
+  (create blocked without a tenant selected) each time.

@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { BrandService } from '../../services/brand.service';
 import { AuthService } from '../../services/auth.service';
 import { ConfirmDialogService } from '../../services/confirm-dialog.service';
+import { CollaborationService, Tenant } from '../../services/collaboration.service';
 import { interval, Subscription, switchMap, takeWhile } from 'rxjs';
 
 interface JobState {
@@ -31,6 +32,7 @@ export class BrandHubComponent implements OnInit, OnDestroy {
   brandService = inject(BrandService);
   authService = inject(AuthService);
   confirmDialogService = inject(ConfirmDialogService);
+  collaborationService = inject(CollaborationService);
 
   get isSuperadmin(): boolean {
     return this.authService.currentUser?.role === 'superadmin';
@@ -43,6 +45,13 @@ export class BrandHubComponent implements OnInit, OnDestroy {
   officialBrands: any[] = [];
   newBrandName: string = '';
   showBrandCreator: boolean = false;
+
+  // Managing tenant (superadmin only) — scopes which tenant's brands are listed
+  // and which tenant a newly registered brand is assigned to. Without this, a
+  // superadmin-created brand had no way to be linked to a tenant at all and
+  // silently stayed unaligned (invisible to that tenant's admin/cliente).
+  tenants: Tenant[] = [];
+  selectedTenantId: number | null = null;
 
   resetLoading: boolean = false;
 
@@ -58,12 +67,24 @@ export class BrandHubComponent implements OnInit, OnDestroy {
   showFooterCreator: boolean = false;
 
   ngOnInit() {
+    if (this.isSuperadmin) { this.loadTenants(); }
     this.loadBrands();
     this.loadFooters();
   }
 
+  loadTenants() {
+    this.collaborationService.getTenants().subscribe({
+      next: (res) => this.tenants = res,
+      error: () => {}
+    });
+  }
+
+  onTenantScopeChange() {
+    this.loadBrands();
+  }
+
   loadBrands() {
-    this.brandService.getBrands().subscribe(res => {
+    this.brandService.getBrands(this.isSuperadmin && this.selectedTenantId ? this.selectedTenantId : undefined).subscribe(res => {
       this.officialBrands = res.filter((b: any) => b.id !== -1);
     });
   }
@@ -77,7 +98,11 @@ export class BrandHubComponent implements OnInit, OnDestroy {
 
   createNewBrand() {
     if (!this.newBrandName) return;
-    this.brandService.createBrand(this.newBrandName).subscribe({
+    if (this.isSuperadmin && !this.selectedTenantId) {
+      alert('Select a tenant above first.');
+      return;
+    }
+    this.brandService.createBrand(this.newBrandName, undefined, undefined, undefined, this.isSuperadmin ? (this.selectedTenantId ?? undefined) : undefined).subscribe({
       next: (brand) => {
         this.officialBrands.push(brand);
         this.newBrandName = '';

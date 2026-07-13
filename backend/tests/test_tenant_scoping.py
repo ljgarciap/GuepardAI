@@ -115,6 +115,53 @@ class TestBrandDirectoryScoping:
 
         assert resp.status_code == 403
 
+    def test_superadmin_can_filter_by_tenant_id(self, client, db_session):
+        tenant_a = _make_tenant(db_session, "A3")
+        tenant_b = _make_tenant(db_session, "B3")
+        superadmin = _make_user(db_session, models.UserRole.SUPERADMIN.value, None)
+        _make_brand(db_session, tenant_a.id, "BrandA3")
+        _make_brand(db_session, tenant_b.id, "BrandB3")
+
+        resp = client.get(f"/api/brands?tenant_id={tenant_a.id}", headers=_headers(superadmin))
+
+        names = {b["name"] for b in resp.json()}
+        assert names == {"BrandA3"}
+
+    def test_brand_response_includes_tenant_name(self, client, db_session):
+        tenant = _make_tenant(db_session, "NamedTenant")
+        admin = _make_user(db_session, models.UserRole.ADMIN.value, tenant.id)
+        _make_brand(db_session, tenant.id, "NamedBrand")
+
+        resp = client.get("/api/brands", headers=_headers(admin))
+
+        entry = next(b for b in resp.json() if b["name"] == "NamedBrand")
+        assert entry["tenant_id"] == tenant.id
+        assert entry["tenant_name"] == tenant.name
+
+    def test_superadmin_requires_tenant_id_to_create_brand(self, client, db_session):
+        superadmin = _make_user(db_session, models.UserRole.SUPERADMIN.value, None)
+
+        resp = client.post(
+            "/api/brands",
+            data={"name": f"OrphanBrand_{id(object())}"},
+            headers=_headers(superadmin),
+        )
+
+        assert resp.status_code == 422
+
+    def test_superadmin_creates_brand_for_specified_tenant(self, client, db_session):
+        tenant = _make_tenant(db_session, "TargetTenant")
+        superadmin = _make_user(db_session, models.UserRole.SUPERADMIN.value, None)
+
+        resp = client.post(
+            "/api/brands",
+            data={"name": f"TargetedBrand_{id(object())}", "tenant_id": tenant.id},
+            headers=_headers(superadmin),
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["tenant_id"] == tenant.id
+
 
 @pytest.mark.integration
 class TestGenerationScoping:

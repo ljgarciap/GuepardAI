@@ -101,6 +101,40 @@ Fix:
 - Para `admin` (no superadmin) no cambia nada: su scope siempre fue —y sigue
   siendo— implícito a su propio tenant en ambas listas.
 
+## Follow-up fix #2 (2026-07-12, mismo día): un Tenant nuevo era invisible sin Brand
+
+Luis creó un Tenant desde la pestaña nueva y "no se veía" en ningún lado.
+Conversación de arquitectura antes de tocar código (registrada acá porque
+cambia cómo se relacionan Tenant y Brand, no solo un bugfix puntual):
+investigamos juntos y encontramos que el Tenant sí existía en la DB, pero
+**Brand Directory (Intelligence Hub) no tenía ningún concepto de tenant**:
+`createBrand()` nunca mandaba `tenant_id`, y `list_brands` para superadmin
+traía todas las brands de todos los tenants mezcladas sin ninguna etiqueta.
+Como todo lo que importa en la app (Synthesis Studio, Template Merge,
+Intelligence Hub) cuelga de una Brand — no de un Tenant — un Tenant sin Brand
+queda efectivamente invisible en el resto del sistema.
+
+Se evaluaron 3 opciones (ver AskUserQuestion en la conversación): alta manual
+con el mismo patrón de selector ya construido para Departments/Users, alta
+guiada de la primera Brand en el mismo formulario de "Create Tenant", o ambas.
+**Luis eligió la opción manual** (mismo patrón, reusa lo ya validado, cambio
+acotado) — la guiada queda para una iteración futura si hace falta.
+
+Fix:
+- `GET /api/brands` gana `tenant_id` (filtro opcional, mismo criterio que
+  `departments.py`/`users.py`); la respuesta gana `tenant_id` y `tenant_name`
+  (`Brand.tenant` ya existía como relationship, ahora con `joinedload` para
+  evitar N+1).
+- `POST /api/brands` ahora **requiere** `tenant_id` para un superadmin (422 si
+  falta) — antes lo aceptaba como opcional y la Brand quedaba "unaligned"
+  (`tenant_id IS NULL`) sin ningún aviso, invisible para el tenant que se
+  buscaba armar. No afecta a `admin`/`cliente`: para ellos `tenant_id` sigue
+  siendo implícito a su propio tenant, igual que siempre.
+- Intelligence Hub gana el mismo selector "Managing Tenant" (superadmin-only)
+  que ya tienen Departments/Users: escopea qué brands se listan y a qué tenant
+  se asigna una Brand nueva. Crear sin tenant seleccionado queda bloqueado en
+  el frontend con el mismo mensaje que ya usa "Create Department"/"Create User".
+
 ## Out of scope (este ciclo)
 
 - Invitación por email con password temporal (ver decisión arriba).

@@ -5,6 +5,14 @@
       <span class="page-subtitle">KNOWLEDGE ARCHITECTURE & BRAND GOVERNANCE • v1.1</span>
     </div>
 
+    <!-- Managing tenant (superadmin only) — scopes which tenant's brands are listed/created -->
+    <div class="brand-registry-pill" *ngIf="isSuperadmin">
+      <select class="elite-select" [(ngModel)]="selectedTenantId" (ngModelChange)="onTenantScopeChange()">
+        <option [ngValue]="null">All tenants (browse only)</option>
+        <option *ngFor="let t of tenants" [ngValue]="t.id">{{ t.name }}</option>
+      </select>
+    </div>
+
     <!-- Quick Brand Registry -->
     <div class="brand-registry-pill">
       <button class="btn-ghost" (click)="showBrandCreator = !showBrandCreator">
@@ -13,6 +21,7 @@
       <div class="brand-creator-mini" *ngIf="showBrandCreator">
         <input type="text" [(ngModel)]="newBrandName" placeholder="Enter Brand Name (e.g. Castrol)" (keyup.enter)="createNewBrand()">
         <button class="btn-mini" (click)="createNewBrand()">SAVE</button>
+        <p class="detail-hint" *ngIf="isSuperadmin && !selectedTenantId">Select a tenant above first.</p>
       </div>
     </div>
   </div>

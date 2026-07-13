@@ -104,17 +104,20 @@ export class BrandService {
     return this.http.post(`${this.apiUrl}/brand/upload`, formData);
   }
 
-  getBrands(): Observable<any[]> {
-    return this.http.get<any[]>(`${this.apiUrl}/brands`);
+  getBrands(tenantId?: number): Observable<any[]> {
+    let params = new HttpParams();
+    if (tenantId !== undefined) params = params.set('tenant_id', tenantId);
+    return this.http.get<any[]>(`${this.apiUrl}/brands`, { params });
   }
 
-  createBrand(name: string, about?: string, coreValue?: string, logo?: File): Observable<any> {
+  createBrand(name: string, about?: string, coreValue?: string, logo?: File, tenantId?: number): Observable<any> {
     const formData = new FormData();
     formData.append('name', name);
     if (about) formData.append('about', about);
     if (coreValue) formData.append('core_value', coreValue);
     if (logo) formData.append('logo', logo);
-    
+    if (tenantId !== undefined) formData.append('tenant_id', tenantId.toString());
+
     return this.http.post(`${this.apiUrl}/brands`, formData);
   }
 

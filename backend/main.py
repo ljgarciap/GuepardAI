@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 import models
 from database import SessionLocal, engine, Base, reconcile_additive_columns, get_db
 from tasks import (
@@ -247,16 +247,25 @@ def _serialize_brand(brand: models.Brand) -> dict:
         "logo_path": logo_url,
         "about": brand.about,
         "core_value": brand.core_value,
+        "tenant_id": brand.tenant_id,
+        "tenant_name": brand.tenant.name if brand.tenant else None,
         "created_at": brand.created_at.isoformat() if brand.created_at else None,
     }
 
 
 @app.get("/api/brands", tags=["Governance"])
-def list_brands(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    """Lista el Directorio Oficial de Marcas (scopeado al tenant del usuario; superadmin ve todas)."""
-    query = db.query(models.Brand)
+def list_brands(
+    tenant_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Lista el Directorio Oficial de Marcas (scopeado al tenant del usuario; superadmin ve todas,
+    o filtra por tenant_id si lo pasa explícito — mismo criterio que departments.py/users.py)."""
+    query = db.query(models.Brand).options(joinedload(models.Brand.tenant))
     if current_user.role != models.UserRole.SUPERADMIN.value:
         query = query.filter(models.Brand.tenant_id == current_user.tenant_id)
+    elif tenant_id is not None:
+        query = query.filter(models.Brand.tenant_id == tenant_id)
     return [_serialize_brand(b) for b in query.all()]
 
 @app.post("/api/brands", tags=["Governance"])
@@ -270,7 +279,12 @@ async def create_brand(
     current_user: models.User = Depends(get_current_user)
 ):
     """Registra una nueva marca (Delegado a BrandService). Se asigna al tenant del usuario
-    (admin/cliente); `tenant_id` explícito solo lo honra un superadmin."""
+    (admin/cliente); `tenant_id` explícito lo requiere un superadmin (mismo criterio que
+    POST /api/admin/departments — sin esto la Brand queda "unaligned", invisible para el
+    tenant que se buscaba armar)."""
+    if current_user.role == models.UserRole.SUPERADMIN.value and tenant_id is None:
+        raise HTTPException(status_code=422, detail="tenant_id is required for superadmin")
+
     existing = db.query(models.Brand).filter(models.Brand.name == name).first()
     if existing:
         raise HTTPException(status_code=400, detail="Brand already exists.")

@@ -9,6 +9,7 @@ import {
   AdminReview,
   UsageUser,
   UsageReport,
+  Tenant,
 } from '../../services/collaboration.service';
 
 @Component({
@@ -22,11 +23,19 @@ export class AdminComponent implements OnInit {
   private collaborationService = inject(CollaborationService);
   private authService = inject(AuthService);
 
-  activeTab: 'departments' | 'moderation' | 'analytics' | 'reports' = 'departments';
+  activeTab: 'tenants' | 'departments' | 'moderation' | 'analytics' | 'reports' = 'departments';
 
   get isSuperadmin(): boolean {
     return this.authService.currentUser?.role === 'superadmin';
   }
+
+  // --- TENANTS (superadmin only) ---
+  tenants: Tenant[] = [];
+  newTenantName = '';
+  newTenantAdminEmail = '';
+  newTenantAdminPassword = '';
+  tenantError = '';
+  tenantCreated = '';
 
   // --- DEPARTMENTS ---
   departments: Department[] = [];
@@ -55,15 +64,50 @@ export class AdminComponent implements OnInit {
   reportsTenantId: number | null = null;
 
   ngOnInit() {
+    if (this.isSuperadmin) { this.loadTenants(); }
     this.setTab('departments');
   }
 
-  setTab(tab: 'departments' | 'moderation' | 'analytics' | 'reports') {
+  setTab(tab: 'tenants' | 'departments' | 'moderation' | 'analytics' | 'reports') {
     this.activeTab = tab;
+    if (tab === 'tenants') { this.loadTenants(); }
     if (tab === 'departments') { this.loadDepartments(); this.loadUsers(); }
     if (tab === 'moderation') { this.loadAdminReviews(); this.loadBlocklist(); }
     if (tab === 'analytics') { this.loadAnalytics(); }
     if (tab === 'reports') { this.loadReports(); }
+  }
+
+  // --- TENANTS ---
+
+  loadTenants() {
+    if (!this.isSuperadmin) return;
+    this.collaborationService.getTenants().subscribe({
+      next: (res) => this.tenants = res,
+      error: () => {}
+    });
+  }
+
+  createTenant() {
+    const name = this.newTenantName.trim();
+    const email = this.newTenantAdminEmail.trim();
+    if (!name || !email || !this.newTenantAdminPassword) return;
+    this.tenantError = '';
+    this.tenantCreated = '';
+    this.collaborationService.createTenant(name, email, this.newTenantAdminPassword).subscribe({
+      next: (res) => {
+        this.tenantCreated = `Tenant "${res.tenant.name}" created — admin ${res.admin.email} can now log in with the password you set.`;
+        this.newTenantName = '';
+        this.newTenantAdminEmail = '';
+        this.newTenantAdminPassword = '';
+        this.loadTenants();
+      },
+      error: (err) => { this.tenantError = err.error?.detail || 'Could not create tenant.'; }
+    });
+  }
+
+  tenantName(id: number | null): string {
+    if (!id) return '—';
+    return this.tenants.find(t => t.id === id)?.name || '—';
   }
 
   // --- DEPARTMENTS ---

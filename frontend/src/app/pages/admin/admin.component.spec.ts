@@ -15,7 +15,7 @@ describe('AdminComponent', () => {
     collabSpy = jasmine.createSpyObj('CollaborationService', [
       'getDepartments', 'getUsers', 'createDepartment', 'deleteDepartment', 'updateUserDepartment',
       'getAdminReviews', 'updateReviewModeration', 'getModerationBlocklist', 'updateModerationBlocklist',
-      'getUsageAnalytics', 'getUsageReports',
+      'getUsageAnalytics', 'getUsageReports', 'getTenants', 'createTenant',
     ]);
     collabSpy.getDepartments.and.returnValue(of([]));
     collabSpy.getUsers.and.returnValue(of([]));
@@ -23,6 +23,7 @@ describe('AdminComponent', () => {
     collabSpy.getModerationBlocklist.and.returnValue(of({ terms: [] }));
     collabSpy.getUsageAnalytics.and.returnValue(of({ users: [] }));
     collabSpy.getUsageReports.and.returnValue(of([]));
+    collabSpy.getTenants.and.returnValue(of([]));
 
     TestBed.configureTestingModule({
       imports: [AdminComponent],
@@ -72,7 +73,7 @@ describe('AdminComponent', () => {
     });
 
     it('createDepartment() calls the service, clears the input, and reloads on success', () => {
-      collabSpy.createDepartment.and.returnValue(of({ id: 1, tenant_id: 4, name: 'Sales' }));
+      collabSpy.createDepartment.and.returnValue(of({ id: 1, tenant_id: 4, tenant_name: 'Acme', name: 'Sales' }));
       component.newDepartmentName = 'Sales';
       component.createDepartment();
 
@@ -94,7 +95,7 @@ describe('AdminComponent', () => {
 
     it('deleteDepartment() calls the service and reloads', () => {
       collabSpy.deleteDepartment.and.returnValue(of({ status: 'deleted' }));
-      component.deleteDepartment({ id: 9, tenant_id: 4, name: 'Old' });
+      component.deleteDepartment({ id: 9, tenant_id: 4, tenant_name: 'Acme', name: 'Old' });
 
       expect(collabSpy.deleteDepartment).toHaveBeenCalledWith(9);
       expect(collabSpy.getDepartments).toHaveBeenCalledTimes(2);
@@ -139,6 +140,10 @@ describe('AdminComponent', () => {
       expect(component.isSuperadmin).toBeTrue();
     });
 
+    it('loads tenants on init, for the dropdowns in other tabs', () => {
+      expect(collabSpy.getTenants).toHaveBeenCalled();
+    });
+
     it('switching to moderation tab also loads the blocklist', () => {
       component.setTab('moderation');
       expect(collabSpy.getModerationBlocklist).toHaveBeenCalled();
@@ -151,6 +156,54 @@ describe('AdminComponent', () => {
       component.saveBlocklist();
 
       expect(collabSpy.updateModerationBlocklist).toHaveBeenCalledWith(['spam', 'scam']);
+    });
+
+    it('createTenant() does nothing when a required field is missing', () => {
+      component.newTenantName = 'Acme';
+      component.newTenantAdminEmail = '';
+      component.newTenantAdminPassword = 'supersecret1';
+      component.createTenant();
+      expect(collabSpy.createTenant).not.toHaveBeenCalled();
+    });
+
+    it('createTenant() calls the service, clears the form, and reloads on success', () => {
+      collabSpy.createTenant.and.returnValue(of({
+        tenant: { id: 5, name: 'Acme', is_active: 1, created_at: '2026-07-12T00:00:00Z' },
+        admin: { id: 12, email: 'acme.admin@example.com' },
+      }));
+      component.newTenantName = 'Acme';
+      component.newTenantAdminEmail = 'acme.admin@example.com';
+      component.newTenantAdminPassword = 'supersecret1';
+
+      component.createTenant();
+
+      expect(collabSpy.createTenant).toHaveBeenCalledWith('Acme', 'acme.admin@example.com', 'supersecret1');
+      expect(component.newTenantName).toBe('');
+      expect(component.newTenantAdminEmail).toBe('');
+      expect(component.newTenantAdminPassword).toBe('');
+      expect(component.tenantCreated).toContain('acme.admin@example.com');
+      expect(collabSpy.getTenants).toHaveBeenCalledTimes(2); // init + reload
+    });
+
+    it('createTenant() surfaces the backend error message', () => {
+      collabSpy.createTenant.and.returnValue(
+        // @ts-ignore — simulamos un error HTTP
+        { subscribe: (handlers: any) => handlers.error({ error: { detail: 'Email already in use' } }) }
+      );
+      component.newTenantName = 'Acme';
+      component.newTenantAdminEmail = 'taken@example.com';
+      component.newTenantAdminPassword = 'supersecret1';
+
+      component.createTenant();
+
+      expect(component.tenantError).toBe('Email already in use');
+    });
+
+    it('tenantName() resolves a known id and falls back to em dash otherwise', () => {
+      component.tenants = [{ id: 5, name: 'Acme', is_active: 1, created_at: '2026-07-12T00:00:00Z' }];
+      expect(component.tenantName(5)).toBe('Acme');
+      expect(component.tenantName(999)).toBe('—');
+      expect(component.tenantName(null)).toBe('—');
     });
   });
 });

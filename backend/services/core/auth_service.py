@@ -41,19 +41,16 @@ def _issue_token_pair(user: models.User) -> Tuple[str, str]:
     return access_token, refresh_token
 
 
-def register_user(
-    db: Session, email: str, password: str, tenant_name: Optional[str] = None
-) -> Tuple[models.User, str, str]:
-    """
-    Registro público: crea un Tenant nuevo y un User rol `admin` en él (nunca
-    `cliente` suelto — un tenant recién creado necesita alguien que lo
-    administre). Resolución confirmada por Luis 2026-07-05, ver spec.
-    """
+def _create_tenant_and_admin(db: Session, email: str, password: str, tenant_name: str) -> Tuple[models.Tenant, models.User]:
+    """Crea un Tenant nuevo y su primer User rol `admin` (nunca `cliente` suelto —
+    un tenant recién creado necesita alguien que lo administre). Compartido por
+    register_user (autoregistro público) y create_tenant_with_admin (alta por
+    superadmin desde el Admin Panel)."""
     existing = db.query(models.User).filter(models.User.email == email).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
 
-    tenant = models.Tenant(name=tenant_name or email)
+    tenant = models.Tenant(name=tenant_name)
     db.add(tenant)
     db.flush()  # asigna tenant.id sin cerrar la transacción
 
@@ -68,16 +65,36 @@ def register_user(
     try:
         db.commit()
     except IntegrityError:
-        # Carrera: dos registros concurrentes con el mismo email pasaron el
-        # SELECT de arriba antes de que cualquiera hiciera commit. El unique
-        # constraint de la DB es la última línea de defensa — sin este catch,
-        # el segundo request recibe un 500 crudo en vez del 409 documentado.
+        # Carrera: dos altas concurrentes con el mismo email pasaron el SELECT
+        # de arriba antes de que cualquiera hiciera commit. El unique constraint
+        # de la DB es la última línea de defensa — sin este catch, el segundo
+        # request recibe un 500 crudo en vez del 409 documentado.
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
+    db.refresh(tenant)
     db.refresh(user)
+    return tenant, user
 
+
+def register_user(
+    db: Session, email: str, password: str, tenant_name: Optional[str] = None
+) -> Tuple[models.User, str, str]:
+    """Registro público: crea Tenant + primer Admin y devuelve un par de tokens
+    para dejar al usuario logueado. Resolución confirmada por Luis 2026-07-05, ver spec."""
+    _tenant, user = _create_tenant_and_admin(db, email, password, tenant_name or email)
     access_token, refresh_token = _issue_token_pair(user)
     return user, access_token, refresh_token
+
+
+def create_tenant_with_admin(
+    db: Session, tenant_name: str, admin_email: str, admin_password: str
+) -> Tuple[models.Tenant, models.User]:
+    """Alta de Tenant + Admin por un superadmin desde el Admin Panel (no autoregistro).
+    No emite tokens — el superadmin mantiene su propia sesión; el admin nuevo
+    inicia sesión con la password que el superadmin le comunique fuera de banda.
+    Decisión temporal confirmada por Luis 2026-07-12: migrar a invitación por
+    email con password temporal más adelante (ver spec, sección "Futuro")."""
+    return _create_tenant_and_admin(db, admin_email, admin_password, tenant_name)
 
 
 def authenticate_user(db: Session, email: str, password: str) -> Tuple[models.User, str, str]:

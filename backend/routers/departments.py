@@ -9,7 +9,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 import models
 from auth.dependencies import require_role
@@ -28,6 +28,7 @@ class DepartmentCreateRequest(BaseModel):
 class DepartmentOut(BaseModel):
     id: int
     tenant_id: int
+    tenant_name: Optional[str] = None
     name: str
 
     class Config:
@@ -64,7 +65,7 @@ def list_departments(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role(*_ADMIN_ROLES)),
 ):
-    query = db.query(models.Department)
+    query = db.query(models.Department).options(joinedload(models.Department.tenant))
     if current_user.role == models.UserRole.SUPERADMIN.value:
         if tenant_id is not None:
             query = query.filter(models.Department.tenant_id == tenant_id)

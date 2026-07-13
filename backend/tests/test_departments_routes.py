@@ -121,6 +121,15 @@ class TestListDepartments:
         names = {d["name"] for d in resp.json()}
         assert names == {"DeptA2"}
 
+    def test_department_includes_tenant_name(self, client, db_session):
+        tenant = _make_tenant(db_session, "NamedTenant")
+        admin = _make_user(db_session, models.UserRole.ADMIN.value, tenant.id)
+        _make_department(db_session, tenant.id, "WithTenantName")
+
+        resp = client.get("/api/admin/departments", headers=_headers(admin))
+        entry = next(d for d in resp.json() if d["name"] == "WithTenantName")
+        assert entry["tenant_name"] == tenant.name
+
 
 @pytest.mark.integration
 class TestDeleteDepartment:

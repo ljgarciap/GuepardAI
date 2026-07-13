@@ -43,7 +43,20 @@ export interface UserOut {
 export interface Department {
   id: number;
   tenant_id: number;
+  tenant_name: string | null;
   name: string;
+}
+
+export interface Tenant {
+  id: number;
+  name: string;
+  is_active: number;
+  created_at: string;
+}
+
+export interface TenantCreateResponse {
+  tenant: Tenant;
+  admin: { id: number; email: string };
 }
 
 export interface UsageUser {
@@ -146,6 +159,19 @@ export class CollaborationService {
 
   updateUserDepartment(userId: number, departmentId: number | null): Observable<UserOut> {
     return this.http.patch<UserOut>(`${this.apiUrl}/users/${userId}/department`, { department_id: departmentId });
+  }
+
+  // --- Tenants (superadmin only) ---
+  getTenants(): Observable<Tenant[]> {
+    return this.http.get<Tenant[]>(`${this.apiUrl}/admin/tenants`);
+  }
+
+  createTenant(name: string, adminEmail: string, adminPassword: string): Observable<TenantCreateResponse> {
+    return this.http.post<TenantCreateResponse>(`${this.apiUrl}/admin/tenants`, {
+      name,
+      admin_email: adminEmail,
+      admin_password: adminPassword,
+    });
   }
 
   // --- Analytics & Reports ---

@@ -1,5 +1,6 @@
 import datetime
 from enum import Enum
+from typing import Optional
 from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Float, ForeignKey, Boolean, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
@@ -88,7 +89,13 @@ class Department(Base):
     name       = Column(String(100), nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+    tenant = relationship("Tenant")
+
     __table_args__ = (UniqueConstraint('tenant_id', 'name', name='uq_department_tenant_name'),)
+
+    @property
+    def tenant_name(self) -> Optional[str]:
+        return self.tenant.name if self.tenant else None
 
 
 class Brand(Base):

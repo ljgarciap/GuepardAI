@@ -5,6 +5,7 @@
       <p class="page-subtitle">DEPARTMENTS • MODERATION • ANALYTICS • REPORTS</p>
     </div>
     <div class="tab-switcher">
+      <button *ngIf="isSuperadmin" [class.active]="activeTab === 'tenants'" (click)="setTab('tenants')">TENANTS</button>
       <button [class.active]="activeTab === 'departments'" (click)="setTab('departments')">DEPARTMENTS</button>
       <button [class.active]="activeTab === 'moderation'" (click)="setTab('moderation')">MODERATION</button>
       <button [class.active]="activeTab === 'analytics'" (click)="setTab('analytics')">ANALYTICS</button>
@@ -14,27 +15,61 @@
 
   <div class="library-content">
 
+    <!-- TENANTS (superadmin only) -->
+    <div class="admin-section" *ngIf="activeTab === 'tenants' && isSuperadmin">
+      <div class="admin-card glass-panel">
+        <h5>Create Tenant</h5>
+        <p class="detail-hint">Creates a new tenant with its first admin. Share the password with them out of band — this will move to an email invite later.</p>
+        <div class="admin-form-row">
+          <input type="text" [(ngModel)]="newTenantName" placeholder="Tenant name" class="admin-input">
+          <input type="email" [(ngModel)]="newTenantAdminEmail" placeholder="Admin email" class="admin-input">
+          <input type="password" [(ngModel)]="newTenantAdminPassword" placeholder="Admin password (min 8 chars)" class="admin-input">
+          <button class="btn-mini" [disabled]="!newTenantName.trim() || !newTenantAdminEmail.trim() || !newTenantAdminPassword" (click)="createTenant()">CREATE</button>
+        </div>
+        <p class="detail-error" *ngIf="tenantError">{{ tenantError }}</p>
+        <p class="saved-tag" *ngIf="tenantCreated">{{ tenantCreated }}</p>
+      </div>
+
+      <div class="admin-card glass-panel">
+        <h5>Tenants</h5>
+        <div class="admin-table">
+          <div class="admin-table-row admin-table-header">
+            <span>Name</span><span>Created</span><span></span>
+          </div>
+          <div class="admin-table-row" *ngFor="let t of tenants">
+            <span>{{ t.name }}</span>
+            <span>{{ t.created_at | date:'mediumDate' }}</span>
+            <span></span>
+          </div>
+          <div class="picker-empty" *ngIf="tenants.length === 0">No tenants yet.</div>
+        </div>
+      </div>
+    </div>
+
     <!-- DEPARTMENTS -->
     <div class="admin-section" *ngIf="activeTab === 'departments'">
       <div class="admin-card glass-panel">
         <h5>Create Department</h5>
         <div class="admin-form-row">
           <input type="text" [(ngModel)]="newDepartmentName" placeholder="Department name" class="admin-input">
-          <input *ngIf="isSuperadmin" type="number" [(ngModel)]="newDepartmentTenantId" placeholder="Tenant ID" class="admin-input admin-input-narrow">
+          <select *ngIf="isSuperadmin" [(ngModel)]="newDepartmentTenantId" class="enterprise-select admin-input-narrow">
+            <option [ngValue]="null" disabled>Select tenant...</option>
+            <option *ngFor="let t of tenants" [ngValue]="t.id">{{ t.name }}</option>
+          </select>
           <button class="btn-mini" [disabled]="!newDepartmentName.trim()" (click)="createDepartment()">CREATE</button>
         </div>
         <p class="detail-error" *ngIf="departmentError">{{ departmentError }}</p>
       </div>
 
       <div class="admin-card glass-panel">
-        <h5>Departments {{ isSuperadmin ? '(filtered by Tenant ID above, if set)' : '' }}</h5>
+        <h5>Departments {{ isSuperadmin ? '(filtered by tenant above, if selected)' : '' }}</h5>
         <div class="admin-table">
           <div class="admin-table-row admin-table-header">
             <span>Name</span><span>Tenant</span><span></span>
           </div>
           <div class="admin-table-row" *ngFor="let d of departments">
             <span>{{ d.name }}</span>
-            <span>{{ d.tenant_id }}</span>
+            <span>{{ d.tenant_name }}</span>
             <button class="btn-mini btn-ghost" (click)="deleteDepartment(d)">DELETE</button>
           </div>
           <div class="picker-empty" *ngIf="departments.length === 0">No departments yet.</div>
@@ -104,7 +139,10 @@
     <div class="admin-section" *ngIf="activeTab === 'analytics'">
       <div class="admin-card glass-panel">
         <div class="admin-form-row" *ngIf="isSuperadmin">
-          <input type="number" [(ngModel)]="analyticsTenantId" placeholder="Tenant ID (optional)" class="admin-input admin-input-narrow">
+          <select [(ngModel)]="analyticsTenantId" class="enterprise-select admin-input-narrow">
+            <option [ngValue]="null">All tenants</option>
+            <option *ngFor="let t of tenants" [ngValue]="t.id">{{ t.name }}</option>
+          </select>
           <button class="btn-mini" (click)="loadAnalytics()">FILTER</button>
         </div>
         <div class="admin-table">
@@ -128,14 +166,17 @@
     <div class="admin-section" *ngIf="activeTab === 'reports'">
       <div class="admin-card glass-panel">
         <div class="admin-form-row" *ngIf="isSuperadmin">
-          <input type="number" [(ngModel)]="reportsTenantId" placeholder="Tenant ID (optional, blank = all)" class="admin-input admin-input-narrow">
+          <select [(ngModel)]="reportsTenantId" class="enterprise-select admin-input-narrow">
+            <option [ngValue]="null">All tenants</option>
+            <option *ngFor="let t of tenants" [ngValue]="t.id">{{ t.name }}</option>
+          </select>
           <button class="btn-mini" (click)="loadReports()">FILTER</button>
         </div>
         <div class="report-list">
           <div class="report-item glass-panel" *ngFor="let r of usageReports">
             <div class="report-item-header">
               <span class="report-period">{{ r.period_start | date:'MMMM y' }}</span>
-              <span class="report-scope">{{ r.tenant_id === null ? 'Global' : 'Tenant ' + r.tenant_id }}</span>
+              <span class="report-scope">{{ r.tenant_id === null ? 'Global' : tenantName(r.tenant_id) }}</span>
               <span class="review-moderation-tag" *ngIf="!r.sent_at">not emailed</span>
             </div>
             <div class="report-stats">

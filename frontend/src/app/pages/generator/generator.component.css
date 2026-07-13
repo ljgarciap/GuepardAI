@@ -13,7 +13,6 @@
   align-items: flex-start;
   gap: 24px;
   background: var(--glass-bg);
-  backdrop-filter: blur(20px);
   border: 1px solid var(--border-color);
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.03);
   border-radius: 16px;
@@ -31,9 +30,9 @@
   color: var(--primary-navy);
   margin: 0;
   letter-spacing: -0.02em;
-  background: linear-gradient(90deg, var(--text-title) 0%, var(--text-muted-2) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  /* Solid color (set above) on purpose: background-clip:text + transparent fill
+     paints the gradient as a solid dark rectangle when Chromium's compositor
+     misrasterizes (GPU "black boxes" artifact seen 2026-07-13). */
 }
 
 .page-subtitle {
@@ -418,7 +417,6 @@ textarea {
 /* SUCCESS STATE (ELITE) */
 .success-card-elite {
     background: var(--glass-bg);
-    backdrop-filter: blur(20px);
     border: 1px solid var(--border-color);
     border-radius: 20px;
     padding: 40px;

@@ -116,6 +116,13 @@ export class AuthService {
     this.router.navigate(['/login']);
   }
 
+  changePassword(currentPassword: string, newPassword: string): Observable<void> {
+    return this.http.post<void>(`${this.apiUrl}/auth/change-password`, {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+  }
+
   private fetchCurrentUser(): Observable<AuthUser> {
     return this.http.get<AuthUser>(`${this.apiUrl}/auth/me`).pipe(
       tap((user) => this.currentUserSubject.next(user))

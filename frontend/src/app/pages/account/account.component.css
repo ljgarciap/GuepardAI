@@ -1,0 +1,85 @@
+.account-page {
+  display: flex;
+  justify-content: center;
+  padding: 40px 24px;
+}
+
+.account-card {
+  width: 100%;
+  max-width: 460px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.account-header h1 {
+  font-size: 1.3rem;
+  margin: 0;
+}
+
+.account-subtitle {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-top: 4px;
+}
+
+.account-card h2 {
+  font-size: 1rem;
+  margin: 0 0 4px;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-field label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.form-field input {
+  width: 100%;
+}
+
+.account-error {
+  color: var(--danger-text);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.account-success {
+  color: var(--brand-accent);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.account-submit {
+  background: var(--brand-accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 12px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.account-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.account-submit:not(:disabled):hover {
+  opacity: 0.9;
+}

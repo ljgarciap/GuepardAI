@@ -44,6 +44,11 @@ class UserOut(BaseModel):
     department_id: Optional[int] = None
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=8)
+
+
 class CreateUserRequest(BaseModel):
     """
     Alta de un usuario `cliente`. `tenant_id` solo lo honra un `superadmin`

@@ -1,0 +1,58 @@
+<div class="account-page">
+  <div class="account-card glass-panel">
+    <div class="account-header">
+      <h1>Account</h1>
+      <p class="account-subtitle" *ngIf="userEmail">{{ userEmail }}</p>
+    </div>
+
+    <form (ngSubmit)="submit(passwordForm)" #passwordForm="ngForm">
+      <h2>Change password</h2>
+
+      <div class="form-field">
+        <label for="currentPassword">Current password</label>
+        <input
+          id="currentPassword"
+          type="password"
+          name="currentPassword"
+          [(ngModel)]="currentPassword"
+          required
+          autocomplete="current-password"
+        />
+      </div>
+
+      <div class="form-field">
+        <label for="newPassword">New password</label>
+        <input
+          id="newPassword"
+          type="password"
+          name="newPassword"
+          [(ngModel)]="newPassword"
+          required
+          minlength="8"
+          autocomplete="new-password"
+          placeholder="Minimum 8 characters"
+        />
+      </div>
+
+      <div class="form-field">
+        <label for="confirmPassword">Confirm new password</label>
+        <input
+          id="confirmPassword"
+          type="password"
+          name="confirmPassword"
+          [(ngModel)]="confirmPassword"
+          required
+          autocomplete="new-password"
+        />
+      </div>
+
+      <p class="account-error" *ngIf="passwordsMismatch">The new password and confirmation don't match.</p>
+      <p class="account-error" *ngIf="errorMessage">{{ errorMessage }}</p>
+      <p class="account-success" *ngIf="successMessage">{{ successMessage }}</p>
+
+      <button type="submit" class="account-submit" [disabled]="passwordForm.invalid || passwordsMismatch || isSubmitting">
+        {{ isSubmitting ? 'Changing…' : 'Change password' }}
+      </button>
+    </form>
+  </div>
+</div>

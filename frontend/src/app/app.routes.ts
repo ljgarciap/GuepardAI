@@ -8,6 +8,7 @@ import { AdminComponent } from './pages/admin/admin.component';
 import { LoginComponent } from './pages/login/login.component';
 import { RegisterComponent } from './pages/register/register.component';
 import { TosComponent } from './pages/tos/tos.component';
+import { AccountComponent } from './pages/account/account.component';
 import { authGuard } from './guards/auth.guard';
 import { roleGuard } from './guards/role.guard';
 import { tosGuard } from './guards/tos.guard';
@@ -16,6 +17,7 @@ export const routes: Routes = [
   { path: 'login', component: LoginComponent, title: 'Sign In' },
   { path: 'register', component: RegisterComponent, title: 'Create Account' },
   { path: 'tos', component: TosComponent, title: 'Terms of Service', canActivate: [authGuard] },
+  { path: 'account', component: AccountComponent, title: 'Account', canActivate: [authGuard, tosGuard] },
   { path: '', component: GeneratorComponent, title: 'AI Generator Studio', canActivate: [authGuard, tosGuard] },
   { path: 'template-merge', component: TemplateMergeComponent, title: 'Template Merge Studio', canActivate: [authGuard, tosGuard] },
   { path: 'brands', component: BrandHubComponent, title: 'Intelligence Hub', canActivate: [authGuard, tosGuard] },

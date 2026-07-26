@@ -12,6 +12,7 @@ import models
 from database import get_db
 from auth.dependencies import check_login_rate_limit, get_current_user
 from auth.schemas import (
+    ChangePasswordRequest,
     LoginRequest,
     LogoutRequest,
     RefreshRequest,
@@ -55,3 +56,12 @@ def logout_route(payload: LogoutRequest):
 @router.get("/me", response_model=UserOut)
 def me(user: models.User = Depends(get_current_user)):
     return user
+
+
+@router.post("/change-password", status_code=204)
+def change_password(
+    payload: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    auth_service.change_password(db, user, payload.current_password, payload.new_password)

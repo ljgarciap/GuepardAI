@@ -193,3 +193,48 @@ class TestMe:
     def test_no_token_returns_401(self, client):
         resp = client.get("/api/auth/me")
         assert resp.status_code == 401
+
+
+@pytest.mark.integration
+class TestChangePassword:
+
+    def test_correct_current_password_changes_it(self, client):
+        tokens = _register(client, email="changepw.ok@example.com", password="original-password").json()
+        headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+        resp = client.post("/api/auth/change-password", json={
+            "current_password": "original-password", "new_password": "brand-new-password",
+        }, headers=headers)
+        assert resp.status_code == 204
+
+        old_login = client.post("/api/auth/login", json={"email": "changepw.ok@example.com", "password": "original-password"})
+        assert old_login.status_code == 401
+
+        new_login = client.post("/api/auth/login", json={"email": "changepw.ok@example.com", "password": "brand-new-password"})
+        assert new_login.status_code == 200
+
+    def test_wrong_current_password_returns_400(self, client):
+        tokens = _register(client, email="changepw.wrong@example.com", password="original-password").json()
+        headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+        resp = client.post("/api/auth/change-password", json={
+            "current_password": "not-the-real-password", "new_password": "brand-new-password",
+        }, headers=headers)
+
+        assert resp.status_code == 400
+
+    def test_weak_new_password_returns_422(self, client):
+        tokens = _register(client, email="changepw.weak@example.com", password="original-password").json()
+        headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+        resp = client.post("/api/auth/change-password", json={
+            "current_password": "original-password", "new_password": "short",
+        }, headers=headers)
+
+        assert resp.status_code == 422
+
+    def test_no_token_returns_401(self, client):
+        resp = client.post("/api/auth/change-password", json={
+            "current_password": "whatever", "new_password": "brand-new-password",
+        })
+        assert resp.status_code == 401

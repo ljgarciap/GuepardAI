@@ -119,6 +119,16 @@ def authenticate_user(db: Session, email: str, password: str) -> Tuple[models.Us
     return user, access_token, refresh_token
 
 
+def change_password(db: Session, user: models.User, current_password: str, new_password: str) -> None:
+    """Requiere la password actual (no alcanza con el access token) — evita que
+    una sesión abierta/robada cambie la password sin que el dueño la sepa."""
+    if not security.verify_password(current_password, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+
+    user.hashed_password = security.hash_password(new_password)
+    db.commit()
+
+
 def refresh_access_token(db: Session, refresh_token: str) -> Tuple[str, str]:
     invalid = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token"

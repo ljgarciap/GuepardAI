@@ -32,12 +32,17 @@ def _make_tenant(db, name="Tenant"):
 
 
 def _make_user(db, role, tenant_id=None, email=None):
+    from services.core.auth_service import get_current_tos_version
     user = models.User(
         email=email or f"{role}_{uuid.uuid4().hex}@example.com",
         hashed_password=security.hash_password("irrelevant-password"),
         role=role,
         tenant_id=tenant_id,
         is_active=1,
+        # Estas rutas no prueban el gate de ToS (auth/dependencies.py) — se
+        # asume aceptado para no acoplar tests de departamentos a esa feature.
+        tos_accepted=1,
+        tos_accepted_version=get_current_tos_version(),
     )
     db.add(user)
     db.commit()

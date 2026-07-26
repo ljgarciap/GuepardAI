@@ -1,0 +1,140 @@
+.tos-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  background: var(--bg-app);
+}
+
+.tos-card {
+  width: 100%;
+  max-width: 720px;
+  max-height: 90vh;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tos-header h1 {
+  font-size: 1.3rem;
+  margin: 0;
+}
+
+.tos-subtitle {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tos-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--brand-accent);
+  color: #fff;
+}
+
+.tos-badge-pending {
+  background: var(--danger-text);
+}
+
+.tos-loading {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 24px 0;
+}
+
+.tos-status-line {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.tos-status-pending {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+.tos-scroll {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 200px;
+  padding-right: 8px;
+  border-top: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.2));
+  border-bottom: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.2));
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.tos-scroll h2 {
+  font-size: 0.95rem;
+  margin: 18px 0 6px;
+}
+
+.tos-scroll h2:first-child {
+  margin-top: 0;
+}
+
+.tos-scroll p {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-secondary, var(--text-muted));
+  margin: 0 0 8px;
+}
+
+.tos-note {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.tos-error {
+  color: var(--danger-text);
+  font-size: 0.85rem;
+  text-align: center;
+  margin: 0;
+}
+
+.tos-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.tos-btn {
+  border: none;
+  border-radius: 6px;
+  padding: 12px 20px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.tos-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.tos-btn:not(:disabled):hover {
+  opacity: 0.9;
+}
+
+.tos-btn-primary {
+  background: var(--brand-accent);
+  color: #fff;
+}
+
+.tos-btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.tos-btn-danger {
+  background: var(--danger-text);
+  color: #fff;
+}

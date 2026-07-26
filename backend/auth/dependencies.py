@@ -27,7 +27,22 @@ LOGIN_RATE_LIMIT_MAX_ATTEMPTS = int(os.getenv("LOGIN_RATE_LIMIT_MAX_ATTEMPTS", "
 LOGIN_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("LOGIN_RATE_LIMIT_WINDOW_SECONDS", "60"))
 
 
+# Rutas que un usuario debe poder alcanzar incluso sin haber aceptado el ToS
+# vigente: aceptarlo/rechazarlo (api/tos) y las operaciones de sesión
+# (api/auth) — de lo contrario nadie podría llegar a la pantalla de
+# aprobación ni cerrar sesión mientras está bloqueado.
+TOS_EXEMPT_PATH_PREFIXES = ("/api/auth", "/api/tos")
+
+
 def get_current_user(
+    # Anotado como `Request` (no `Optional[Request]`): FastAPI solo reconoce e
+    # inyecta el objeto Request especial cuando la anotación es exactamente
+    # esa clase — envuelto en Optional/Union deja de detectarlo y en cambio
+    # intenta generarle un schema Pydantic, lo que rompe TODAS las rutas que
+    # dependen de get_current_user con un FastAPIError en el arranque. El
+    # default None sigue permitiendo las llamadas directas de los tests
+    # unitarios (sin request real) — ver TOS_EXEMPT_PATH_PREFIXES abajo.
+    request: Request = None,
     token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> models.User:
@@ -50,6 +65,14 @@ def get_current_user(
     user = db.query(models.User).filter(models.User.id == int(user_id)).first()
     if user is None or not user.is_active:
         raise credentials_exception
+
+    # request es None solo en llamadas directas (tests unitarios) — ahí no hay
+    # ruta HTTP real que eximir, así que el gate de ToS no aplica.
+    if request is not None and not any(request.url.path.startswith(p) for p in TOS_EXEMPT_PATH_PREFIXES):
+        from services.core import auth_service
+        if not auth_service.has_accepted_current_tos(user):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="TOS_NOT_ACCEPTED")
+
     return user
 
 

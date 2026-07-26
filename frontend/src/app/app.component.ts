@@ -6,7 +6,7 @@ import { SidebarComponent } from './components/layout/sidebar/sidebar.component'
 import { ConfirmModalComponent } from './components/shared/confirm-modal/confirm-modal.component';
 import { ThemeService } from './services/theme.service';
 
-const SHELL_LESS_ROUTES = ['/login', '/register'];
+const SHELL_LESS_ROUTES = ['/login', '/register', '/tos'];
 
 @Component({
   selector: 'app-root',

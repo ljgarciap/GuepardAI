@@ -167,3 +167,60 @@ def logout(refresh_token: str) -> None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Session store unavailable"
         )
+
+
+# ---------------------------------------------------------------------------
+# Términos de Servicio — aceptación por usuario.
+# Spec: docs/designs/claude-skills-benchmark-and-team-feedback-2026-07.md §5.
+# El gate real vive en auth/dependencies.py (get_current_user); estas
+# funciones son la única fuente de verdad que ese gate y routers/tos.py
+# comparten, para que nunca queden desincronizados.
+# ---------------------------------------------------------------------------
+
+TOS_CURRENT_VERSION_CONFIG_KEY = "tos_current_version"
+TOS_DEFAULT_VERSION = "1.1"
+
+
+def get_current_tos_version() -> str:
+    from providers.llm_provider import get_system_config
+    return get_system_config(TOS_CURRENT_VERSION_CONFIG_KEY, TOS_DEFAULT_VERSION)
+
+
+def has_accepted_current_tos(user: models.User) -> bool:
+    """superadmin es la cuenta operativa de la plataforma, no un `Client` sujeto
+    al ToS — bypass explícito por rol, igual que el resto del scoping por tenant."""
+    if user.role == models.UserRole.SUPERADMIN.value:
+        return True
+    return user.tos_accepted == 1 and user.tos_accepted_version == get_current_tos_version()
+
+
+def get_tos_status(user: models.User) -> dict:
+    return {
+        "accepted": has_accepted_current_tos(user),
+        "current_version": get_current_tos_version(),
+        "accepted_version": user.tos_accepted_version,
+        "accepted_at": user.tos_accepted_at,
+        "rejected_at": user.tos_rejected_at,
+    }
+
+
+def accept_tos(db: Session, user: models.User) -> dict:
+    user.tos_accepted = 1
+    user.tos_accepted_version = get_current_tos_version()
+    user.tos_accepted_at = datetime.datetime.utcnow()
+    user.tos_rejected_at = None
+    db.commit()
+    db.refresh(user)
+    return get_tos_status(user)
+
+
+def reject_tos(db: Session, user: models.User) -> dict:
+    """El usuario retira su aceptación en cualquier momento. No borra
+    tos_accepted_version/tos_accepted_at (historial de la última aceptación
+    válida); solo apaga el flag y marca cuándo — get_current_user vuelve a
+    bloquear todas las rutas salvo /api/auth y /api/tos en el próximo request."""
+    user.tos_accepted = 0
+    user.tos_rejected_at = datetime.datetime.utcnow()
+    db.commit()
+    db.refresh(user)
+    return get_tos_status(user)

@@ -46,6 +46,10 @@
       </a>
     </ng-container>
     <div class="nav-section-label">SYSTEM</div>
+    <a routerLink="/tos" routerLinkActive="active" class="nav-item-elite">
+      <span class="nav-icon-elite">§</span>
+      <span class="nav-link">Terms of Service</span>
+    </a>
     <button (click)="themeService.toggle()" class="nav-item-elite theme-toggle-elite" style="background: none; border: none; width: 100%; cursor: pointer; text-align: left;">
       <span class="nav-icon-elite">{{ themeService.theme() === 'dark' ? '☀' : '☾' }}</span>
       <span class="nav-link">{{ themeService.theme() === 'dark' ? 'Light mode' : 'Dark mode' }}</span>

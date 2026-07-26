@@ -75,6 +75,14 @@ class User(Base):
     # Asignación opcional (reviews-analitica-colaboracion, ítem 4) — no bloquea registro de usuarios existentes.
     department_id   = Column(Integer, ForeignKey("departments.id"), nullable=True)
     created_at      = Column(DateTime, default=datetime.datetime.utcnow)
+    # Aceptación de Términos de Servicio (docs/designs/claude-skills-benchmark-and-team-feedback-2026-07.md §5).
+    # NULL se trata como "no aceptado" (mismo default negativo que 0) — las
+    # filas ya desplegadas quedan NULL tras el ALTER aditivo y deben bloquear
+    # acceso igual que un usuario nuevo, no quedar aceptadas por accidente.
+    tos_accepted         = Column(Integer, nullable=True)   # 1 = aceptado; NULL/0 = no aceptado
+    tos_accepted_version = Column(String(20), nullable=True)  # versión aceptada (system_configs.tos_current_version)
+    tos_accepted_at      = Column(DateTime, nullable=True)
+    tos_rejected_at      = Column(DateTime, nullable=True)
 
     tenant = relationship("Tenant", back_populates="users")
     department = relationship("Department")

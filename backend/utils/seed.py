@@ -963,6 +963,15 @@ Write content for exactly ONE slide. Use COMPANY DATA as your primary source.
                 "key": "intent_library_v1",
                 "value": json.dumps(_INTENT_LIBRARY_V1),
                 "description": "Compositor guiado (soporte-indicaciones): categorías de intención fijas/globales con tono/duración/narrativa/densidad visual/layouts sugeridos. GET /api/config/prompt-intents."
+            },
+
+            # ─────────────────────────────────────────────────────
+            # TÉRMINOS DE SERVICIO
+            # ─────────────────────────────────────────────────────
+            {
+                "key": "tos_current_version",
+                "value": "1.1",
+                "description": "Versión vigente del ToS (Insumos/ToS v1.1.pdf, borrador legal). Bump al cambiar: todo User con tos_accepted_version distinta queda bloqueado hasta re-aceptar. No editar un valor ya seedeado — usar una key nueva si hace falta."
             }
 ]
 

@@ -240,12 +240,17 @@ from auth import security
 
 
 def _make_user(db, tenant_id=None, role=models.UserRole.CLIENTE.value):
+    from services.core.auth_service import get_current_tos_version
     user = models.User(
         email=f"user_{uuid.uuid4().hex}@example.com",
         hashed_password=security.hash_password("irrelevant-password"),
         role=role,
         tenant_id=tenant_id,
         is_active=1,
+        # Estas rutas no prueban el gate de ToS (auth/dependencies.py) — se
+        # asume aceptado para no acoplar tests de portfolios a esa feature.
+        tos_accepted=1,
+        tos_accepted_version=get_current_tos_version(),
     )
     db.add(user)
     db.flush()

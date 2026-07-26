@@ -328,10 +328,18 @@ def test_infer_action_footnote_always_preserved():
 
 
 @pytest.mark.unit
-def test_infer_action_preserve_keyword_overrides_length():
-    config = make_config(preserve_keywords="confidential,proprietary")
+def test_infer_action_preserve_keyword_short_hint_preserved():
+    config = make_config(preserve_keywords="confidential,proprietary", preserve_max_hint_chars=50)
+    assert analyzer_mod._infer_action(is_placeholder=False, role="body", hint="CONFIDENTIAL — internal use only", config=config) == "preserve"
+
+
+@pytest.mark.unit
+def test_infer_action_preserve_keyword_long_hint_falls_through_to_length_rules():
+    # A long shape that merely mentions "confidential" once must not freeze
+    # its entire text — only a short, dedicated disclaimer shape should.
+    config = make_config(preserve_keywords="confidential,proprietary", preserve_max_hint_chars=10, adapt_max_hint_chars=250)
     long_hint = "This document is Confidential " + "x" * 200
-    assert analyzer_mod._infer_action(is_placeholder=False, role="body", hint=long_hint, config=config) == "preserve"
+    assert analyzer_mod._infer_action(is_placeholder=False, role="body", hint=long_hint, config=config) == "adapt"
 
 
 @pytest.mark.unit

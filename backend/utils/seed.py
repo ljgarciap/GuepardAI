@@ -883,7 +883,7 @@ Write content for exactly ONE slide. Use COMPANY DATA as your primary source.
             {
                 "key": "tm_preserve_keywords",
                 "value": "confidential,proprietary,©,for reference only,preparado exclusivamente",
-                "description": "Template Merge: comma-separated substrings; any match in a shape's existing text forces PRESERVE regardless of hint length (legal/confidential text)."
+                "description": "Template Merge: substrings that force PRESERVE, but only when the shape's hint is also <= tm_preserve_max_hint_chars (short disclaimer, not a long shape that merely mentions the word once)."
             },
             {
                 "key": "tm_group_max_depth",

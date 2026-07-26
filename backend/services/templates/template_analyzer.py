@@ -305,7 +305,9 @@ def _infer_action(
 
     Priority order (first match wins):
       1. Footnotes are always preserved (legal/confidential text).
-      2. Hints containing a preserve keyword are preserved regardless of length.
+      2. Short hints containing a preserve keyword are preserved (a genuine
+         legal disclaimer/watermark shape, not a long shape that merely
+         mentions the word once).
       3. Placeholder shapes (TITLE/BODY/SUBTITLE) are always rewritten.
       4. Non-placeholder with short hint → PRESERVE (structural label).
       5. Non-placeholder with medium hint → ADAPT (data to replace, structure to keep).
@@ -315,12 +317,17 @@ def _infer_action(
     if role == "footnote":
         return "preserve"
 
-    # 2. Legal / confidential keywords
-    hint_lower = hint.lower()
-    for kw in config.preserve_keywords.split(","):
-        kw = kw.strip().lower()
-        if kw and kw in hint_lower:
-            return "preserve"
+    # 2. Legal / confidential keywords — gated by preserve_max_hint_chars so a
+    # one-line disclaimer freezes, but a paragraph of real body/title content
+    # that happens to contain the word "confidential" once doesn't silently
+    # keep 100% of its original text (reported by a client 2026-07-24: a
+    # recurring "CONFIDENTIAL" watermark froze every slide's content).
+    if len(hint) <= config.preserve_max_hint_chars:
+        hint_lower = hint.lower()
+        for kw in config.preserve_keywords.split(","):
+            kw = kw.strip().lower()
+            if kw and kw in hint_lower:
+                return "preserve"
 
     # 3. Placeholder shapes → full rewrite
     if is_placeholder:

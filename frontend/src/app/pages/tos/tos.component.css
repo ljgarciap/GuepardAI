@@ -22,6 +22,21 @@
   margin: 0;
 }
 
+.tos-back-link {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 10px;
+}
+
+.tos-back-link:hover {
+  color: var(--brand-accent);
+}
+
 .tos-subtitle {
   color: var(--text-muted);
   font-size: 0.85rem;

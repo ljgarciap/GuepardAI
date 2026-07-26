@@ -74,4 +74,8 @@ export class TosComponent implements OnInit {
   logout(): void {
     this.authService.logout();
   }
+
+  goBack(): void {
+    this.router.navigateByUrl('/');
+  }
 }

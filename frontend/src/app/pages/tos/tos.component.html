@@ -2,6 +2,7 @@
   <div class="tos-card glass-panel">
 
     <div class="tos-header">
+      <button *ngIf="status?.accepted" class="tos-back-link" (click)="goBack()">← Back</button>
       <h1>Terms of Service &amp; Data Privacy Policy</h1>
       <p class="tos-subtitle" *ngIf="status as s">
         Draft v{{ s.current_version }}

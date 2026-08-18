@@ -106,15 +106,52 @@ where the marks land. Lever 2 is safe to schedule regardless.
 - Not a rewrite of the generation pipeline.
 - Not a merger of the two pipelines into one UI/flow (out of scope).
 - Not a commitment to Brand Grammar Mining until the detail session says so.
+- **Not an in-place change to today's Synthesis Studio screen** — see §5a.
 
-## 5. Next step (the only one)
+## 5a. Rollout constraint (confirmed by Luis, 2026-08-18)
+
+v2 ships as an **isolated, parallel view — not a modification of the
+existing one.**
+
+- New nav entry / route, separate from today's Synthesis Studio (v1). v1's
+  frontend and backend path stay untouched, visually and logically — no
+  shared component gets edited in place to "become" v2.
+- The v2 view supports running a **batch of generations** with the new
+  approach, so Luis can evaluate output quality across several decks before
+  any decision to promote v2 or retire v1.
+- Backend implication for the Architect to resolve at design time: v1 and v2
+  need to run through `AgentOrchestrator` without either affecting the
+  other's behavior — most likely an explicit pipeline-variant flag on
+  `GenerationJob` (e.g. `engine_version`) routed at the orchestrator level,
+  not a fork of the tools themselves. Exact mechanism is an Architect
+  decision after the spec exists, not decided here.
+- This constraint applies regardless of which lever(s) the detail session
+  lands on — it's about *where users encounter v2*, not which lever ships.
+
+## 5b. New grounding found (2026-08-18)
+
+Anthropic's own official `pptx` skill (`anthropics/skills`, used by Claude
+Code itself to generate PowerPoints) encodes an explicit, non-obvious design
+system — layout dominance ratios, mandatory layout variety across a deck, a
+banned list of "AI-generated" visual markers (accent bars, cream
+backgrounds), and a 3-phase QA pipeline (content → file → visual, with
+text-overflow checked first as the most common defect). Full findings and a
+gap-check against our current QA/layout logic: this conversation's session
+log — to be folded into `synthesis-studio-analyst`'s elicitation as source
+material for Lever 2 (visual QA) and as a checklist input to Lever 1's
+layout-grammar rules, not as a replacement for the elicitation itself (the
+checklist tells us what "well-designed" looks like in general; the elicitation
+still has to find where *our* brand-specific decks fall short of it).
+
+## 6. Next step (the only one)
 
 Run the detail-elicitation session with the **`synthesis-studio-analyst`**
 agent (created 2026-07-08 from this assessment): it drives the 3–5 deck
 generation, collects and classifies Luis's marks, and produces
 `docs/specs/synthesis-studio-v2.md` mapping each detail to a lever with
-acceptance criteria. The Architect designs only after that spec exists —
-same governance that shipped Template Merge v2.
+acceptance criteria — the spec must also carry the §5a rollout constraint
+and reference the §5b checklist. The Architect designs only after that spec
+exists — same governance that shipped Template Merge v2.
 
 ## References
 

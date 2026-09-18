@@ -21,6 +21,58 @@ SUPPORTED_PATTERN_TYPES = {
 }
 
 
+# Whitelist runtime (system_configs.implemented_premium_patterns) de qué
+# pattern_type tiene HOY un bloque Jinja real en premium_pdf.html — no confundir
+# con SUPPORTED_PATTERN_TYPES arriba, que solo valida que el Vision LLM haya
+# devuelto un valor reconocido (protección contra typos/alucinaciones), no que
+# sea renderable. Ver docs/specs/coherencia-artistica-pipeline.md.
+DEFAULT_IMPLEMENTED_PREMIUM_PATTERNS = ["full_bleed_hero", "data_cards_brand_grid", "editorial_split"]
+
+
+def get_implemented_premium_patterns(db: Optional[Session] = None) -> set:
+    """
+    Lee la whitelist de pattern_type implementados desde system_configs
+    (activable sin deploy en cuanto premium_pdf.html gane un bloque nuevo).
+
+    Si el caller ya tiene una sesión abierta (`db`), se usa directamente —
+    evita abrir una conexión nueva y es lo que permite testear con fixtures
+    de rollback (`db_session`, que no hace commit). Sin `db`, cae al helper
+    genérico `get_system_config()` (abre su propia sesión — caso de
+    ingestión, donde no siempre hay una sesión viva a mano).
+
+    Nunca rompe el flujo: ante config ausente o corrupta, cae al default duro.
+    """
+    import json as _json
+
+    raw = None
+    if db is not None:
+        try:
+            import models
+            cfg = db.query(models.SystemConfig).filter(
+                models.SystemConfig.key == "implemented_premium_patterns"
+            ).first()
+            raw = cfg.value if cfg else None
+        except Exception:
+            # La promesa de "nunca rompe el flujo" cubre también una sesión
+            # rota (transacción abortada, etc.) — cae al fallback genérico.
+            raw = None
+
+    if raw is None:
+        from providers.llm_provider import get_system_config
+        raw = get_system_config(
+            "implemented_premium_patterns",
+            _json.dumps(DEFAULT_IMPLEMENTED_PREMIUM_PATTERNS),
+        )
+
+    try:
+        parsed = _json.loads(raw)
+        if isinstance(parsed, list) and all(isinstance(p, str) for p in parsed):
+            return set(parsed)
+    except (TypeError, ValueError):
+        pass
+    return set(DEFAULT_IMPLEMENTED_PREMIUM_PATTERNS)
+
+
 DEFAULT_PATTERN_WEIGHTS = {
     "object_as_letter": 0.82,
     "typographic_substitution": 0.78,
@@ -146,7 +198,7 @@ def infer_patterns_from_essence(essence: Dict[str, Any]) -> List[Dict[str, Any]]
     ]
 
 
-def normalize_executable_patterns(vision_result: Dict[str, Any]) -> List[Dict[str, Any]]:
+def normalize_executable_patterns(vision_result: Dict[str, Any], db: Optional[Session] = None) -> List[Dict[str, Any]]:
     direct_patterns = (
         vision_result.get("executable_visual_patterns")
         or vision_result.get("visual_patterns")
@@ -160,10 +212,16 @@ def normalize_executable_patterns(vision_result: Dict[str, Any]) -> List[Dict[st
         if (pattern := _normalize_pattern(raw_pattern, i))
     ]
 
-    if normalized:
-        return normalized
+    if not normalized:
+        normalized = infer_patterns_from_essence(vision_result)
 
-    return infer_patterns_from_essence(vision_result)
+    # Filtro de implementabilidad (hallazgo coherencia-artistica-pipeline.md):
+    # un pattern_type puede ser un valor reconocido (pasó _normalize_pattern)
+    # sin tener ningún bloque real en premium_pdf.html. Sin este filtro,
+    # object_as_letter/typographic_substitution/brand_footer/logo_locked_footer
+    # se persisten y luego colapsan en silencio a editorial_split al renderizar.
+    implemented = get_implemented_premium_patterns(db=db)
+    return [p for p in normalized if p["pattern_type"] in implemented]
 
 
 def summarize_patterns(patterns: Iterable[Dict[str, Any]]) -> str:

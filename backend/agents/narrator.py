@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from agents.base import BaseAgentTool
 from database import SessionLocal
 from providers.llm_provider import generate_json
+from services.generation.deck_brief_service import format_grammar_type_list
 import models
 
 _log = logging.getLogger(__name__)
@@ -20,6 +21,8 @@ class NarratorArgs(BaseModel):
     brand_name: str = Field(..., description="Nombre de la marca")
     region: str = Field("Global", description="Idioma/región objetivo")
     strategic_context: str = Field("", description="Framing estratégico global (polished_prompt[:400])")
+    visual_density: str = Field("", description="Deck Design Brief: dense|balanced|minimal (vacío si la marca no tiene esencia)")
+    preferred_grammar_types: list = Field(default_factory=list, description="Deck Design Brief: grammar_type preferidos, subset de GRAMMAR_GEOMETRIES.keys()")
 
 
 class NarratorTool(BaseAgentTool):
@@ -38,11 +41,16 @@ class NarratorTool(BaseAgentTool):
         brand_name: str,
         region: str = "Global",
         strategic_context: str = "",
+        visual_density: str = "",
+        preferred_grammar_types: list = None,
     ) -> list:
         db = SessionLocal()
         try:
             cfg = (
                 db.query(models.SystemConfig)
+                .filter(models.SystemConfig.key == "prompt_narrator_v2")
+                .first()
+                or db.query(models.SystemConfig)
                 .filter(models.SystemConfig.key == "prompt_narrator_v1")
                 .first()
             )
@@ -68,6 +76,8 @@ class NarratorTool(BaseAgentTool):
                 target_lang=region,
                 strategic_context=str(strategic_context or "")[:400],
                 slide_count=len(slides_data),
+                visual_density=visual_density or "balanced",
+                preferred_grammar_types=format_grammar_type_list(preferred_grammar_types),
             )
 
             try:

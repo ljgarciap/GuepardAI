@@ -648,6 +648,43 @@ Write content for exactly ONE slide. Use COMPANY DATA as your primary source.
                 "description": "Prompt Architect v2.0 — Evidence-first amplification, no aspirational bracket placeholders."
             },
             {
+                # v3 = v2 + Deck Design Brief (coherencia-artistica-pipeline.md) — the
+                # actual brand's visual/tone identity extracted from BrandArtisticEssence,
+                # instead of only the generic {tone_guideline} fallback. {deck_brief} is a
+                # compact one-line summary (empty string when the brand has no essence —
+                # the prompt degrades to v2 behavior in that case, nothing breaks).
+                "key": "prompt_architect_v3",
+                "value": """### ROLE: ELITE PROMPT ENGINEER & STRATEGIC ARCHITECT
+### TASK: Transform the USER PROMPT into a precise MASTER INSTRUCTION.
+
+### BRAND DESIGN BRIEF (deck-level identity distilled from this brand's own visual DNA —
+respect it, never contradict it; an empty value means no additional signal beyond the
+tone guideline below, treat it exactly like v2):
+{deck_brief}
+
+### CRITICAL RULES:
+1. EVIDENCE-FIRST: Preserve the user's strategic intent but DO NOT mandate specific named
+   testimonials, CEO quotes, or case studies unless they are evidenced in the company context.
+   Convert aspirational requests to evidence-types:
+   "CEO testimonial" → "Customer Success Evidence"
+   "Named case study" → "Implementation Results"
+2. NARRATIVE STRUCTURE: Expand the user's intent into a 15-20 slide flow.
+3. BRAND & TONE LOYALTY: Use the specific corporate tone of {brand_name}. When the BRAND
+   DESIGN BRIEF above is not empty, let it shape word choice and pacing alongside
+   {tone_guideline} — it reflects this brand's actual visual identity, not a generic guess.
+4. DATA HUNGER: Extract real figures, dates, and programme names from context.
+   If data is absent, write strategic principles — no invented numbers.
+5. NO BRACKETS: The master instruction MUST NEVER contain [Name], [Company], [Year].
+   Use generic descriptors: "a retail CEO", "a leading UK retailer".
+
+### OUTPUT ONLY THIS JSON:
+{{
+  "polished_instruction": "You are a Senior Strategic Lead for {brand_name}. YOUR MISSION: {topic}.\\n\\nGUIDELINES:\\n- STRUCTURE: Generate exactly 15-20 slides.\\n- DATA: Use only figures and names present in the RAG context. If absent, write strategic principles — no bracket placeholders.\\n- TONE: {tone_guideline}. {deck_brief}\\n- NO BRACKETS: Never write [Name], [Company] or [Year] in any field.",
+  "strategic_rationale": "Evidence-conditioned amplification for {brand_name}, informed by its Deck Design Brief when available."
+}}""",
+                "description": "Prompt Architect v3.0 — adds {deck_brief} (coherencia-artistica-pipeline.md) alongside {tone_guideline}; degrades to v2 behavior when the brand has no BrandArtisticEssence."
+            },
+            {
                 # v2 = v1 + title char limit + anti-placeholder rule for aspirational slides.
                 "key": "prompt_content_outline_v2",
                 "value": """### ROLE: STRATEGIC PRESENTATION PLANNER
@@ -681,6 +718,55 @@ Your only job is to create a slide-by-slide STRUCTURE. Do NOT write any content,
   ]
 }}""",
                 "description": "Content Outline v2.0 — Anti-placeholder, 55-char title limit, no aspirational named slides."
+            },
+            {
+                # v3 = v2 + Deck Design Brief rhythm signal (coherencia-artistica-pipeline.md).
+                # NOTE: {preferred_grammar_types} values come from GRAMMAR_GEOMETRIES
+                # (cover_hero, executive_quote, ...) — a DIFFERENT vocabulary than this
+                # prompt's own "Allowed layout_type values" (composition_hero, ...). They
+                # are deliberately presented as soft pacing/rhythm guidance, never as
+                # literal layout_type values to copy — copying them verbatim would produce
+                # an invalid layout_type outside the allowed list.
+                "key": "prompt_content_outline_v3",
+                "value": """### ROLE: STRATEGIC PRESENTATION PLANNER
+Your only job is to create a slide-by-slide STRUCTURE. Do NOT write any content, bullets, or metrics.
+
+### MASTER INSTRUCTION:
+{polished_prompt}
+
+### INITIAL CONTEXT (use only to decide structure — do not use as content):
+{rag_context}
+
+### BRAND VISUAL RHYTHM (soft signal from this brand's own design DNA — a hint about
+pacing and how the deck should open/close; NOT literal layout_type values, those come
+only from the Allowed list below):
+- Preferred visual rhythm: {preferred_grammar_types}
+- How this deck should open and close: {opening_closing_hint}
+
+### REQUIREMENTS:
+- Output Language: {target_lang}
+- Generate between 15 and 20 slides
+- Slide 1 MUST be the COVER (layout_type: composition_hero, section_label: COVER)
+- Last slide MUST be a closing/next-steps slide
+- Allowed layout_type values: [composition_hero, composition_split, composition_quote, data_grid_cards, composition_pillars]
+- Avoid using the same layout_type on two consecutive slides
+- Let BRAND VISUAL RHYTHM inform pacing (e.g. more section breaks for a "dense" rhythm)
+  without ever picking a layout_type outside the Allowed list above
+
+### CRITICAL CONSTRAINTS:
+- Title: MAXIMUM 55 characters. No ellipsis. NEVER use [X] or bracket notation.
+- NEVER create slides requiring named entities (CEO name, person name, company name)
+  UNLESS that exact name appears in INITIAL CONTEXT.
+- If a testimonial or case study is requested but no name exists in context,
+  use a generic equivalent: "Customer Success Evidence", "Implementation Results".
+
+### OUTPUT — ONLY THIS JSON, nothing else:
+{{
+  "slides": [
+    {{"title": "...", "section_label": "...", "layout_type": "..."}}
+  ]
+}}""",
+                "description": "Content Outline v3.0 — adds {preferred_grammar_types}/{opening_closing_hint} (coherencia-artistica-pipeline.md) as soft pacing guidance; degrades to v2 behavior when the brand has no BrandArtisticEssence."
             },
             {
                 # Narrator — post-generation narrative cohesion pass.
@@ -732,6 +818,64 @@ targeted corrections so the deck reads as a coherent whole.
   "gaps_found": ["<description of each gap identified>"]
 }}""",
                 "description": "Narrator v1.0 — Post-generation narrative cohesion pass (STEP 4.5). Corrects subtitle/bullets/objective only."
+            },
+            {
+                # v2 = v1 + Deck Design Brief rhythm signal (coherencia-artistica-pipeline.md).
+                # The Narrator can NEVER touch layout_type (see CORRECTION RULES) — this only
+                # informs how it judges/corrects subtitle and bullets density.
+                "key": "prompt_narrator_v2",
+                "value": """### ROLE: NARRATIVE COHESION EDITOR
+You are reviewing a completed strategic presentation for {brand_name}.
+All slides have been drafted. Your ONLY job: identify narrative disconnects and produce
+targeted corrections so the deck reads as a coherent whole.
+
+### STRATEGIC FRAME (global intent — do not repeat verbatim):
+{strategic_context}
+
+### BRAND VISUAL RHYTHM (context only — you can NEVER change layout_type, this only
+helps you judge whether the TEXT density matches the brand's actual visual identity):
+- Visual density: {visual_density}
+- Preferred rhythm: {preferred_grammar_types}
+
+### TARGET LANGUAGE: {target_lang}
+
+### FULL DECK — {slide_count} slides (compact view):
+{slides_json}
+
+### WHAT TO LOOK FOR:
+1. Section opener slides (layout_type: full_bleed_hero or composition_hero) with an empty
+   subtitle that leave the reader with no preview of what follows.
+2. Slides whose bullets do not connect logically to the slide title or to the previous
+   section opener's promise.
+3. A closing slide that does not resolve the narrative arc started at the opener.
+4. If BRAND VISUAL RHYTHM says visual density is "minimal", prefer trimming bullets to
+   their sharpest, shortest form when correcting; if "dense", richer supporting bullets
+   are appropriate — but never invent data to pad them.
+
+### CORRECTION RULES:
+- Only correct fields: "subtitle", "bullets", or "objective". NEVER change "title",
+  "layout_type", or "section_label".
+- Do NOT invent data. Reframe, reorder, or clarify using content already present in the deck.
+- Corrections must be in {target_lang}.
+- Correct at most 40% of slides. Prioritise the highest-impact gaps.
+- For "bullets": new_value must be an array of strings.
+- For "subtitle" or "objective": new_value must be a plain string.
+- If the deck is already cohesive, return an empty corrections array.
+
+### OUTPUT — valid JSON only, no markdown, no explanation outside the JSON:
+{{
+  "corrections": [
+    {{
+      "slide_index": <0-based integer>,
+      "field": "subtitle",
+      "new_value": "<plain text string>",
+      "reason": "<one-line explanation>"
+    }}
+  ],
+  "cohesion_score": <float 0.0-1.0>,
+  "gaps_found": ["<description of each gap identified>"]
+}}""",
+                "description": "Narrator v2.0 — adds {visual_density}/{preferred_grammar_types} (coherencia-artistica-pipeline.md) as context for text-density corrections; degrades to v1 behavior when the brand has no BrandArtisticEssence."
             },
             {
                 # v2 = v1 + strategic_context slot + stricter anti-placeholder + char limits.
@@ -972,6 +1116,20 @@ Write content for exactly ONE slide. Use COMPANY DATA as your primary source.
                 "key": "tos_current_version",
                 "value": "1.1",
                 "description": "Versión vigente del ToS (Insumos/ToS v1.1.pdf, borrador legal). Bump al cambiar: todo User con tos_accepted_version distinta queda bloqueado hasta re-aceptar. No editar un valor ya seedeado — usar una key nueva si hace falta."
+            },
+
+            # ─────────────────────────────────────────────────────
+            # COHERENCIA ARTÍSTICA DEL PIPELINE (Deck Design Brief)
+            # ─────────────────────────────────────────────────────
+            {
+                "key": "implemented_premium_patterns",
+                "value": json.dumps(["full_bleed_hero", "data_cards_brand_grid", "editorial_split"]),
+                "description": "Whitelist JSON de pattern_type premium con bloque real en premium_pdf.html (normalize_executable_patterns filtra contra esto). Activar un pattern nuevo es cambiar este valor, no un deploy. Ver docs/specs/coherencia-artistica-pipeline.md."
+            },
+            {
+                "key": "deck_brief_field_max_chars",
+                "value": "400",
+                "description": "deck_brief_service: longitud máxima de tone_note/opening_closing_hint antes de inyectarse en prompts (mismo criterio que strategic_context[:400] en content_service.py)."
             }
 ]
 

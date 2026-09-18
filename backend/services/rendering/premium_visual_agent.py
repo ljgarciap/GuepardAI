@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 import models
 from services.ingestion.visual_pattern_service import (
+    get_implemented_premium_patterns,
     get_latest_brand_patterns,
     normalize_executable_patterns,
 )
@@ -115,14 +116,27 @@ class PremiumVisualAgent:
         
         response = generate_premium_json(prompt)
         adjustments = response.get("adjustments", [])
-        
+
+        # Whitelist de implementabilidad (coherencia-artistica-pipeline.md): el prompt
+        # de arriba le pide al Vision LLM elegir solo de AVAILABLE BRAND PATTERNS (ya
+        # filtrado por normalize_executable_patterns al momento de ingestión), pero
+        # nada en código lo garantiza — un adjustment con un pattern_type alucinado
+        # o no implementado (p. ej. "object_as_letter") se aplicaría igual y colapsaría
+        # en silencio a editorial_split en premium_pdf.html, mintiendo en el dato
+        # persistido. Se descarta el ajuste individual (la slide conserva su
+        # pattern_type de Iteración 1), nunca se invalida el loop completo.
+        implemented = get_implemented_premium_patterns(db=self.db)
+
         # Apply adjustments
         for adj in adjustments:
+            adjusted_pattern_type = adj.get("pattern_type")
+            if adjusted_pattern_type not in implemented:
+                continue
             for slide in slides_data:
                 if slide["slide_number"] == adj["slide_number"]:
-                    slide["pattern_type"] = adj.get("pattern_type", slide["pattern_type"])
+                    slide["pattern_type"] = adjusted_pattern_type
                     break
-                    
+
         return slides_data
 
     def _load_patterns(self, brand_dna) -> List[Dict[str, Any]]:
@@ -138,7 +152,7 @@ class PremiumVisualAgent:
             .first()
         )
         if not essence:
-            return normalize_executable_patterns({})
+            return normalize_executable_patterns({}, db=self.db)
 
         essence_payload = {
             "visual_strategy": essence.visual_strategy,
@@ -149,8 +163,8 @@ class PremiumVisualAgent:
         }
         raw_payload = essence.raw_vision_response or {}
         if raw_payload.get("executable_visual_patterns"):
-            return normalize_executable_patterns(raw_payload)
-        return normalize_executable_patterns(essence_payload)
+            return normalize_executable_patterns(raw_payload, db=self.db)
+        return normalize_executable_patterns(essence_payload, db=self.db)
 
     def _load_brand_assets(self, brand_id: Optional[int]) -> Dict[str, List[models.BrandAsset]]:
         assets_by_category: Dict[str, List[models.BrandAsset]] = {}

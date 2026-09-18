@@ -2,7 +2,6 @@ import datetime
 import os
 
 from jinja2 import Environment, FileSystemLoader
-from weasyprint import HTML
 
 
 def _is_dark_color(hex_color: str) -> bool:
@@ -36,6 +35,46 @@ def get_image_region_luminance(img_path, region_box=None):
     except Exception as e:
         print(f"  [ArtisticPDF] Warning: Could not calculate luminance for {img_path}: {e}")
         return 0.5
+
+
+# Traducción grammar_type (Analyst/Art Director, GRAMMAR_GEOMETRIES en
+# brand_composition_dna.py) → los 5 `layout` reales que pdf_base.html sabe
+# renderizar (hero, data_grid, quote, pillars, split). Sin esto, render_agent.py
+# pasaba el grammar_type crudo y ~9 de cada 10 valores colapsaban en silencio
+# al fallback `split` — ver docs/specs/coherencia-artistica-pipeline.md.
+#
+# Mapeo inicial propuesto por el Arquitecto — pendiente de validación visual
+# (QA) antes de considerarse definitivo (ver spec, sección "Out of scope").
+GRAMMAR_TO_ARTISTIC_PDF = {
+    "cover_hero":          "hero",
+    "marketing_hero":      "hero",
+    "asymmetric_overlay":  "hero",
+    "section_break":       "hero",
+    "executive_quote":     "quote",
+    "closing_cta":         "quote",
+    "data_grid_cards":     "data_grid",
+    "data_grid":           "data_grid",  # alias "data-grid" de SLUG_ALIASES resuelve aquí, no a data_grid_cards
+    "impact_number":       "data_grid",
+    "two_column":          "pillars",
+    "case_study":          "pillars",
+    "strategic_split":     "split",
+}
+
+
+def resolve_legacy_pdf_layout(grammar_type: str) -> str:
+    """
+    Resuelve un grammar_type (incluyendo aliases de SLUG_ALIASES) al `layout`
+    real que consume pdf_base.html. Fallback a "split" para cualquier valor
+    no mapeado — mismo criterio que el fallback ya existente en pdf_base.html.
+    """
+    from services.ingestion.brand_composition_dna import SLUG_ALIASES
+
+    if isinstance(grammar_type, list) and grammar_type:
+        grammar_type = grammar_type[0]
+    grammar_type = str(grammar_type or "")
+
+    canonical = SLUG_ALIASES.get(grammar_type, grammar_type)
+    return GRAMMAR_TO_ARTISTIC_PDF.get(canonical, "split")
 
 
 class ArtisticPDFService:

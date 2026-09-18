@@ -83,7 +83,7 @@ class RenderPPTXTool(BaseAgentTool):
                         dna
                     )
                 else:
-                    from services.rendering.artistic_pdf_service import artistic_pdf_service
+                    from services.rendering.artistic_pdf_service import artistic_pdf_service, resolve_legacy_pdf_layout
                     slides_data = []
                     for s in saved_slides:
                         cjson = s.content_json or {}
@@ -93,14 +93,17 @@ class RenderPPTXTool(BaseAgentTool):
                                 arec = db.query(models.BrandAsset).get(int(s.assigned_image))
                                 if arec: primary_path = arec.local_path
                             else: primary_path = str(s.assigned_image)
-                            
+
                         slides_data.append({
                             "title": sanitize_text_field(s.title or ""),
                             "bullets": normalize_bullets(cjson.get("bullets", [])),
                             "background_color": dna.primary_color if hasattr(dna, 'primary_color') else "#002D62",
                             "text_color": "#FFFFFF",
                             "primary_image": primary_path,
-                            "layout": cjson.get("layout_type", "strategic_split"),
+                            # v25.x: grammar_type traducido al vocabulario real de pdf_base.html
+                            # — antes se pasaba crudo y ~9/10 valores colapsaban a "split"
+                            # (ver docs/specs/coherencia-artistica-pipeline.md).
+                            "layout": resolve_legacy_pdf_layout(cjson.get("layout_type", "strategic_split")),
                             "metadata": cjson.get("metadata", {})
                         })
                     output_path = artistic_pdf_service.generate_pdf(job_id, slides_data, dna)

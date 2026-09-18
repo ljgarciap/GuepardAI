@@ -210,6 +210,7 @@ class GenerateTextTool(BaseAgentTool):
             )
 
             slide_count = len(content_manifest.slides) if hasattr(content_manifest, "slides") else 0
+            deck_brief = getattr(content_manifest, "deck_brief", None)
 
             self.log_decision(
                 db=db,
@@ -223,6 +224,7 @@ class GenerateTextTool(BaseAgentTool):
                     "style_filename": style_filename,
                     "knowledge_filename": knowledge_filename,
                     "allow_ai_images": allow_ai_images,
+                    "deck_brief": deck_brief,
                 },
             )
 

@@ -5,6 +5,11 @@ import models
 from sqlalchemy.orm import Session
 from providers.llm_provider import generate_json, get_embedding
 from utils.content_utils import normalize_bullets, normalize_metrics, sanitize_text_field
+from services.generation.deck_brief_service import (
+    build_deck_brief,
+    format_grammar_type_list,
+    summarize_for_architect_prompt,
+)
 import psycopg
 from typing import Optional
 
@@ -101,7 +106,7 @@ def _synthesize_monolithic(
     return _build_manifest(db, job_id)
 
 
-def _build_manifest(db: Session, job_id: int):
+def _build_manifest(db: Session, job_id: int, deck_brief: Optional[dict] = None):
     """Builds ContentManifest from persisted slides."""
     from schemas.presentation import ContentManifest, ContentManifestSlide
     saved_slides = (
@@ -126,7 +131,7 @@ def _build_manifest(db: Session, job_id: int):
             metadata=cjson.get("metadata", {}),
             planning_json=s.planning_json or {}
         ))
-    return ContentManifest(job_id=job_id, slides=manifest_slides, client_name=None)
+    return ContentManifest(job_id=job_id, slides=manifest_slides, client_name=None, deck_brief=deck_brief or None)
 
 
 def synthesize_presentation_outline(
@@ -169,13 +174,20 @@ def synthesize_presentation_outline(
     if dna and dna.raw_extraction:
         tone_guideline = dna.raw_extraction.get("tone_description", tone_guideline)
 
-    # Prompt configs — v2 preferred, v1 as fallback (seeder convention)
+    # Deck Design Brief (coherencia-artistica-pipeline.md) — {} si la marca no
+    # tiene BrandArtisticEssence; tone_guideline (arriba) sigue siendo el
+    # fallback real en ese caso, esto solo se agrega cuando hay algo que decir.
+    deck_brief = build_deck_brief(db, job.brand_id) or {}
+
+    # Prompt configs — v3 (deck brief) preferido, v2 y v1 como fallback (seeder convention)
     cfg_architect = (
-        db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_architect_v2").first()
+        db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_architect_v3").first()
+        or db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_architect_v2").first()
         or db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_architect_v1").first()
     )
     cfg_outline = (
-        db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_content_outline_v2").first()
+        db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_content_outline_v3").first()
+        or db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_content_outline_v2").first()
         or db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_content_outline_v1").first()
     )
 
@@ -188,7 +200,8 @@ def synthesize_presentation_outline(
     architect_prompt = cfg_architect.value.format(
         topic=topic,
         brand_name=brand_name,
-        tone_guideline=tone_guideline
+        tone_guideline=tone_guideline,
+        deck_brief=summarize_for_architect_prompt(deck_brief)
     )
     architect_response = generate_json(architect_prompt, specialization="general")
     polished_prompt = (
@@ -209,7 +222,9 @@ def synthesize_presentation_outline(
         cfg_outline.value.format(
             polished_prompt=polished_prompt,
             rag_context=initial_rag or "No specific context available.",
-            target_lang=region
+            target_lang=region,
+            preferred_grammar_types=format_grammar_type_list(deck_brief.get("preferred_grammar_types")),
+            opening_closing_hint=deck_brief.get("opening_closing_hint") or "No specific hint available."
         ),
         specialization="general"
     )
@@ -288,6 +303,8 @@ def synthesize_presentation_outline(
                 brand_name=brand_name,
                 region=region,
                 strategic_context=strategic_context,
+                visual_density=deck_brief.get("visual_density", ""),
+                preferred_grammar_types=deck_brief.get("preferred_grammar_types", []),
             )
         except Exception as e:
             print(f"  [ContentService] Narrator failed (non-blocking): {e}", flush=True)
@@ -322,4 +339,4 @@ def synthesize_presentation_outline(
         ))
 
     db.commit()
-    return _build_manifest(db, job_id)
+    return _build_manifest(db, job_id, deck_brief=deck_brief)

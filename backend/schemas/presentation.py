@@ -18,6 +18,10 @@ class ContentManifest(BaseModel):
     slides: List[ContentManifestSlide]
     job_id: int
     client_name: Optional[str] = None
+    # Deck Design Brief (coherencia-artistica-pipeline.md) — None cuando la
+    # marca no tiene BrandArtisticEssence o el manifest se construyó por un
+    # path que todavía no lo puebla (compatibilidad hacia atrás).
+    deck_brief: Optional[Dict[str, Any]] = None
 
 class RenderElement(BaseModel):
     type: str

@@ -608,6 +608,16 @@ dependencias).
 solo la skill `notify.md` documentando el setup. No se envió Telegram; queda
 pendiente si Luis quiere activarlo, pero no bloquea el arranque de las tareas.
 
+### Revisión final del Senior Reviewer (2026-09-18)
+
+Todo el trabajo posterior a la revisión de arriba (`deck_brief_service.py`, el wiring a
+Architect/Outline/Narrator, los 3 prompts nuevos, el ADR del AI Architect, y el fix de
+`PremiumVisualAgent._vision_adjust_loop` de la QA visual premium) llegó a `master` en
+el commit `3663943` sin haber pasado antes por este paso — hueco detectado y cerrado
+retroactivamente el mismo día. Revisión completa (incluyendo releer las 2 tareas de
+arriba contra el diff final) en `docs/reviews/coherencia-artistica-pipeline-2026-09-18.md`.
+**Veredicto: Aprobado, sin blockers.** Suite: 729 passed / 1 preexistente ajeno.
+
 ## References
 
 - Código existente:

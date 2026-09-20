@@ -46,6 +46,26 @@ GRAMMAR_TO_PAINTER = {
     "full-bleed":           "composition_hero",
     "two-column":           "composition_pillars",
     "quote-hero":           "composition_quote",
+
+    # Vocabulario real del Analyst (prompt_analyst_v3, "GRAMMAR TYPE RULES: use
+    # EXACTLY these values") — bare_words que slide.layout_slug persiste en
+    # producción y que, sin estas entradas, no matcheaban NINGUNA key de arriba
+    # (solo "data_grid" coincidía por accidente) y colapsaban en silencio al
+    # default "composition_split" de GRAMMAR_TO_PAINTER.get(). Confirmado con
+    # datos reales de producción (Synthesis Studio v2, sesión de elicitación
+    # 2026-09-20): ~70% de las slides de un deck PPTX terminaban con el mismo
+    # layout pese a que el Analyst había elegido "pillars"/"custom_canvas"/"hero".
+    "hero":                 "composition_hero",
+    "split":                "composition_split",
+    "pillars":              "composition_pillars",
+    # "custom_canvas" NO es identity a paint_custom_canvas() a propósito: ese
+    # método pinta desde slide_data["elements"], que el path PPTX nunca puebla
+    # (solo PremiumVisualAgent, exclusivo del PDF premium, construye
+    # canvas_elements) — confirmado real: dispatch directo produce una slide en
+    # blanco (solo fondo/logo/footer). Hasta que exista un builder de elements
+    # para PPTX, cae a composition_split (con contenido real) en vez de a un
+    # layout vacío. Ver docs/specs/synthesis-studio-v2.md.
+    "custom_canvas":        "composition_split",
 }
 
 

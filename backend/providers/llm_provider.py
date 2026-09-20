@@ -551,7 +551,12 @@ def log_premium_audit(category: str, data: str):
     """Registro de auditoría exclusivo del tier premium — separado del log general."""
     log_path = os.path.join(os.path.dirname(__file__), "premium_llm_audit.log")
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    with open(log_path, "a") as f:
+    # Mismo bug ya encontrado y arreglado una vez en log_audit() (ver
+    # docs/ai/contracts/default-llm-template-merge-outline-adr.md): sin
+    # encoding explícito, cualquier carácter fuera de la codepage por defecto
+    # del host (p. ej. "≠" en el razonamiento del Art Director) revienta el
+    # pipeline premium entero, no solo el logging.
+    with open(log_path, "a", encoding="utf-8", errors="replace") as f:
         f.write(f"\n{'='*80}\n")
         f.write(f"[{timestamp}] [PREMIUM] CATEGORY: {category}\n")
         f.write(f"{data}\n")

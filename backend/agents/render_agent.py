@@ -97,6 +97,13 @@ class RenderPPTXTool(BaseAgentTool):
                         slides_data.append({
                             "title": sanitize_text_field(s.title or ""),
                             "bullets": normalize_bullets(cjson.get("bullets", [])),
+                            # Sin esto, artistic_data_grid.html iteraba sobre slide.metrics
+                            # vacío y renderizaba una página en blanco pese a que el
+                            # Redactor sí produce metrics — confirmado con una corrida
+                            # real de producción (Synthesis Studio v2, 2026-09-20).
+                            "metrics": normalize_metrics(cjson.get("metrics", [])),
+                            "section_label": cjson.get("section_label", "STRATEGY"),
+                            "subtitle": cjson.get("subtitle"),
                             "background_color": dna.primary_color if hasattr(dna, 'primary_color') else "#002D62",
                             "text_color": "#FFFFFF",
                             "primary_image": primary_path,

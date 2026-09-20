@@ -47,22 +47,20 @@ class TestGrammarToPainterRecognizesAnalystVocabulary:
         assert painted_as in PAINTER_DISPATCH_VALUES
 
     def test_distinct_analyst_values_produce_distinct_painted_layouts(self):
-        # La razón de ser del fix: hero/split/pillars/data_grid ya NO deben
-        # colapsar todos al mismo "composition_split". "custom_canvas" es la
-        # única excepción deliberada: paint_custom_canvas() pinta desde
-        # slide_data["elements"], que el path PPTX nunca puebla, así que se
-        # mapea a composition_split (contenido real) en vez de a un layout
-        # vacío — ver el comentario en GRAMMAR_TO_PAINTER.
-        values_with_real_content = [v for v in ANALYST_VOCABULARY if v != "custom_canvas"]
-        painted = {v: GRAMMAR_TO_PAINTER.get(v, "composition_split") for v in values_with_real_content}
-        assert len(set(painted.values())) == len(values_with_real_content), (
+        # La razón de ser del fix: ninguno de los 5 valores reales del Analyst
+        # debe colapsar con otro.
+        painted = {v: GRAMMAR_TO_PAINTER.get(v, "composition_split") for v in ANALYST_VOCABULARY}
+        assert len(set(painted.values())) == len(ANALYST_VOCABULARY), (
             f"Valores del Analyst colapsando al mismo layout pintado: {painted}"
         )
 
-    def test_custom_canvas_intentionally_falls_back_to_split_not_a_blank_layout(self):
-        # paint_custom_canvas() requiere slide_data["elements"], que ningún
-        # builder llena para el path PPTX (solo PremiumVisualAgent lo hace, y
-        # es exclusivo del PDF premium) — dispatch directo produce una slide
-        # en blanco. Confirmado con una corrida de producción real
-        # (Synthesis Studio v2, 2026-09-20).
-        assert GRAMMAR_TO_PAINTER["custom_canvas"] == "composition_split"
+    def test_custom_canvas_is_identity_now_that_the_real_builder_exists(self):
+        # custom_canvas mapeó brevemente a composition_split (2026-09-20)
+        # porque render_agent.py no reenviaba slide_data["elements"] en el
+        # path PPTX — paint_custom_canvas() dispatchado directo producía una
+        # slide en blanco. Con canvas_elements ya conectado
+        # (render_agent.py) y paint_custom_canvas() soportando el vocabulario
+        # real de producción (shape/decorator/line/gradient_overlay, no solo
+        # text/image/typo_substitution), la mitigación quedó obsoleta — ver
+        # docs/specs/synthesis-studio-v2.md, Finding 1b.
+        assert GRAMMAR_TO_PAINTER["custom_canvas"] == "custom_canvas"

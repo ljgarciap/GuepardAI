@@ -1,7 +1,42 @@
 import datetime
+import math
 import os
 
 from jinja2 import Environment, FileSystemLoader
+
+
+def _safe_num(value, default=0):
+    """
+    Jinja's own |float/|int filters only catch (TypeError, ValueError) — a
+    genuinely missing key renders as Jinja's Undefined, which raises
+    UndefinedError instead and slips right past them (confirmed: {{ el.x
+    |float(0) }} still crashes the whole render when el has no "x" key).
+    Registered as a filter so canvas_elements' loose, LLM-authored shape
+    doesn't need a |default(...) chained before every numeric filter.
+    """
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _line_geometry(x1: float, y1: float, x2: float, y2: float) -> dict:
+    """
+    Bounding-box + rotation for a canvas_elements "line" (x1,y1)-(x2,y2), used
+    by premium_pdf.html to draw it as one rotated div (Jinja has no math
+    builtins — registered as an env global instead). Length mixes x%/y% units
+    (the slide isn't square), an accepted approximation for a decorative
+    accent line, not a claim of geometric precision.
+    """
+    dx, dy = x2 - x1, y2 - y1
+    return {
+        "left": x1,
+        "top": y1,
+        "length": math.hypot(dx, dy),
+        "angle": math.degrees(math.atan2(dy, dx)),
+    }
 
 
 def _is_dark_color(hex_color: str) -> bool:
@@ -97,6 +132,8 @@ class ArtisticPDFService:
         self.templates_dir = templates_dir
         self.output_dir = output_dir
         self.env = Environment(loader=FileSystemLoader(self.templates_dir))
+        self.env.globals["line_geometry"] = _line_geometry
+        self.env.filters["num"] = _safe_num
         os.makedirs(self.output_dir, exist_ok=True)
 
     def _resolve_asset_path(self, raw_path):

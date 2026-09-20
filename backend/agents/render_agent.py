@@ -63,7 +63,14 @@ class RenderPPTXTool(BaseAgentTool):
                             title=s.title,
                             bullets=normalize_bullets(cjson.get("bullets", [])),
                             layout_type=cjson.get("layout_type", "strategic_split"),
-                            metadata=cjson.get("metadata", {})
+                            metadata=cjson.get("metadata", {}),
+                            # Sin esto, PremiumVisualAgent._build_slides()'s
+                            # `getattr(content_slide, "planning_json", {})` siempre
+                            # veía {} — canvas_elements existe en la BD (lo escribe
+                            # el Art Director) pero nunca llegaba a este DTO
+                            # reconstruido para el render. Mismo hallazgo que el
+                            # path PPTX (docs/specs/synthesis-studio-v2.md, Finding 1b).
+                            planning_json=s.planning_json or {}
                         ))
                         primary_path = None
                         if s.assigned_image:
@@ -213,6 +220,14 @@ class RenderPPTXTool(BaseAgentTool):
                         if arec: primary_path = arec.local_path
                     else: primary_path = str(s.assigned_image)
 
+                # El Art Director (art_director_service.py) produce canvas_elements
+                # para TODA slide, no solo premium — PremiumVisualAgent (path PDF)
+                # ya los lee de aquí; este path los ignoraba (elements=[] fijo),
+                # dejando custom_canvas sin nada que pintar salvo fondo/logo/footer.
+                # Ver docs/specs/synthesis-studio-v2.md, Finding 1b.
+                ad_planning = s.planning_json.get("art_director", {}) if getattr(s, "planning_json", None) else {}
+                canvas_elements = ad_planning.get("canvas_elements", []) or []
+
                 render_slides.append(PainterSlideData(
                     slide_number=s.slide_number,
                     layout_type=p_layout,
@@ -228,7 +243,7 @@ class RenderPPTXTool(BaseAgentTool):
                     logo_path=brand_logo_path,
                     agency_branding=agency_branding,
                     metadata=cjson.get("metadata", {}),
-                    elements=[]
+                    elements=canvas_elements
                 ))
                 
             render_manifest = RenderManifest(

@@ -6,6 +6,7 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.oxml.ns import qn
 from PIL import Image
 import re
 
@@ -118,6 +119,107 @@ def get_luminance(rgb):
 def get_contrast_text_color(bg_rgb):
     return RGBColor(255, 255, 255) if get_luminance(bg_rgb) < 0.5 else RGBColor(20, 20, 20)
 
+
+# --- REAL FILL TRANSPARENCY (python-pptx has no public API for this) -------
+# `shape.fill.transparency = X` does NOT exist as a real property on
+# FillFormat — Python happily creates a dangling instance attribute that is
+# read back correctly but never touches the underlying XML. Confirmed by
+# dumping the shape's spPr after "setting" it: no <a:alpha> anywhere, shape
+# renders fully opaque regardless of the value passed. Every transparency=
+# call in this file (footer bands, quote/hero backing panels) was silently a
+# no-op until this fix — found while building real canvas_elements support
+# for custom_canvas (Synthesis Studio v2, Finding 1b).
+def _inject_alpha(color_elm, transparency: float):
+    """Injects/replaces <a:alpha> on a color XML element (a:srgbClr/a:schemeClr).
+    transparency: 0.0 (opaque) - 1.0 (fully transparent)."""
+    if color_elm is None or transparency <= 0:
+        return
+    transparency = min(transparency, 1.0)
+    alpha_val = str(int(round((1 - transparency) * 100000)))
+    existing = color_elm.find(qn('a:alpha'))
+    if existing is not None:
+        color_elm.remove(existing)
+    color_elm.append(color_elm.makeelement(qn('a:alpha'), {'val': alpha_val}))
+
+
+def apply_fill_alpha(shape, transparency: float):
+    """Real transparency for a shape's solid fill — see _inject_alpha."""
+    if transparency is None or transparency <= 0:
+        return
+    spPr = shape._element.spPr
+    solidFill = spPr.find(qn('a:solidFill'))
+    if solidFill is None:
+        return
+    color_elm = solidFill.find(qn('a:srgbClr'))
+    if color_elm is None:
+        color_elm = solidFill.find(qn('a:schemeClr'))
+    _inject_alpha(color_elm, transparency)
+
+
+# --- CANVAS ELEMENT COLOR/BORDER/GRADIENT PARSING ---------------------------
+# custom_canvas's canvas_elements come from the Art Director LLM
+# (prompt_art_director_v3), which in real production output uses CSS-ish
+# shorthand ("rgba(46, 139, 87, 0.5)", "2px solid rgba(...)",
+# "linear-gradient(135deg, rgba(...) 0%, rgba(...) 100%)") — the same values
+# it hands to the premium_pdf.html renderer. These helpers translate that
+# shorthand into python-pptx primitives; anything unparseable degrades to
+# None/[] rather than raising, so one odd value never kills the whole slide.
+def parse_canvas_color(value):
+    """('#RRGGBB' | 'rgb(...)' | 'rgba(...)') -> (RGBColor | None, alpha | None)."""
+    if not value or not isinstance(value, str):
+        return None, None
+    value = value.strip()
+    if value.startswith("#"):
+        return hex_to_rgb(value), None
+    m = re.match(r'rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)', value)
+    if m:
+        try:
+            r, g, b = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            a = float(m.group(4)) if m.group(4) is not None else None
+            return RGBColor(r, g, b), a
+        except (ValueError, TypeError):
+            return None, None
+    return None, None
+
+
+def parse_canvas_border(value):
+    """'2px solid rgba(46, 139, 87, 0.5)' -> (width_pt, RGBColor, alpha)."""
+    if not value or not isinstance(value, str):
+        return None, None, None
+    m = re.match(r'([\d.]+)px\s+\w+\s+(.+)', value.strip())
+    if not m:
+        return None, None, None
+    try:
+        width = float(m.group(1))
+    except ValueError:
+        return None, None, None
+    color, alpha = parse_canvas_color(m.group(2))
+    return width, color, alpha
+
+
+def parse_css_linear_gradient(value):
+    """'linear-gradient(135deg, rgba(...) 0%, rgba(...) 100%)' ->
+    (angle_degrees, [(RGBColor, alpha), ...]) — at most the first 2 stops
+    (python-pptx's default gradient always has exactly 2). Anything else
+    (radial gradients, malformed strings, no match) -> (None, [])."""
+    if not value or not isinstance(value, str) or "linear-gradient" not in value:
+        return None, []
+    m = re.search(r'linear-gradient\(\s*([\d.]+)deg\s*,\s*(.+)\)\s*$', value.strip())
+    if not m:
+        return None, []
+    try:
+        angle = float(m.group(1))
+    except ValueError:
+        return None, []
+    color_matches = re.findall(r'rgba?\([^)]+\)|#[0-9A-Fa-f]{3,8}', m.group(2))
+    stops = []
+    for c in color_matches[:2]:
+        color, alpha = parse_canvas_color(c)
+        if color is not None:
+            stops.append((color, alpha if alpha is not None else 1.0))
+    return angle, stops
+
+
 class GammaPainter:
     def __init__(self, brand_style):
         print(f"  [Painter] --- DYNAMIC BREATHING v10.0 (GRID ARCHITECTURE) ---")
@@ -171,7 +273,7 @@ class GammaPainter:
         shape = slide.shapes.add_shape(5 if rounded else 1, x, y, w, h)
         shape.fill.solid()
         shape.fill.fore_color.rgb = color
-        if transparency > 0: shape.fill.transparency = transparency 
+        if transparency > 0: apply_fill_alpha(shape, transparency)
         shape.line.fill.background()
         return shape
 
@@ -309,21 +411,164 @@ class GammaPainter:
             self.add_text(slide, parts[1], current_x, y, get_width(parts[1], size), Pt(size * 1.2), size=size, bold=True, color=color)
 
     def paint_custom_canvas(self, slide_data):
+        """
+        Renders slide_data["elements"] — the same canvas_elements the Art
+        Director LLM (prompt_art_director_v3) produces for every slide,
+        regardless of tier/output_format. In real production output these go
+        well beyond the prompt's 3 illustrative types (text/image/
+        typo_substitution): shape, decorator, line and gradient_overlay show
+        up routinely (rounded accent panels, brand bars, concentric circles,
+        directional overlays) — see docs/specs/synthesis-studio-v2.md,
+        Finding 1b. premium_pdf.html renders all of these as CSS; this method
+        is the python-pptx equivalent so PPTX output isn't a second-class
+        canvas_elements consumer.
+
+        Each element renders in its own try/except: one malformed element
+        (missing field, unparseable color) must never blank the rest of the
+        slide.
+        """
         slide = self.secure_slide(slide_data)
         if not slide_data.get("background_asset_path"):
             self.add_rect(slide, 0, 0, self.prs.slide_width, self.prs.slide_height, self.bg)
-        elements = slide_data.get("elements", [])
-        for el in elements:
-            type, x, y, w, h = el.get("type"), self.w(el.get("x", 0)), self.h(el.get("y", 0)), self.w(el.get("w", 0)), self.h(el.get("h", 0))
-            if type == "text":
-                self.add_text(slide, el.get("content"), x, y, w, h, size=el.get("size", 24), bold=el.get("bold", False), color=hex_to_rgb(el.get("color")), align=PP_ALIGN.CENTER if el.get("align") == "center" else PP_ALIGN.LEFT)
-            elif type == "image":
-                img = self.resolve_image(el.get("path"))
-                if img: self.add_fitted_image(slide, img, x, y, w, h)
-            elif type == "typo_substitution":
-                img = self.resolve_image(el.get("path"))
-                if img: self.add_typo_composition(slide, el.get("text"), el.get("char"), img, x, y, size=el.get("size", 80))
-        
+
+        elements = slide_data.get("elements", []) or []
+
+        def _z(el):
+            try:
+                return float(el.get("z_index", 0) or 0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        for el in sorted(elements, key=_z):
+            el_type = el.get("type")
+            try:
+                if el_type == "text":
+                    self._paint_canvas_text(slide, el)
+                elif el_type == "image":
+                    self._paint_canvas_image(slide, el)
+                elif el_type == "typo_substitution":
+                    self._paint_canvas_typo_substitution(slide, el)
+                elif el_type in ("shape", "decorator"):
+                    self._paint_canvas_shape(slide, el)
+                elif el_type == "line":
+                    self._paint_canvas_line(slide, el)
+                elif el_type == "gradient_overlay":
+                    self._paint_canvas_gradient(slide, el)
+            except Exception as e:
+                print(f"  [Painter] custom_canvas: skipped element type={el_type!r} ({e})", flush=True)
+
+    def _paint_canvas_text(self, slide, el):
+        x, y = self.w(el.get("x", 0)), self.h(el.get("y", 0))
+        w, h = self.w(el.get("w", 40)), self.h(el.get("h", 15))
+        color, alpha = parse_canvas_color(el.get("color"))
+        is_bold = bool(el.get("bold")) or str(el.get("weight", "")).lower() == "bold"
+        self.add_text(
+            slide, el.get("content", el.get("text", "")), x, y, w, h,
+            size=el.get("size", 24), bold=is_bold, color=color or self.title_color,
+            align=PP_ALIGN.CENTER if el.get("align") == "center" else PP_ALIGN.LEFT,
+        )
+
+    def _paint_canvas_image(self, slide, el):
+        img = self.resolve_image(el.get("path"))
+        if not img:
+            return
+        x, y = self.w(el.get("x", 0)), self.h(el.get("y", 0))
+        w, h = self.w(el.get("w", 0)), self.h(el.get("h", 0))
+        self.add_fitted_image(slide, img, x, y, w, h)
+
+    def _paint_canvas_typo_substitution(self, slide, el):
+        img = self.resolve_image(el.get("path"))
+        if not img:
+            return
+        x, y = self.w(el.get("x", 0)), self.h(el.get("y", 0))
+        self.add_typo_composition(slide, el.get("text"), el.get("char"), img, x, y, size=el.get("size", 80))
+
+    def _paint_canvas_shape(self, slide, el):
+        is_circle = str(el.get("shape", "")).lower() in ("circle", "ellipse", "oval")
+        if is_circle:
+            size = float(el.get("size", el.get("w", 20)) or 20)
+            # Real Art Director output positions circles by CENTER (e.g. 3
+            # concentric circles sharing one x/y with different sizes) — a
+            # top-left interpretation would scatter them instead of nesting.
+            el_x, el_y, el_w, el_h = el.get("x", 50) - size / 2, el.get("y", 50) - size / 2, size, size
+            shape_id = 9  # MSO_AUTO_SHAPE_TYPE.OVAL
+        else:
+            el_x, el_y = el.get("x", 0), el.get("y", 0)
+            el_w = el.get("w", el.get("size", 20))
+            el_h = el.get("h", el.get("size", 4))
+            has_radius = bool(el.get("radius") or el.get("border_radius"))
+            shape_id = 5 if has_radius else 1  # rounded rect : rect (same IDs add_rect uses)
+
+        shape = slide.shapes.add_shape(shape_id, self.w(el_x), self.h(el_y), self.w(el_w), self.h(el_h))
+        rotation = el.get("rotation")
+        if rotation:
+            try:
+                shape.rotation = float(rotation)
+            except (TypeError, ValueError):
+                pass
+
+        color, color_alpha = parse_canvas_color(el.get("color") or el.get("fill"))
+        if color is not None:
+            shape.fill.solid()
+            shape.fill.fore_color.rgb = color
+            opacity = el.get("opacity")
+            if opacity is not None:
+                transparency = 1.0 - float(opacity)
+            elif color_alpha is not None:
+                transparency = 1.0 - color_alpha
+            else:
+                transparency = 0.0
+            apply_fill_alpha(shape, transparency)
+        else:
+            shape.fill.background()
+
+        border_width, border_color, border_alpha = parse_canvas_border(el.get("border"))
+        if border_color is not None:
+            shape.line.color.rgb = border_color
+            shape.line.width = Pt(border_width or 1)
+            if border_alpha is not None:
+                line_color_elm = shape._element.spPr.find(qn('a:ln'))
+                if line_color_elm is not None:
+                    solidFill = line_color_elm.find(qn('a:solidFill'))
+                    if solidFill is not None:
+                        _inject_alpha(solidFill.find(qn('a:srgbClr')), 1.0 - border_alpha)
+        else:
+            shape.line.fill.background()
+
+    def _paint_canvas_line(self, slide, el):
+        x1, y1 = float(el.get("x1", 0)), float(el.get("y1", 0))
+        x2, y2 = float(el.get("x2", 100)), float(el.get("y2", y1))
+        color, alpha = parse_canvas_color(el.get("stroke") or el.get("color"))
+        connector = slide.shapes.add_connector(1, self.w(x1), self.h(y1), self.w(x2), self.h(y2))  # MSO_CONNECTOR.STRAIGHT
+        connector.line.color.rgb = color or self.secondary
+        stroke_width = el.get("strokeWidth", el.get("stroke_width", 1)) or 1
+        connector.line.width = Pt(float(stroke_width))
+
+    def _paint_canvas_gradient(self, slide, el):
+        x, y = el.get("x", 0), el.get("y", 0)
+        w, h = el.get("w", 100), el.get("h", 100)
+        angle, stops = parse_css_linear_gradient(el.get("gradient"))
+        if not stops:
+            return  # unparseable/radial gradient: skip rather than paint a wrong flat guess
+
+        shape = slide.shapes.add_shape(1, self.w(x), self.h(y), self.w(w), self.h(h))
+        shape.line.fill.background()
+        shape.fill.gradient()
+        gradient_stops = shape.fill.gradient_stops
+        for stop, (color, stop_alpha) in zip(gradient_stops, stops):
+            stop.color.rgb = color
+            _inject_alpha(stop._gs.find(qn('a:srgbClr')), 1.0 - stop_alpha)
+        if angle is not None:
+            try:
+                # CSS linear-gradient() measures degrees clockwise from "up"
+                # (0deg = bottom-to-top); PowerPoint's gradient_angle measures
+                # clockwise from horizontal (0deg = left-to-right). Offsetting
+                # by -90 lines the two conventions up (exact enough for a
+                # decorative overlay, not pixel-matched across renderers).
+                shape.fill.gradient_angle = (angle - 90) % 360
+            except Exception:
+                pass
+
     def apply_branding(self, slide, slide_data, logo_path, agency, bg_color=None):
         """v10.0: Centralized branding logic (Tesco Logo + L-Founders Signature)."""
         is_title = (slide_data.get("slide_number") == 1)

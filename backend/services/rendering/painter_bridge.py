@@ -58,14 +58,18 @@ GRAMMAR_TO_PAINTER = {
     "hero":                 "composition_hero",
     "split":                "composition_split",
     "pillars":              "composition_pillars",
-    # "custom_canvas" NO es identity a paint_custom_canvas() a propósito: ese
-    # método pinta desde slide_data["elements"], que el path PPTX nunca puebla
-    # (solo PremiumVisualAgent, exclusivo del PDF premium, construye
-    # canvas_elements) — confirmado real: dispatch directo produce una slide en
-    # blanco (solo fondo/logo/footer). Hasta que exista un builder de elements
-    # para PPTX, cae a composition_split (con contenido real) en vez de a un
-    # layout vacío. Ver docs/specs/synthesis-studio-v2.md.
-    "custom_canvas":        "composition_split",
+    # Identity: GammaPainter.render_slides() dispatches "custom_canvas"
+    # directly to paint_custom_canvas(), which paints slide_data["elements"].
+    # Briefly mapped to "composition_split" instead (2026-09-20) because
+    # render_agent.py hardcoded elements=[] for the PPTX path — dispatching
+    # here produced a blank slide (background/logo/footer only, no content).
+    # Now that render_agent.py forwards the real canvas_elements the Art
+    # Director already produces for every slide (planning_json.art_director.
+    # canvas_elements), and paint_custom_canvas() handles the full vocabulary
+    # real production output uses (shape/decorator/line/gradient_overlay, not
+    # just text/image/typo_substitution), the mitigation is obsolete — see
+    # docs/specs/synthesis-studio-v2.md, Finding 1b.
+    "custom_canvas":        "custom_canvas",
 }
 
 

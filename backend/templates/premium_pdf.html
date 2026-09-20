@@ -334,6 +334,36 @@
     </style>
 </head>
 <body>
+{#
+  canvas_elements come from the Art Director LLM (prompt_art_director_v3) —
+  in real production output these go beyond the prompt's 3 illustrative
+  types (text/image/typo_substitution): shape, decorator, line and
+  gradient_overlay show up routinely. Defined once as a macro (was
+  duplicated verbatim 3x across the pattern_type branches below, only
+  handling those 3 types — the same drift risk that caused
+  docs/specs/synthesis-studio-v2.md Finding 1/2) so the 3 call sites can
+  never diverge again.
+#}
+{% macro render_canvas_element(el) %}
+    {% if el.type == 'typo_substitution' or el.type == 'image' %}
+        <img class="canvas-element" src="{{ el.path }}" style="left: {{ el.x|num(0) }}%; top: {{ el.y|num(0) }}%; width: {{ el.size|default(el.w, true)|num(20) }}%; height: {{ el.h|default('auto') }}; opacity: {{ el.opacity|num(1) }}; z-index: {{ el.z_index|num(10)|int }};">
+    {% elif el.type == 'text' %}
+        <div class="canvas-element" style="left: {{ el.x|num(0) }}%; top: {{ el.y|num(0) }}%; font-size: {{ el.size|num(24) }}px; color: {{ el.color|default('var(--brand-text)') }}; font-weight: {{ 'bold' if (el.weight == 'bold' or el.bold) else 'normal' }}; opacity: {{ el.opacity|num(1) }}; z-index: {{ el.z_index|num(10)|int }};">{{ el.content|default(el.text) }}</div>
+    {% elif el.type == 'shape' or el.type == 'decorator' %}
+        {% set is_circle = el.shape in ('circle', 'ellipse', 'oval') %}
+        {% set size = el.size|default(el.w, true)|num(20) %}
+        {% set el_w = size if is_circle else el.w|default(el.size, true)|num(20) %}
+        {% set el_h = size if is_circle else el.h|default(el.size, true)|num(4) %}
+        {% set el_x = (el.x|num(0) - el_w / 2) if is_circle else el.x|num(0) %}
+        {% set el_y = (el.y|num(0) - el_h / 2) if is_circle else el.y|num(0) %}
+        <div class="canvas-element" style="left: {{ el_x }}%; top: {{ el_y }}%; width: {{ el_w }}%; height: {{ el_h }}%; background: {{ el.fill|default(el.color, true)|default('transparent', true) }}; opacity: {{ el.opacity|num(1) }}; border-radius: {{ '50%' if is_circle else (el.radius|default(el.border_radius, true)|num(0)|int ~ 'px') }}; border: {{ el.border|default('none') }}; transform: rotate({{ el.rotation|num(0) }}deg); z-index: {{ el.z_index|num(5)|int }};"></div>
+    {% elif el.type == 'line' %}
+        {% set geo = line_geometry(el.x1|num(0), el.y1|num(0), el.x2|num(100), el.y2|num(0)) %}
+        <div class="canvas-element" style="left: {{ geo.left }}%; top: {{ geo.top }}%; width: {{ geo.length }}%; height: {{ el.strokeWidth|default(el.stroke_width, true)|num(2) }}px; background: {{ el.stroke|default(el.color, true)|default('#000', true) }}; opacity: {{ el.opacity|num(1) }}; transform: rotate({{ geo.angle }}deg); transform-origin: left center; z-index: {{ el.z_index|num(5)|int }};"></div>
+    {% elif el.type == 'gradient_overlay' %}
+        <div class="canvas-element" style="left: {{ el.x|num(0) }}%; top: {{ el.y|num(0) }}%; width: {{ el.w|num(100) }}%; height: {{ el.h|num(100) }}%; background: {{ el.gradient|default('none') }}; z-index: {{ el.z_index|num(1)|int }};"></div>
+    {% endif %}
+{% endmacro %}
 {% for slide in slides %}
     {% set pattern_type = slide.pattern_type|default('editorial_split') %}
     {% if pattern_type == 'full_bleed_hero' %}
@@ -369,13 +399,7 @@
         {% endif %}
         {% if slide.canvas_elements %}
             {% for el in slide.canvas_elements %}
-                {% if el.type == 'typo_substitution' or el.type == 'image' %}
-                    <img class="canvas-element" src="{{ el.path }}" style="left: {{ el.x }}%; top: {{ el.y }}%; width: {{ el.size|default(el.w)|default(20) }}%; height: {{ el.h|default('auto') }};">
-                {% elif el.type == 'text' %}
-                    <div class="canvas-element" style="left: {{ el.x }}%; top: {{ el.y }}%; font-size: {{ el.size|default(24) }}px; color: {{ el.color|default('var(--brand-text)') }}; font-weight: bold;">
-                        {{ el.content|default(el.text) }}
-                    </div>
-                {% endif %}
+                {{ render_canvas_element(el) }}
             {% endfor %}
         {% endif %}
     </section>
@@ -428,13 +452,7 @@
         {% endif %}
         {% if slide.canvas_elements %}
             {% for el in slide.canvas_elements %}
-                {% if el.type == 'typo_substitution' or el.type == 'image' %}
-                    <img class="canvas-element" src="{{ el.path }}" style="left: {{ el.x }}%; top: {{ el.y }}%; width: {{ el.size|default(el.w)|default(20) }}%; height: {{ el.h|default('auto') }};">
-                {% elif el.type == 'text' %}
-                    <div class="canvas-element" style="left: {{ el.x }}%; top: {{ el.y }}%; font-size: {{ el.size|default(24) }}px; color: {{ el.color|default('var(--brand-text)') }}; font-weight: bold;">
-                        {{ el.content|default(el.text) }}
-                    </div>
-                {% endif %}
+                {{ render_canvas_element(el) }}
             {% endfor %}
         {% endif %}
     </section>
@@ -481,13 +499,7 @@
         {% endif %}
         {% if slide.canvas_elements %}
             {% for el in slide.canvas_elements %}
-                {% if el.type == 'typo_substitution' or el.type == 'image' %}
-                    <img class="canvas-element" src="{{ el.path }}" style="left: {{ el.x }}%; top: {{ el.y }}%; width: {{ el.size|default(el.w)|default(20) }}%; height: {{ el.h|default('auto') }};">
-                {% elif el.type == 'text' %}
-                    <div class="canvas-element" style="left: {{ el.x }}%; top: {{ el.y }}%; font-size: {{ el.size|default(24) }}px; color: {{ el.color|default('var(--brand-text)') }}; font-weight: bold;">
-                        {{ el.content|default(el.text) }}
-                    </div>
-                {% endif %}
+                {{ render_canvas_element(el) }}
             {% endfor %}
         {% endif %}
     </section>

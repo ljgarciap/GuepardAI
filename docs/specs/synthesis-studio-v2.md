@@ -2,7 +2,7 @@
 
 **Date**: 2026-09-20
 **Requested by**: Luis
-**Status**: Draft — ready for Architect design
+**Status**: Phase 1 done (4 findings fixed, shipped and re-verified against real production data); Phase 2 (re-measurement) and 2 Architect decisions open
 **Project**: GuepardAI
 **Assessment**: `docs/designs/synthesis-studio-v2-assessment.md` (2026-07-08, verdict + 3 levers)
 **Owner of this document**: `synthesis-studio-analyst` agent
@@ -65,28 +65,72 @@ deck B (legacy PDF, same class of bug, see Finding 2): slides declared `split`,
 
 **Fix shipped this session** (`services/rendering/painter_bridge.py`): added
 `hero`→`composition_hero`, `split`→`composition_split`, `pillars`→
-`composition_pillars`. `custom_canvas` is deliberately **not** mapped to its
-identity (`paint_custom_canvas`) — see Finding 1b. Regression tests:
+`composition_pillars`, `custom_canvas`→`custom_canvas` (identity — see Finding 1b
+for why this took two passes). Regression tests:
 `tests/test_painter_bridge_grammar_mapping.py`. Re-generated deck A/D post-fix and
 confirmed visually: `pillars` now renders as a genuine 4-column card layout,
 distinct from `split`'s image-left/text-right treatment (see QA evidence below).
 
-### Finding 1b — `custom_canvas` has no content builder for the PPTX path [MITIGATED, not fixed]
+### Finding 1b — `custom_canvas` had no real content builder for the PPTX path [FIXED]
 
-**Classification**: Rendering defect (dead/incomplete feature) → Lever 2 adjacent, but really its own item.
+**Classification**: Rendering defect (incomplete feature, not dead) — its own item, bigger than initially scoped.
 
-`GammaPainter.paint_custom_canvas()` paints from `slide_data["elements"]`. Only
-`PremiumVisualAgent._build_slides()` (exclusive to the PDF premium path) ever
-populates `canvas_elements`; the PPTX path's `RenderPPTXTool` always builds
-`PainterSlideData` with `elements=[]`. Dispatching `custom_canvas` correctly (per
-Finding 1's fix) exposed this: the slide rendered as a **blank canvas** (background,
-logo and footer only, no content) — confirmed with a real re-render.
+`GammaPainter.paint_custom_canvas()` paints from `slide_data["elements"]`.
+Dispatching `custom_canvas` correctly (per Finding 1's fix) first exposed a blank
+canvas (background/logo/footer only) — investigating why led to two real,
+independent bugs, not one:
 
-**Mitigation shipped this session**: `custom_canvas` maps to `composition_split`
-(populated, safe) instead of `paint_custom_canvas` (blank) until a real builder
-exists. This is the same shape as the `implemented_premium_patterns` runtime
-whitelist already used for the premium PDF path (`system_configs`) — worth the same
-treatment here (see Acceptance criteria, Phase 2).
+1. **The data existed but never reached either renderer.** The Art Director
+   (`art_director_service.py`) already writes `canvas_elements` into
+   `PresentationSlide.planning_json["art_director"]["canvas_elements"]` for
+   **every** slide, regardless of tier/output_format — it's Architect-step output,
+   not a premium-only concept. But `render_agent.py`'s PPTX branch hardcoded
+   `PainterSlideData(elements=[])`, and its premium-PDF branch rebuilt a fresh
+   `ContentManifestSlide` **without** passing `planning_json` through at all — so
+   `PremiumVisualAgent._build_slides()`'s own (correct) read of it always saw `{}`
+   too. Both paths were silently discarding real Art Director output.
+2. **Neither renderer understood the vocabulary the Art Director actually
+   produces.** Real production `canvas_elements` go well beyond the prompt's 3
+   illustrative types (text/image/typo_substitution): `shape` (rounded rects,
+   circles — often several sharing one center point to nest, e.g. concentric
+   governance rings labeled "BOARD"/"AUDIT"/"SOC"), `decorator` (thin accent
+   bars), `line`, and `gradient_overlay` (CSS `linear-gradient(...)` strings) show
+   up routinely, with CSS-ish loose field names (`fill` vs `color`, `radius` vs
+   `border_radius`, `"2px solid rgba(...)"` border shorthand). `premium_pdf.html`
+   only had branches for the original 3 types too — this silently dropped
+   decorations in the **already-shipped, already-in-production** premium PDF
+   path, not just PPTX.
+
+**Fix shipped this session**:
+- `render_agent.py`: PPTX branch now reads the real `canvas_elements` from
+  `planning_json`; premium-PDF branch now forwards `planning_json` into
+  `ContentManifestSlide` so `PremiumVisualAgent` actually sees it.
+- `painter.py`: `paint_custom_canvas()` rewritten to handle `shape`, `decorator`,
+  `line`, `gradient_overlay` (plus the original 3), each parsed defensively via new
+  `parse_canvas_color`/`parse_canvas_border`/`parse_css_linear_gradient` helpers
+  (CSS-shorthand → python-pptx primitives) and each in its own `try/except` so one
+  malformed element never blanks the rest of the slide.
+- `premium_pdf.html`: the same 4 new types added as one shared Jinja macro
+  (`render_canvas_element`) called from all 3 `pattern_type` branches, replacing
+  the 3x-duplicated inline block that caused this exact class of drift.
+- **Incidental bug fixed along the way**: `shape.fill.transparency = X`
+  (python-pptx) is not a real API — it silently creates a dangling Python
+  attribute with zero effect on the XML. Confirmed by dumping the shape's XML
+  after "setting" it: no `<a:alpha>` anywhere, fully opaque regardless of the
+  value. Every existing `transparency=` caller in `painter.py` (footer contrast
+  bands, quote/hero backing panels) was rendering fully opaque this whole time.
+  Fixed with a real `<a:alpha>` XML injection helper (`apply_fill_alpha`), which
+  `add_rect()` now uses — a project-wide visual fix, not scoped to custom_canvas.
+- Regression tests: `tests/test_painter_canvas_elements.py`,
+  `tests/test_premium_pdf_canvas_elements.py`,
+  `tests/test_render_agent_canvas_elements_wiring.py`.
+
+**Evidence**: re-rendered deck D's already-generated content (no new LLM spend) —
+the cover slide now shows a photo + gradient tint + accent line + person cutout +
+title/subtitle instead of a blank panel; a roadmap slide shows 3 real phase cards
+with a supporting photo; a governance slide shows genuinely concentric circles
+labeled BOARD/AUDIT/SOC with layered transparency, matching what the Art Director
+actually specified.
 
 ### Finding 2 — Legacy PDF path: the fix from `coherencia-artistica-pipeline.md` didn't test the real vocabulary [FIXED]
 
@@ -151,7 +195,7 @@ as the PPTX path already does. Regression tests:
 confirmed visually: the `data_grid_cards` slide now renders 4 real KPI cards plus a
 highlighted closer tile.
 
-### Finding 4 — Premium PDF path: an unimplemented pattern survives from stale legacy data [OPEN — needs a data alignment]
+### Finding 4 — Premium PDF path: an unimplemented pattern survives from stale legacy data [FIXED]
 
 **Classification**: Rendering defect (data hygiene, not a code-path bug) → Lever 2 adjacent.
 
@@ -171,26 +215,24 @@ re-normalized. Both of this session's whitelist fixes (Task 1's ingestion filter
 and today's `_vision_adjust_loop` fix) are correct for the paths they cover — neither
 touches already-persisted legacy rows.
 
-**Not fixed this session** (explicitly deferred — Luis chose the vocabulary fixes,
-not the data alignment, in this round). This is exactly the shape of problem this
-project already has a mechanism for: register a **data alignment**
-(`services/core/data_alignment_service.py`, `ALIGNMENT_REGISTRY`) that re-runs
-`normalize_executable_patterns()` over every `BrandPremiumVisualPattern.patterns_json`
-row and persists the filtered result. Idempotent, no LLM spend, matches the pattern
-already documented in `CLAUDE.md` ("Startup alignment layers").
+**Fix shipped this session**: registered a data alignment
+(`premium_pattern_whitelist_realign_v1` in
+`services/core/data_alignment_service.py`) that re-filters every
+`BrandPremiumVisualPattern.patterns_json` row against the current
+`implemented_premium_patterns` whitelist, updating `patterns_json` and
+`pattern_summary` when anything gets dropped. Idempotent (a re-run reports
+`already_clean`, no writes), no LLM spend, follows the project's existing
+`ALIGNMENT_REGISTRY` contract. Regression tests:
+`tests/test_data_alignments.py::TestPremiumPatternWhitelistRealign` (drop,
+idempotency, empty `patterns_json`, already-clean row all covered). Runs
+automatically on next boot via the existing dispatch mechanism — no manual step.
 
 ## Quick wins (no design needed — ready for a PM to schedule)
 
 1. ~~Extend `GRAMMAR_TO_ARTISTIC_PDF` with the 4 missing `composition_*` keys~~ —
    done (Finding 2).
-2. **Register a data alignment** to re-normalize every existing
-   `BrandPremiumVisualPattern.patterns_json` against the current
-   `implemented_premium_patterns` whitelist (Finding 4).
-3. **Move `custom_canvas` off the Analyst's menu, or build its `elements`
-   populator, for the PPTX path** (Finding 1b) — either remove it from
-   `prompt_analyst_v3`'s allowed values (versioned as `_v4`, per project convention)
-   until a builder exists, or invest in a `_build_canvas_elements()` for
-   `render_agent.py`'s PPTX branch mirroring `PremiumVisualAgent`'s.
+2. ~~Register a data alignment for stale premium pattern data~~ — done (Finding 4).
+3. ~~Build the real `canvas_elements` builder for `custom_canvas`~~ — done (Finding 1b).
 4. **PPTX path's `layout_slug=None` fallback** (`render_agent.py`, ~10-20% of
    slides where the Analyst call didn't set a slug) reads
    `content_json["layout_type"]` — the Outline's `composition_*` vocabulary — and
@@ -198,15 +240,15 @@ already documented in `CLAUDE.md` ("Startup alignment layers").
    keys either (only the values these keys map *to*). Smaller than Finding 1
    (fewer slides hit this path) but the same bug shape; worth a one-line
    `GRAMMAR_TO_PAINTER` addition (`composition_hero`→itself, etc.) the next time
-   this file is touched.
+   this file is touched. **Still open.**
 
 ## Acceptance criteria
 
-### Phase 1 — Vocabulary fixes (mostly done)
+### Phase 1 — Vocabulary fixes and the real canvas_elements builder (done)
 
-- [x] `GRAMMAR_TO_PAINTER` recognizes all 5 values `prompt_analyst_v3` can emit;
-      each maps to a distinct `GammaPainter`-dispatchable value except the
-      deliberate `custom_canvas` → `composition_split` mitigation.
+- [x] `GRAMMAR_TO_PAINTER` recognizes all 5 values `prompt_analyst_v3` can emit,
+      each mapping to a distinct, real `GammaPainter`-dispatchable value —
+      `custom_canvas` included, now that it has real content to paint.
       (`tests/test_painter_bridge_grammar_mapping.py`)
 - [x] The legacy PDF slide dict forwards `metrics`/`section_label`/`subtitle`.
       (`tests/test_render_agent_legacy_pdf_metrics.py`)
@@ -214,19 +256,21 @@ already documented in `CLAUDE.md` ("Startup alignment layers").
       vocabulary (Finding 2) — parametrized test covering all 5 outline
       `layout_type` values, each resolving to a distinct legacy PDF `layout`.
       (`tests/test_artistic_pdf_legacy_layout.py::TestGrammarToArtisticPdfRecognizesOutlineVocabulary`)
-- [ ] A registered data alignment re-normalizes every `BrandPremiumVisualPattern`
-      row against `implemented_premium_patterns` (Finding 4) — test confirms a
-      fixture row with `object_as_letter` is cleaned after running it, and that
-      running it twice is a no-op (idempotency, per project convention).
+- [x] A registered data alignment re-normalizes every `BrandPremiumVisualPattern`
+      row against `implemented_premium_patterns` (Finding 4).
+      (`tests/test_data_alignments.py::TestPremiumPatternWhitelistRealign`)
+- [x] `canvas_elements` (Art Director output) reaches both renderers — PPTX via
+      `render_agent.py` reading `planning_json` directly, premium PDF via
+      `ContentManifestSlide.planning_json` actually being populated (Finding 1b).
+      (`tests/test_render_agent_canvas_elements_wiring.py`)
+- [x] `paint_custom_canvas()` and `premium_pdf.html` both render `shape`,
+      `decorator`, `line`, `gradient_overlay` in addition to the original
+      text/image/typo_substitution — one shared Jinja macro for the HTML side,
+      one dispatch table for the PPTX side, neither able to drift from the other
+      silently again. (`tests/test_painter_canvas_elements.py`,
+      `tests/test_premium_pdf_canvas_elements.py`)
 
-### Phase 2 — Close the `custom_canvas` gap properly
-
-- [ ] Architect decision recorded: remove `custom_canvas` from
-      `prompt_analyst_v3`'s allowed values (versioned `_v4`) vs. build a PPTX
-      `elements` populator. Either way, `paint_custom_canvas()` must never be
-      reachable with an empty `elements` list in production.
-
-### Phase 3 — Re-measure before committing to Lever 1
+### Phase 2 — Re-measure before committing to Lever 1
 
 - [ ] Re-run this same 4-deck elicitation (or a subset) after Phase 1 ships, with
       Luis re-marking the same slide range. If the "mismo círculo" complaint is
@@ -254,13 +298,16 @@ already documented in `CLAUDE.md` ("Startup alignment layers").
 
 ## Out of scope
 
-- Lever 1 (Brand Grammar Mining) — explicitly deferred to Phase 3's re-measurement;
+- Lever 1 (Brand Grammar Mining) — explicitly deferred to Phase 2's re-measurement;
   not designed here.
-- Rewriting `PremiumVisualAgent` to share a builder with the PPTX path — Finding 1b's
-  Quick Win only asks for a decision, not an implementation.
 - Any change to `prompt_analyst_v3`'s non-vocabulary instructions (the no-text/
   no-diagram photography rules) — untouched, not implicated by this session's
   findings.
+- Radial gradients, N-stop (>2) linear gradients, and per-element `blend_mode`/
+  CSS `filter` on `canvas_elements` — real production output hasn't produced these
+  yet; `parse_css_linear_gradient` degrades unsupported gradient syntax to "skip"
+  rather than guessing, and image `style`/`blend_mode` fields are ignored by the
+  PPTX renderer (CSS-only concepts, no python-pptx equivalent attempted).
 - A second real brand for a broader Lever-1 assessment — this session ran on Tesco
   only (the only fully-ingested brand available); see
   `docs/designs/synthesis-studio-v2-assessment.md` for that open item.
@@ -272,9 +319,7 @@ already documented in `CLAUDE.md` ("Startup alignment layers").
   that the surgical fix is live — would also close Quick Win 4 (the PPTX
   `layout_slug=None` fallback) in one move, at the cost of an LLM prompt change
   needing its own AI Architect validation.
-- [Architect] Finding 1b: remove `custom_canvas` from the Analyst's menu vs. build
-  a PPTX `elements` populator — cost/impact tradeoff.
-- [Luis] Whether to schedule Phase 3's re-measurement session now or batch it with
+- [Luis] Whether to schedule Phase 2's re-measurement session now or batch it with
   other pending work (this workspace currently also has the coherencia-artistica-
   pipeline spec's own open items and general backlog).
 
@@ -288,8 +333,20 @@ already documented in `CLAUDE.md` ("Startup alignment layers").
   legacy-data gap it didn't cover)
 - Code: `services/rendering/painter_bridge.py` (`GRAMMAR_TO_PAINTER`),
   `agents/render_agent.py` (`RenderPPTXTool`), `services/generation/analyst_service.py`
-  (`get_slide_visual_strategy`), `utils/seed.py` (`prompt_analyst_v3`),
+  (`get_slide_visual_strategy`), `utils/seed.py` (`prompt_analyst_v3`,
+  `prompt_art_director_v3`), `services/generation/art_director_service.py`
+  (`plan_presentation_design` — where `canvas_elements` is produced),
   `services/rendering/premium_visual_agent.py` (`_load_patterns`,
-  `get_latest_brand_patterns`)
+  `get_latest_brand_patterns`, `_build_slides`), `services/rendering/painter.py`
+  (`paint_custom_canvas`, `apply_fill_alpha`, `parse_canvas_color`,
+  `parse_canvas_border`, `parse_css_linear_gradient`),
+  `templates/premium_pdf.html` (`render_canvas_element` macro),
+  `services/core/data_alignment_service.py`
+  (`premium_pattern_whitelist_realign_v1`)
 - Tests added this session: `tests/test_painter_bridge_grammar_mapping.py`,
-  `tests/test_render_agent_legacy_pdf_metrics.py`
+  `tests/test_render_agent_legacy_pdf_metrics.py`,
+  `tests/test_artistic_pdf_legacy_layout.py::TestGrammarToArtisticPdfRecognizesOutlineVocabulary`,
+  `tests/test_data_alignments.py::TestPremiumPatternWhitelistRealign`,
+  `tests/test_painter_canvas_elements.py`,
+  `tests/test_premium_pdf_canvas_elements.py`,
+  `tests/test_render_agent_canvas_elements_wiring.py`

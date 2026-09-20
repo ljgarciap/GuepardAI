@@ -309,6 +309,61 @@ def _run_feedback_to_reviews() -> dict:
         db.close()
 
 
+def _run_premium_pattern_whitelist_realign() -> dict:
+    """
+    Re-filtra BrandPremiumVisualPattern.patterns_json de cada marca contra la
+    whitelist VIGENTE de implemented_premium_patterns (system_configs).
+
+    normalize_executable_patterns() ya descarta pattern_type no implementados
+    (object_as_letter, typographic_substitution, brand_footer,
+    logo_locked_footer, image_masked_title) — pero SOLO al momento de escritura
+    (ingestión). get_latest_brand_patterns() lee patterns_json tal cual quedó
+    persistido, sin re-filtrar. Cualquier fila ingerida antes de esa whitelist
+    (o antes de que se ampliara/redujera después) sigue arrastrando patrones
+    fantasma indefinidamente. Encontrado con datos reales de producción: la
+    fila de Tesco (ingerida antes de coherencia-artistica-pipeline.md) todavía
+    tenía object_as_letter en 6 de 18 pattern_type elegidos por
+    PremiumVisualAgent en una corrida real (docs/specs/synthesis-studio-v2.md,
+    Finding 4).
+
+    Idempotente: una fila ya filtrada no cambia (mismo patterns_json, mismo
+    pattern_summary) — no vuelve a contarse como "cleaned" en una segunda
+    corrida. No consume tokens LLM.
+    """
+    from services.ingestion.visual_pattern_service import (
+        get_implemented_premium_patterns,
+        summarize_patterns,
+    )
+
+    summary = {"cleaned": 0, "already_clean": 0, "empty_json": 0, "failed": 0}
+    db = SessionLocal()
+    try:
+        implemented = get_implemented_premium_patterns(db=db)
+        rows = db.query(models.BrandPremiumVisualPattern).all()
+        for row in rows:
+            try:
+                patterns = row.patterns_json
+                if not patterns:
+                    summary["empty_json"] += 1
+                    continue
+
+                filtered = [p for p in patterns if isinstance(p, dict) and p.get("pattern_type") in implemented]
+                if filtered == patterns:
+                    summary["already_clean"] += 1
+                    continue
+
+                row.patterns_json = filtered
+                row.pattern_summary = summarize_patterns(filtered)
+                summary["cleaned"] += 1
+            except Exception as e:
+                summary["failed"] += 1
+                logger.warning(f"[PremiumPatternWhitelistRealign] BrandPremiumVisualPattern {row.id} failed: {e}")
+        db.commit()
+        return summary
+    finally:
+        db.close()
+
+
 ALIGNMENT_REGISTRY: Dict[str, Callable[[], dict]] = {
     "visual_profile_backfill_v1": _run_visual_profile_backfill,
     "file_reorganization_v1": _run_file_reorganization,
@@ -316,6 +371,7 @@ ALIGNMENT_REGISTRY: Dict[str, Callable[[], dict]] = {
     "tenant_backfill_v1": _run_tenant_backfill,
     "stale_fallback_model_fix_v1": _run_stale_fallback_model_fix,
     "feedback_to_reviews_v1": _run_feedback_to_reviews,
+    "premium_pattern_whitelist_realign_v1": _run_premium_pattern_whitelist_realign,
 }
 
 

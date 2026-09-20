@@ -454,3 +454,136 @@ class TestFeedbackToReviews:
         assert summary["no_owner"] >= 1
         db.expire_all()
         assert db.query(models.PresentationReview).filter_by(job_id=job.id).count() == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ALINEACIÓN: premium_pattern_whitelist_realign_v1 (Synthesis Studio v2, Finding 4)
+# BrandPremiumVisualPattern.patterns_json ingerido antes de (o entre cambios de)
+# la whitelist implemented_premium_patterns nunca se re-filtra al leerlo —
+# get_latest_brand_patterns() lo devuelve tal cual quedó persistido.
+# ─────────────────────────────────────────────────────────────────────────────
+@pytest.fixture()
+def premium_pattern_db(create_test_schema, require_db):
+    from database import SessionLocal
+    db = SessionLocal()
+    created = {"brands": [], "patterns": []}
+
+    # implemented_premium_patterns puede ser una key legítima ya sembrada por
+    # seed_data() (otro test de la suite arrancó la app en esta misma BD) — se
+    # guarda el valor original para restaurarlo, nunca se asume que no existe
+    # ni se borra sin más.
+    existing = db.query(models.SystemConfig).filter(
+        models.SystemConfig.key == "implemented_premium_patterns"
+    ).first()
+    original_value = existing.value if existing else None
+
+    yield db, created
+
+    for pattern_id in created["patterns"]:
+        db.query(models.BrandPremiumVisualPattern).filter(models.BrandPremiumVisualPattern.id == pattern_id).delete()
+    for brand_id in created["brands"]:
+        db.query(models.Brand).filter(models.Brand.id == brand_id).delete()
+
+    row = db.query(models.SystemConfig).filter(
+        models.SystemConfig.key == "implemented_premium_patterns"
+    ).first()
+    if original_value is None:
+        if row:
+            db.delete(row)
+    elif row:
+        row.value = original_value
+    db.commit()
+    db.close()
+
+
+@pytest.mark.integration
+class TestPremiumPatternWhitelistRealign:
+
+    def _run(self):
+        from services.core.data_alignment_service import _run_premium_pattern_whitelist_realign
+        return _run_premium_pattern_whitelist_realign()
+
+    def _set_whitelist(self, db, value):
+        # Upsert, no insert ciego: seed_data() (disparado por otros tests de la
+        # suite que arrancan la app) puede haber sembrado ya esta key.
+        row = db.query(models.SystemConfig).filter(
+            models.SystemConfig.key == "implemented_premium_patterns"
+        ).first()
+        if row:
+            row.value = value
+        else:
+            db.add(models.SystemConfig(key="implemented_premium_patterns", value=value, description="test"))
+        db.commit()
+
+    def _make_row(self, db, created, patterns_json):
+        import os
+        suffix = os.urandom(3).hex()
+        brand = models.Brand(name=f"PremiumPatternBrand_{suffix}")
+        db.add(brand)
+        db.flush()
+        created["brands"].append(brand.id)
+
+        row = models.BrandPremiumVisualPattern(
+            brand_id=brand.id,
+            source_filename="test_style.pptx",
+            patterns_json=patterns_json,
+        )
+        db.add(row)
+        db.commit()
+        created["patterns"].append(row.id)
+        return row
+
+    def test_drops_pattern_type_no_longer_in_the_whitelist(self, premium_pattern_db):
+        db, created = premium_pattern_db
+        self._set_whitelist(db, '["full_bleed_hero", "data_cards_brand_grid", "editorial_split"]')
+        row = self._make_row(db, created, [
+            {"id": "p1", "pattern_type": "object_as_letter", "confidence": 0.9},
+            {"id": "p2", "pattern_type": "full_bleed_hero", "confidence": 0.85},
+        ])
+
+        summary = self._run()
+
+        assert summary["cleaned"] >= 1
+        db.expire_all()
+        db.refresh(row)
+        pattern_types = {p["pattern_type"] for p in row.patterns_json}
+        assert pattern_types == {"full_bleed_hero"}
+
+    def test_idempotent_second_run_reports_already_clean(self, premium_pattern_db):
+        db, created = premium_pattern_db
+        self._set_whitelist(db, '["full_bleed_hero", "data_cards_brand_grid", "editorial_split"]')
+        row = self._make_row(db, created, [
+            {"id": "p1", "pattern_type": "object_as_letter", "confidence": 0.9},
+            {"id": "p2", "pattern_type": "editorial_split", "confidence": 0.7},
+        ])
+
+        first = self._run()
+        second = self._run()
+
+        assert first["cleaned"] >= 1
+        assert second["already_clean"] >= 1
+        db.expire_all()
+        db.refresh(row)
+        assert [p["pattern_type"] for p in row.patterns_json] == ["editorial_split"]
+
+    def test_empty_patterns_json_reported_not_an_error(self, premium_pattern_db):
+        db, created = premium_pattern_db
+        self._make_row(db, created, [])
+
+        summary = self._run()
+
+        assert summary["empty_json"] >= 1
+        assert summary["failed"] == 0
+
+    def test_row_with_only_implemented_patterns_is_left_untouched(self, premium_pattern_db):
+        db, created = premium_pattern_db
+        self._set_whitelist(db, '["full_bleed_hero", "data_cards_brand_grid", "editorial_split"]')
+        original = [{"id": "p1", "pattern_type": "editorial_split", "confidence": 0.8}]
+        row = self._make_row(db, created, original)
+
+        summary = self._run()
+
+        assert summary["already_clean"] >= 1
+        db.expire_all()
+        db.refresh(row)
+        assert row.patterns_json == original

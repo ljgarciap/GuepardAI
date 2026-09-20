@@ -58,6 +58,21 @@ GRAMMAR_TO_ARTISTIC_PDF = {
     "two_column":          "pillars",
     "case_study":          "pillars",
     "strategic_split":     "split",
+
+    # Vocabulario real del Outline Generator (prompt_content_outline_v3,
+    # "Allowed layout_type values") — content_json["layout_type"] SIEMPRE llega
+    # en este vocabulario para el path PDF legacy (render_agent.py nunca lee
+    # slide.layout_slug aquí, a diferencia del path PPTX). Sin estas 4 entradas,
+    # composition_hero/split/pillars/quote no matcheaban ninguna key de arriba
+    # y colapsaban en silencio a "split" — el mismo bug de Finding 1
+    # (GRAMMAR_TO_PAINTER), otro vocabulario. Confirmado visualmente con datos
+    # reales de producción (Synthesis Studio v2, docs/specs/synthesis-studio-v2.md,
+    # Finding 2): slides declaradas composition_split/pillars/quote renderizaban
+    # pixel-idénticas.
+    "composition_hero":    "hero",
+    "composition_split":   "split",
+    "composition_quote":   "quote",
+    "composition_pillars": "pillars",
 }
 
 

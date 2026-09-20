@@ -68,3 +68,36 @@ class TestGrammarToArtisticPdfMapping:
         # Ningún valor de la tabla debe apuntar a un layout que pdf_base.html
         # no reconozca — protege contra un typo silencioso en el mapeo mismo.
         assert set(GRAMMAR_TO_ARTISTIC_PDF.values()) <= KNOWN_LEGACY_LAYOUTS
+
+
+# El vocabulario real que emite prompt_content_outline_v3 ("Allowed layout_type
+# values") — DISTINTO del vocabulario canónico de arriba. render_agent.py nunca
+# lee slide.layout_slug en el path PDF legacy, solo content_json["layout_type"],
+# así que ESTE es el vocabulario que de verdad llega a resolve_legacy_pdf_layout()
+# en producción. Hallazgo (Synthesis Studio v2, docs/specs/synthesis-studio-v2.md,
+# Finding 2): antes de este fix, ninguno de estos 4 valores matcheaba una key real
+# — solo "data_grid_cards" coincidía por estar en ambos vocabularios — y
+# composition_hero/split/pillars/quote colapsaban todos al mismo "split",
+# confirmado visualmente (3 slides con layout_type distinto renderizando idénticas).
+OUTLINE_LAYOUT_TYPES = [
+    "composition_hero", "composition_split", "composition_quote",
+    "composition_pillars", "data_grid_cards",
+]
+
+
+@pytest.mark.unit
+class TestGrammarToArtisticPdfRecognizesOutlineVocabulary:
+
+    @pytest.mark.parametrize("layout_type", OUTLINE_LAYOUT_TYPES)
+    def test_every_outline_layout_type_is_a_real_key_not_the_silent_default(self, layout_type):
+        assert layout_type in GRAMMAR_TO_ARTISTIC_PDF, (
+            f"'{layout_type}' (vocabulario real de prompt_content_outline_v3) no es "
+            f"una key de GRAMMAR_TO_ARTISTIC_PDF — colapsará al fallback 'split' de "
+            f"resolve_legacy_pdf_layout(), no a un layout distinto."
+        )
+
+    def test_distinct_outline_layout_types_produce_distinct_legacy_layouts(self):
+        resolved = {lt: resolve_legacy_pdf_layout(lt) for lt in OUTLINE_LAYOUT_TYPES}
+        assert len(set(resolved.values())) == len(OUTLINE_LAYOUT_TYPES), (
+            f"Valores del Outline Generator colapsando al mismo layout: {resolved}"
+        )

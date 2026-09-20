@@ -88,9 +88,9 @@ exists. This is the same shape as the `implemented_premium_patterns` runtime
 whitelist already used for the premium PDF path (`system_configs`) — worth the same
 treatment here (see Acceptance criteria, Phase 2).
 
-### Finding 2 — Legacy PDF path: the fix from `coherencia-artistica-pipeline.md` didn't test the real vocabulary [OPEN]
+### Finding 2 — Legacy PDF path: the fix from `coherencia-artistica-pipeline.md` didn't test the real vocabulary [FIXED]
 
-**Classification**: Composición/layout genericness → same root cause family as Finding 1, un-fixed by choice this session (out of the agreed scope for the on-the-spot fixes).
+**Classification**: Composición/layout genericness → same root cause family as Finding 1.
 
 `resolve_legacy_pdf_layout()`/`GRAMMAR_TO_ARTISTIC_PDF` (`artistic_pdf_service.py`,
 shipped and QA-approved 2026-09-18) was validated against the canonical
@@ -109,12 +109,25 @@ pill/label position). My own QA report from 2026-09-18
 vocabulary and did not catch this — noted here for the record, not to relitigate
 that spec, since the fix it shipped is still correct for the vocabulary it targeted.
 
-**Not fixed this session** (Luis scoped the on-the-spot fix to Finding 1 + Finding 3
-only). Proposed fix for the Architect: either (a) extend
-`GRAMMAR_TO_ARTISTIC_PDF` with the 4 missing `composition_*` keys (surgical,
-mirrors this session's Finding 1 fix), or (b) make the Outline Generator emit the
-canonical `GRAMMAR_GEOMETRIES` vocabulary directly so there is only one vocabulary
-project-wide (bigger, touches `prompt_content_outline_v3`, cleaner long-term).
+**Fix shipped this session** (`services/rendering/artistic_pdf_service.py`): added
+`composition_hero`→`hero`, `composition_split`→`split`, `composition_quote`→
+`quote`, `composition_pillars`→`pillars` to `GRAMMAR_TO_ARTISTIC_PDF` (option (a)
+below). Regression tests: `tests/test_artistic_pdf_legacy_layout.py`
+(`TestGrammarToArtisticPdfRecognizesOutlineVocabulary`). Re-rendered deck B's
+already-generated content (no new LLM spend) and confirmed visually: the same 3
+slides that rendered pixel-identical before the fix (declared `composition_split`,
+`composition_pillars`, `composition_quote`) now render as genuinely distinct split /
+4-column-pillars / centered-italic-quote treatments.
+
+Option (b) — making the Outline Generator emit the canonical `GRAMMAR_GEOMETRIES`
+vocabulary directly so there is only one vocabulary project-wide — remains a
+larger, separate improvement or the Architect to consider (touches
+`prompt_content_outline_v3`, an LLM prompt, so it would need its own AI Architect
+validation per project convention). Noted below as a related, still-open item: it
+would also fix the PPTX path's fallback when `layout_slug` is `None` (~10-20% of
+slides), which today still falls back to the same `composition_*` vocabulary and
+does **not** match any `GRAMMAR_TO_PAINTER` key either (a smaller residual gap,
+not separately fixed this session — see Open Questions).
 
 ### Finding 3 — Legacy PDF `data_grid` layout rendered blank in real production [FIXED]
 
@@ -168,10 +181,8 @@ already documented in `CLAUDE.md` ("Startup alignment layers").
 
 ## Quick wins (no design needed — ready for a PM to schedule)
 
-1. **Extend `GRAMMAR_TO_ARTISTIC_PDF`** with the 4 missing `composition_*` keys
-   (Finding 2) — same shape as this session's `GRAMMAR_TO_PAINTER` fix, ~30 min of
-   work plus a parametrized test mirroring
-   `tests/test_painter_bridge_grammar_mapping.py`.
+1. ~~Extend `GRAMMAR_TO_ARTISTIC_PDF` with the 4 missing `composition_*` keys~~ —
+   done (Finding 2).
 2. **Register a data alignment** to re-normalize every existing
    `BrandPremiumVisualPattern.patterns_json` against the current
    `implemented_premium_patterns` whitelist (Finding 4).
@@ -180,6 +191,14 @@ already documented in `CLAUDE.md` ("Startup alignment layers").
    `prompt_analyst_v3`'s allowed values (versioned as `_v4`, per project convention)
    until a builder exists, or invest in a `_build_canvas_elements()` for
    `render_agent.py`'s PPTX branch mirroring `PremiumVisualAgent`'s.
+4. **PPTX path's `layout_slug=None` fallback** (`render_agent.py`, ~10-20% of
+   slides where the Analyst call didn't set a slug) reads
+   `content_json["layout_type"]` — the Outline's `composition_*` vocabulary — and
+   feeds it straight to `GRAMMAR_TO_PAINTER`, which has no bare `composition_*`
+   keys either (only the values these keys map *to*). Smaller than Finding 1
+   (fewer slides hit this path) but the same bug shape; worth a one-line
+   `GRAMMAR_TO_PAINTER` addition (`composition_hero`→itself, etc.) the next time
+   this file is touched.
 
 ## Acceptance criteria
 
@@ -191,9 +210,10 @@ already documented in `CLAUDE.md` ("Startup alignment layers").
       (`tests/test_painter_bridge_grammar_mapping.py`)
 - [x] The legacy PDF slide dict forwards `metrics`/`section_label`/`subtitle`.
       (`tests/test_render_agent_legacy_pdf_metrics.py`)
-- [ ] `GRAMMAR_TO_ARTISTIC_PDF` recognizes the Outline Generator's `composition_*`
+- [x] `GRAMMAR_TO_ARTISTIC_PDF` recognizes the Outline Generator's `composition_*`
       vocabulary (Finding 2) — parametrized test covering all 5 outline
       `layout_type` values, each resolving to a distinct legacy PDF `layout`.
+      (`tests/test_artistic_pdf_legacy_layout.py::TestGrammarToArtisticPdfRecognizesOutlineVocabulary`)
 - [ ] A registered data alignment re-normalizes every `BrandPremiumVisualPattern`
       row against `implemented_premium_patterns` (Finding 4) — test confirms a
       fixture row with `object_as_letter` is cleaned after running it, and that
@@ -247,9 +267,11 @@ already documented in `CLAUDE.md` ("Startup alignment layers").
 
 ## Open questions
 
-- [Architect] Finding 2's fix approach: extend `GRAMMAR_TO_ARTISTIC_PDF` (surgical)
-  vs. unify the Outline Generator onto the canonical `GRAMMAR_GEOMETRIES`
-  vocabulary (bigger, removes a whole class of future vocabulary-mismatch bugs).
+- [Architect] Whether to still pursue Option (b) from Finding 2 (unify the Outline
+  Generator onto the canonical `GRAMMAR_GEOMETRIES` vocabulary project-wide) now
+  that the surgical fix is live — would also close Quick Win 4 (the PPTX
+  `layout_slug=None` fallback) in one move, at the cost of an LLM prompt change
+  needing its own AI Architect validation.
 - [Architect] Finding 1b: remove `custom_canvas` from the Analyst's menu vs. build
   a PPTX `elements` populator — cost/impact tradeoff.
 - [Luis] Whether to schedule Phase 3's re-measurement session now or batch it with

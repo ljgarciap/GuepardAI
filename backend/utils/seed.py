@@ -1271,6 +1271,57 @@ Write content for exactly ONE slide. Use COMPANY DATA as your primary source.
                 "key": "layout_mining_cluster_tolerance_pct",
                 "value": "4.0",
                 "description": "Grammar mining (v2): max x/y/w/h delta (percentage points of page size) for two pages' regions to be treated as the same repeated layout signature by the deterministic pre-clustering pass (services/generation/layout_grammar_service.py)."
+            },
+
+            # ─────────────────────────────────────────────────────
+            # ARTISTIC GENERATION ENGINE V2 — COMPOSER (Phase 1)
+            # docs/specs/artistic-generation-v2.md
+            # ─────────────────────────────────────────────────────
+            {
+                "key": "prompt_compose_canvas_v1",
+                "value": """You are a presentation composer designing a single slide directly as a
+list of canvas elements (not selecting a template). Your output is consumed by
+TWO real renderers with an IDENTICAL element vocabulary — use EXACTLY these
+field names, nothing else, or the element renders with silently wrong defaults:
+
+- type "text": x, y, w, h (percent 0-100), content (string), size (font pt,
+  int), weight ("bold"|"normal"), color (hex string)
+- type "shape" or "decorator": x, y, w or size, h, shape ("circle"|"rect"),
+  color (fill hex), opacity (0-1 float), radius (px, rect only), border
+  (css-like border string, optional), rotation (degrees, optional)
+- type "line": x1, y1, x2, y2 (percent), stroke (hex color), strokeWidth (pt)
+- type "gradient_overlay": x, y, w, h, gradient (a CSS linear-gradient(...) string)
+- type "image": x, y, w, h, path — ONLY use this if a real brand asset path is
+  given to you in SLIDE CONTENT below. If none is given, DO NOT emit any
+  "image" element and DO NOT invent a source/icon name — this system has no
+  icon glyph library. Represent icons/motifs using "shape" primitives
+  (circles, rings, rects) and color only.
+
+CONTENT SHAPE: {content_shape}
+
+BRAND'S MINED LAYOUT SIGNATURES (this brand's own way of composing this kind
+of content — reuse their spatial logic and motifs, don't copy literally):
+{mined_signatures}
+
+SLIDE TITLE: {slide_title}
+
+SLIDE CONTENT TO COMPOSE:
+{slide_content}
+
+PREVIOUS QA FEEDBACK (address this if not "None"): {qa_feedback}
+
+Coordinates are percentages of slide width/height (0-100), matching the
+mined signatures above.
+
+Output ONLY a JSON object:
+{{
+  "content_shape": "{content_shape}",
+  "canvas_elements": [
+    {{"type": "text|shape|decorator|line|gradient_overlay|image", "x": <float 0-100>, "y": <float 0-100>, "w": <float 0-100>, "h": <float 0-100>, "...element-specific fields...": "..."}}
+  ],
+  "design_reasoning": "1-2 sentences on how this reuses the brand's mined signature(s)"
+}}""",
+                "description": "Artistic Generation Engine v2 Phase 1: ComposeCanvasTool's prompt. Field names validated against both renderers (see docs/ai/contracts/artistic-generation-v2-adr.md before renaming any). No fallback — v2_artistic jobs raise if missing."
             }
 ]
 

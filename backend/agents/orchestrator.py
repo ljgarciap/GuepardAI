@@ -2,6 +2,7 @@ import logging
 import traceback
 from agents.redactor import GenerateTextTool
 from agents.architect import ComposeLayoutTool
+from agents.compose_canvas import ComposeCanvasTool
 from agents.qa_validator import ScoreFidelityTool, ValidateBrandTool
 from agents.render_agent import RenderPPTXTool
 from agents.brand_analyst import ReadPPTXTool, ExtractPaletteTool
@@ -23,6 +24,11 @@ class AgentOrchestrator:
         # Herramientas de Generación
         self.generate_text = GenerateTextTool()
         self.compose_layout = ComposeLayoutTool()
+        # Artistic Generation Engine v2 (docs/specs/artistic-generation-v2.md) — routed
+        # to instead of compose_layout only when GenerationJob.engine_version ==
+        # "v2_artistic" (run_design_and_render). compose_layout's own code path is
+        # never touched by this addition.
+        self.compose_canvas = ComposeCanvasTool()
         self.score_fidelity = ScoreFidelityTool()
         self.validate_brand = ValidateBrandTool()
         self.render_pptx = RenderPPTXTool()
@@ -383,19 +389,32 @@ class AgentOrchestrator:
 
             while not qa_passed:
                 iteration += 1
-                logger.info(f"[Orchestrator] Delegating to Architect (ComposeLayoutTool) - Iteration {iteration}")
 
                 job = local_db.query(models.GenerationJob).get(job_id)
+                # engine_version routing (docs/specs/artistic-generation-v2.md) — the
+                # ONLY branch point between v1 and v2_artistic in the whole pipeline.
+                # NULL/unset (every job before this column existed) is treated exactly
+                # like "v1": never key this check on == "v1".
+                is_v2_artistic = bool(job and job.engine_version == "v2_artistic")
+
                 if job:
                     job.progress = min(80, 50 + (iteration - 1) * 10)
-                    job.current_step = f"Agent: Architect is planning layouts and images (Iteration {iteration})..."
+                    job.current_step = f"Agent: {'Composer (v2_artistic)' if is_v2_artistic else 'Architect'} is planning layouts and images (Iteration {iteration})..."
                     local_db.commit()
 
-                self.compose_layout(
-                    job_id=job_id,
-                    is_premium=(req_data.get("tier") == "premium"),
-                    qa_feedback=qa_feedback if qa_feedback else None
-                )
+                if is_v2_artistic:
+                    logger.info(f"[Orchestrator] Delegating to Composer (ComposeCanvasTool, v2_artistic) - Iteration {iteration}")
+                    self.compose_canvas(
+                        job_id=job_id,
+                        qa_feedback=qa_feedback if qa_feedback else None
+                    )
+                else:
+                    logger.info(f"[Orchestrator] Delegating to Architect (ComposeLayoutTool) - Iteration {iteration}")
+                    self.compose_layout(
+                        job_id=job_id,
+                        is_premium=(req_data.get("tier") == "premium"),
+                        qa_feedback=qa_feedback if qa_feedback else None
+                    )
 
                 logger.info(f"[Orchestrator] Delegating to QA Validator (ValidateBrandTool/ScoreFidelityTool)...")
                 job = local_db.query(models.GenerationJob).get(job_id)

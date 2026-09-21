@@ -361,6 +361,13 @@ class GenerationJob(Base):
     # históricos no tienen owner conocido — no se hace backfill, gap aceptado.
     owner_id    = Column(Integer, ForeignKey("users.id"), nullable=True)
 
+    # Artistic Generation Engine v2 (docs/specs/artistic-generation-v2.md). NULL/'v1'
+    # = pipeline clásico de siempre, sin cambios. 'v2_artistic' = orchestrator.py
+    # enruta a ComposeCanvasTool en vez de ComposeLayoutTool. Nunca leer con
+    # `== "v1"` — un job histórico con NULL debe tratarse igual que "v1"
+    # (`!= "v2_artistic"`), nunca requiere backfill.
+    engine_version = Column(String(20), nullable=True)
+
     created_at  = Column(DateTime, default=datetime.datetime.utcnow)
 
     # Relationship con las slides granulares (v18.5)

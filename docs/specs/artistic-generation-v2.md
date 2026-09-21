@@ -2,7 +2,12 @@
 
 **Date**: 2026-09-21
 **Requested by**: Luis
-**Status**: Phase 0 (mining engine) implemented and tested, 2026-09-21 — remaining Phase 0 item is running it against real ingested brands (needs Embonor/Harry Potter/Core ingestion first). Phase 1 and Phase 3 next, per PM breakdown.
+**Status**: Phase 0 and Phase 1 implemented and tested, 2026-09-21. Remaining Phase 0
+item: running mining against real ingested brands (needs Embonor/Harry Potter/Core
+ingestion first — deterministic extraction already validated directly against the real
+Embonor file). Phase 3 (QA judge fix) next — was scoped to run in parallel with Phase 1,
+not done yet. Phase 2 (renderer extensions) waits on whatever new element types real
+mining surfaces.
 **Project**: GuepardAI
 
 ## Problem
@@ -164,49 +169,68 @@ class MineLayoutGrammarTool(BaseAgentTool):
 
 ### `ComposeCanvasTool` (`BaseAgentTool` subclass, generation-side)
 
+**Implemented** (`backend/agents/compose_canvas.py`, thin wrapper; real logic in
+`backend/services/generation/canvas_composer_service.py`) — job-level, not slide-level,
+mirroring `ComposeLayoutTool`'s own contract exactly so the orchestrator swap is a single
+branch:
+
 ```python
 class ComposeCanvasArgs(BaseModel):
     job_id: int = Field(...)
-    slide_id: int = Field(...)       # PresentationSlide already content_ready (Redactor already ran)
-    brand_id: int = Field(...)
+    qa_feedback: Optional[Union[Dict[int, str], str]] = Field(None)
 
 class ComposeCanvasTool(BaseAgentTool):
     name = "compose_canvas"
-    description = "Designs a slide directly in canvas_elements space, informed by the brand's mined layout grammar."
+    description = "..."
     args_schema = ComposeCanvasArgs
 ```
 
-- Replaces `analyst_service.get_slide_visual_strategy()` + `ComposeLayoutTool` for
-  `engine_version="v2_artistic"` jobs only — **not** the Redactor. Content synthesis
-  (`GenerateTextTool`) runs exactly as it does in v1; `ComposeCanvasTool` consumes the
-  already-written slide content and decides composition only.
-- Reads the slide's `content_shape` (already produced by the Redactor's content
-  synthesis today, reused not rebuilt) and the brand's `BrandLayoutGrammar` rows,
-  selects the most relevant signature(s) as few-shot exemplars, and prompts a new
-  versioned key `prompt_compose_canvas_v1` (seeded in `utils/seed.py`, following the
-  project's prompt-versioning convention — never edits an existing `prompt_*` key).
+`compose_canvas_for_job(db, job_id, qa_feedback=None)` loops over the job's
+`content_ready`/QA-flagged-`planned` slides internally (same shape as
+`art_director_service.plan_presentation_design()`), corrected from this section's
+original single-slide draft once `ComposeLayoutTool`'s actual call site
+(`agents/orchestrator.py`, called once per job per QA iteration, not once per slide) was
+read.
+
+- Replaces `ComposeLayoutTool` for `engine_version="v2_artistic"` jobs only — **not**
+  the Redactor. Content synthesis (`GenerateTextTool`) runs exactly as it does in v1;
+  `ComposeCanvasTool` consumes the already-written slide content and decides
+  composition only. Never imports from `analyst_service.py`/`art_director_service.py`.
+- **`content_shape` correction**: no such field exists anywhere in the pipeline today
+  (this section originally assumed the Analyst already produces it — it doesn't).
+  Derived deterministically, no LLM call, from `content_json["layout_type"]` (the
+  Outline Generator's own real vocabulary — `composition_quote`→"quote",
+  `composition_hero`/slide 1→"cover") and `len(metrics) >= 2`→"metric_comparison",
+  else "narrative" (`canvas_composer_service._infer_content_shape()`).
+- Reads the brand's `BrandLayoutGrammar` rows, selects the most relevant signature(s)
+  as few-shot exemplars (falls back to any mined signature if none match the inferred
+  `content_shape`), and prompts `prompt_compose_canvas_v1` (seeded in `utils/seed.py`).
 - Calls `providers.llm_provider.generate_premium_json()` — **not**
   `generate_json(..., specialization="design")`, which is confirmed dead code for
   routing purposes (`docs/ai/contracts/deck-design-brief-adr.md`). Live-validated,
-  single call, in `docs/ai/contracts/artistic-generation-v2-adr.md`: one call is
-  sufficient to produce a complete, on-contract `canvas_elements` list — resolves the
-  design doc's "one call vs. two" open question.
-- The prompt **must enumerate the exact per-type field names** `paint_custom_canvas()`
-  and `render_canvas_element()` read (`path`/`size`/`weight`/`content`, not a
-  paraphrase) — live-validated proof that an unconstrained schema description
-  produces confident, valid, but silently off-contract JSON (see the ADR's Round 1).
-  Must also explicitly forbid inventing `image`/icon sources: no icon glyph library
-  exists in this system; the validated fallback is representing motifs with `shape`
-  primitives only.
+  single call: one call is sufficient to produce a complete, on-contract
+  `canvas_elements` list — resolves the design doc's "one call vs. two" open question.
+- The prompt enumerates the exact per-type field names `paint_custom_canvas()` and
+  `render_canvas_element()` read (`path`/`size`/`weight`/`content`, not a paraphrase)
+  — live-validated proof that an unconstrained schema description produces confident,
+  valid, but silently off-contract JSON exists in the ADR's Round 1. Explicitly forbids
+  inventing `image`/icon sources: no icon glyph library exists in this system; the
+  validated fallback is representing motifs with `shape` primitives only.
 - Writes its result directly to `PresentationSlide.planning_json["art_director"]
   ["canvas_elements"]` (the exact field `render_agent.py` and `premium_pdf.html`
   already read per Finding 1b) and unconditionally sets `layout_slug="custom_canvas"`.
   This is why Phase 2 needs almost no renderer work to start: every v2 slide is a
   `custom_canvas` slide from the renderer's point of view, and that path is already
   fully built.
-- Must call `self.log_decision()` for every slide — this is the single most consequential
-  AI decision in the v2 pipeline and needs the same audit trail as `ComposeLayoutTool`
-  has today.
+- Writes an `ArtDirectorDecision` row per slide directly (`db.add(models.
+  ArtDirectorDecision(...))` in `canvas_composer_service.py`), **not**
+  `self.log_decision()` — corrected from this section's original draft: the logic
+  lives in a plain service function (matching `art_director_service.
+  plan_presentation_design()`'s own real pattern), and `log_decision()` is a
+  `BaseAgentTool` instance method a service function has no `self` to call.
+- Edge case implemented: raises `ValueError` if the brand has zero `BrandLayoutGrammar`
+  rows (never silently falls back to v1's grammar enum), and `RuntimeError` if
+  `prompt_compose_canvas_v1` isn't seeded — both per this spec's Edge cases section.
 
 ### Orchestrator routing
 
@@ -253,18 +277,25 @@ v1 and v2 — everything else in this spec is new code reached only from the
       `docs/ai/contracts/artistic-generation-v2-adr.md` (2026-09-21). Channel decided
       (`generate_premium_json()`), one-call shape confirmed sufficient, exact field
       vocabulary validated against both renderers.
-- [ ] `prompt_compose_canvas_v1` (implementation) enumerates the per-type field names
-      literally, per the ADR's Round 1 finding — a schema described only conceptually
-      is not acceptable, it must be tested to reproduce the ADR's Round 2 result
-      (zero off-contract keys) before this criterion is met.
-- [ ] Given a metric-heavy slide and Embonor's mined grammar, `ComposeCanvasTool`'s
-      output `canvas_elements` includes at least one element referencing the mined
-      donut/icon-center pattern (not a generic bar/card layout) — spot-checked visually,
-      not just schema-validated.
-- [ ] `ComposeCanvasTool` never runs for `engine_version="v1"` jobs (unit test on the
-      orchestrator branch).
-- [ ] Every `ComposeCanvasTool` call writes an `ArtDirectorDecision` row via
-      `self.log_decision()`.
+- [x] `prompt_compose_canvas_v1` (seeded in `utils/seed.py`, implemented in
+      `services/generation/canvas_composer_service.py`) enumerates the per-type field
+      names literally, reproducing the ADR's Round 2 result — live-validated end-to-end
+      (real DB, real `generate_premium_json` call) 2026-09-21: 14/14 elements on-contract.
+- [x] Given a metric-heavy slide and a hand-built Embonor-style mined signature,
+      `ComposeCanvasTool`'s output `canvas_elements` reused the signature's
+      `icon_center`/`value_label` positions and `ribbon_band` motif (concentric-circle
+      icons + accent line), named explicitly in `design_reasoning` — not a generic
+      bar/card layout. (Real Embonor `Brand`/mining not yet run end-to-end — see Phase 0's
+      remaining item; this used a signature shaped identically to what Phase 0 actually
+      mines, per the AI Architect ADR's same exemplar.)
+- [x] `ComposeCanvasTool` never runs for `engine_version="v1"` or `NULL` jobs — unit
+      tested on the orchestrator branch (`tests/test_orchestrator_engine_version_routing.py`).
+- [x] Every `ComposeCanvasTool` call writes an `ArtDirectorDecision` row — via
+      `services/generation/canvas_composer_service.py` constructing the row directly
+      (not `self.log_decision()`; corrected from the original draft — matches the real
+      precedent of `art_director_service.plan_presentation_design()`, which does the
+      same for the exact same reason: the audit-writing code is a plain service
+      function, not a `BaseAgentTool` method).
 
 **Phase 2 — Rendering**
 - [ ] Any new `canvas_elements` element type Phase 0 surfaces (e.g. donut-with-icon,
@@ -475,12 +506,21 @@ both landing, per the Architect decision above.
       against the real Embonor PDF file without a DB
 - [x] Regression test: `'layout_grammar'` addition doesn't affect existing ingestion types
 
-**Phase 1 — Backend Dev**
-- [ ] `GenerationJob.engine_version` column (default `NULL`/`"v1"`)
-- [ ] `ComposeCanvasTool` (`BaseAgentTool`, `generate_premium_json()`), prompt
-      `prompt_compose_canvas_v1` with the literal field vocabulary from the ADR
-- [ ] Orchestrator branch in `run_design_and_render()` (`agents/orchestrator.py:372`)
-- [ ] Unit test: `ComposeCanvasTool` never invoked for `v1`/`NULL` jobs
+**Phase 1 — Backend Dev — done, 2026-09-21**
+- [x] `GenerationJob.engine_version` column (`NULL` default, schema-reconciled
+      automatically at next boot — no manual `ALTER` needed, `database.py` already has a
+      generic additive-column reconciler)
+- [x] `ComposeCanvasTool` (`agents/compose_canvas.py`) + `canvas_composer_service.py`,
+      prompt `prompt_compose_canvas_v1` with the literal field vocabulary from the ADR
+- [x] Orchestrator branch in `run_design_and_render()` (`agents/orchestrator.py`)
+- [x] Unit tests: `ComposeCanvasTool`/`compose_canvas_for_job` (16 tests,
+      `tests/test_compose_canvas.py`) + orchestrator routing (4 tests,
+      `tests/test_orchestrator_engine_version_routing.py`)
+- [x] Live end-to-end validation (real dev DB + real `generate_premium_json` call,
+      2026-09-21): 14 on-contract `canvas_elements`, correct `content_shape` inference,
+      mined signature's `icon_center`/`value_label`/`ribbon_band` genuinely reused
+      (named in `design_reasoning`), `ArtDirectorDecision` logged, test rows cleaned up.
+      Full suite green (836 passed, same 1 pre-existing unrelated failure).
 
 **Phase 2 — Backend Dev** (after Phase 1 produces real output)
 - [ ] Add any new element type(s) Phase 0/1 actually surfaced to `paint_custom_canvas()`

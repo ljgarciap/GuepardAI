@@ -2,7 +2,7 @@
 
 **Date**: 2026-09-20
 **Requested by**: Luis
-**Status**: Phase 1 done (4 findings fixed, shipped and re-verified against real production data); Phase 2 (re-measurement) and 2 Architect decisions open
+**Status**: Phase 1 + Phase 2's Finding 5 done (5 findings fixed, shipped and re-verified against real production data across 2 re-measurement rounds); Quick Win 4 and 1 Architect decision (Finding 2 Option (b)) still open
 **Project**: GuepardAI
 **Assessment**: `docs/designs/synthesis-studio-v2-assessment.md` (2026-07-08, verdict + 3 levers)
 **Owner of this document**: `synthesis-studio-analyst` agent
@@ -44,6 +44,84 @@ QA-forced badge per slide). Luis marked 13 slides in deck A (slides 5–17, rank
 `molesta`/`nice`, no free-text notes) and flagged verbally that the repetition was
 the real issue — confirmed and root-caused against the actual code path per slide
 (`layout_slug`, `ArtDirectorDecision` audit rows), not just the visual impression.
+
+## Phase 2 re-measurement session (2026-09-21)
+
+Same 4-deck matrix regenerated fresh after Findings 1-4 shipped (new job IDs, no
+reused data, no mocks). Luis re-marked deck A in full (20/20 slides this time, vs.
+13/20 in round 1): 10 `molesta`, 4 `nice`, 6 `ok`, no free-text notes — **not
+clearly better** than round 1 by mark count alone, despite Findings 1-4 being
+visually confirmed fixed.
+
+Investigated before asking Luis anything further (per the standing rule: verify
+against the code path first). Pulled the exact `layout_slug` sequence for all 3
+PPTX/legacy-PDF decks (A, B, D) — identical shape in all three:
+
+```
+Deck A: hero, pillars, data_grid, pillars, [none], pillars, data_grid, split,
+        pillars, data_grid, data_grid, pillars, split, pillars, data_grid,
+        data_grid, pillars, data_grid, pillars, data_grid
+```
+
+Roughly 80% of each deck alternates between only **2** of the 5 real, now-genuinely-
+distinct layouts (`pillars`/`data_grid`, ~8 times each in a 20-slide deck) — `hero`,
+`split`, `custom_canvas` barely appear in the body. Findings 1/2 fixed the bug
+("5 choices collapsing into 1 rendered result"); this is a **different, second-order
+problem**: even with 5 genuinely distinct renders available, the deck settles into a
+2-value ping-pong, which still reads as repetitive to a human even though nothing
+technically repeats back-to-back.
+
+### Finding 5 — Neither LLM call reasons about the whole deck's layout rhythm [FIXED]
+
+**Classification**: exactly the "if repetition persists after Phase 1... a real
+Lever-1-shaped finding (the Analyst's own judgment, not a wiring bug)" case this
+spec's Phase 2 anticipated — but cheaper than full Brand Grammar Mining.
+
+**Root cause**: the Art Director's prompt already includes a "VISUAL HISTORY (DO NOT
+REPEAT)" section and a variety rule — but that rule only forbids repeating the
+*immediately previous* layout, and its history window was hardcoded to the last 3
+slides. Alternating `pillars, data_grid, pillars, data_grid, ...` never violates
+"don't repeat the last one," so the rule was satisfied while still producing a
+2-cycle loop. The **Analyst** (`get_slide_visual_strategy`/`prompt_analyst_v3`) —
+which sets the *baseline* `grammar_type` the Art Director's override usually just
+confirms — had **zero** deck-level context at all; it decided every slide in
+isolation.
+
+**Fix shipped**: a shared helper (`analyst_service.get_recent_layout_history`, window
+= `system_configs.layout_diversity_window`, default 6) feeds the same real
+`layout_slug` history to both calls. `prompt_analyst_v4` adds the history + an
+explicit "don't settle into a 2-layout ping-pong" instruction (new placeholder,
+degrades cleanly on older prompt versions per `str.format()`'s standard
+unused-kwarg tolerance). `prompt_art_director_v4` strengthens rule #5 to reason over
+the *whole* recent-history list, not just its last entry, and widens the window from
+a hardcoded 3 to the same shared config. Regression tests:
+`tests/test_analyst_layout_diversity.py`. Live-validated (real, non-mocked calls,
+adversarial ping-pong history fed deliberately) before the full-deck test — see
+`docs/ai/contracts/deck-layout-diversity-adr.md`; the Art Director's own
+`visual_reasoning` named the pattern explicitly: *"The visual history shows an
+alternating ping-pong between 'pillars' and 'data_grid'... we select
+'custom_canvas'."*
+
+**Full-deck confirmation**: regenerated deck A fresh. New `layout_slug` sequence
+uses 4 distinct values with real spread (`split`×3 non-fallback + fallback cases,
+`pillars`×3, `data_grid`×2, `custom_canvas`×1 out of 16 slides) instead of the prior
+strict 2-value alternation — visually confirmed on the rendered PPTX (a `data_grid`
+slide showing a 2×2 KPI grid beside a photo, structurally distinct from the
+`pillars` 4-card layout). One rough edge surfaced in this same run: a `custom_canvas`
+slide (portrait image, mostly blank canvas otherwise) suggests the Art Director
+sometimes returns `canvas_elements` with only an image and no accompanying text —
+worth watching in a future round, not a regression from this fix (canvas_elements
+rendering itself is confirmed correct per Finding 1b; this is a content/composition
+call by the LLM, the same class of judgment call the Analyst/Art Director always make).
+
+**Interaction with Quick Win 4 (still open)**: this run also had more slides than
+usual fall through to `layout_slug=None` (Art Director skipped providing an
+override), which routes through the Outline's `composition_*` vocabulary and mostly
+collapses to `composition_split` in the PPTX painter (the known, still-open gap).
+Fixing Quick Win 4 would make the *effective* rendered variety match the *decided*
+variety more closely — now more visible/valuable given Finding 5's fix, since the
+Analyst/Art Director are actively trying to diversify and Quick Win 4 silently
+flattens some of that effort back down.
 
 ## Detail inventory (mark → root cause → lever)
 
@@ -240,7 +318,11 @@ automatically on next boot via the existing dispatch mechanism — no manual ste
    keys either (only the values these keys map *to*). Smaller than Finding 1
    (fewer slides hit this path) but the same bug shape; worth a one-line
    `GRAMMAR_TO_PAINTER` addition (`composition_hero`→itself, etc.) the next time
-   this file is touched. **Still open.**
+   this file is touched. **Still open — bumped up in priority**: Finding 5's
+   diversity fix makes the Analyst/Art Director actively try to spread across all
+   5 layouts, but this gap silently flattens some of that effort back into
+   `composition_split` whenever no override is returned. Fixing Finding 5 without
+   this one leaves real diversification effort partially wasted at render time.
 
 ## Acceptance criteria
 
@@ -343,10 +425,13 @@ automatically on next boot via the existing dispatch mechanism — no manual ste
   `templates/premium_pdf.html` (`render_canvas_element` macro),
   `services/core/data_alignment_service.py`
   (`premium_pattern_whitelist_realign_v1`)
+- `docs/ai/contracts/deck-layout-diversity-adr.md` — live validation of
+  `prompt_analyst_v4`/`prompt_art_director_v4` (Finding 5)
 - Tests added this session: `tests/test_painter_bridge_grammar_mapping.py`,
   `tests/test_render_agent_legacy_pdf_metrics.py`,
   `tests/test_artistic_pdf_legacy_layout.py::TestGrammarToArtisticPdfRecognizesOutlineVocabulary`,
   `tests/test_data_alignments.py::TestPremiumPatternWhitelistRealign`,
   `tests/test_painter_canvas_elements.py`,
   `tests/test_premium_pdf_canvas_elements.py`,
-  `tests/test_render_agent_canvas_elements_wiring.py`
+  `tests/test_render_agent_canvas_elements_wiring.py`,
+  `tests/test_analyst_layout_diversity.py`

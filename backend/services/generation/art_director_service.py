@@ -8,7 +8,7 @@ import time
 from sqlalchemy.orm import Session
 from providers.llm_provider import generate_json, generate_ai_image
 from services.assets.asset_library_service import find_best_assets
-from services.generation.analyst_service import get_slide_visual_strategy
+from services.generation.analyst_service import get_slide_visual_strategy, get_layout_diversity_window
 from services.rendering.placeholder_service import get_placeholder_image
 from services.ingestion.brand_composition_dna import get_layout_geometry, build_decorator_elements
 from services.rendering.font_service import ensure_brand_fonts
@@ -110,8 +110,11 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False,
         if logo_asset:
             logo_path = logo_asset.local_path
 
-    # v3→v2→v1 fallback: v3 fixes layout slug vocabulary (hero/split vs composition_*)
-    prompt_tpl = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_art_director_v3").first()
+    # v4→v3→v2→v1 fallback: v4 adds deck-wide variety enforcement (Synthesis
+    # Studio v2 Phase 2), v3 fixes layout slug vocabulary (hero/split vs composition_*)
+    prompt_tpl = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_art_director_v4").first()
+    if not prompt_tpl:
+        prompt_tpl = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_art_director_v3").first()
     if not prompt_tpl:
         prompt_tpl = db.query(models.SystemConfig).filter(models.SystemConfig.key == "prompt_art_director_v2").first()
     if not prompt_tpl:
@@ -369,13 +372,17 @@ def plan_presentation_design(db: Session, job_id: int, is_premium: bool = False,
 
         # FASE C: DIRECCIÓN DE ARTE (Ejecución con Memoria Visual)
         visual_history = []
-        # Traer layouts recientes (v5.0 Variety Enforcement)
+        # Traer layouts recientes (v5.0 Variety Enforcement).
+        # v5.3 (Synthesis Studio v2 Phase 2): la ventana crece de un 3 fijo a
+        # system_configs.layout_diversity_window (default 6, compartida con el
+        # Analyst) — 3 slides atrás no alcanza para notar un ping-pong de 2
+        # layouts alternados, que nunca viola "no repitas el inmediato anterior".
         recent_slides = db.query(models.PresentationSlide).filter(
             models.PresentationSlide.job_id == job_id,
             models.PresentationSlide.slide_number < slide.slide_number,
             models.PresentationSlide.layout_slug != None
-        ).order_by(models.PresentationSlide.slide_number.desc()).limit(3).all()
-        
+        ).order_by(models.PresentationSlide.slide_number.desc()).limit(get_layout_diversity_window(db)).all()
+
         recent_layouts = [s.layout_slug for s in reversed(recent_slides)]
         visual_history.append(f"Recent layouts used: {recent_layouts}")
         

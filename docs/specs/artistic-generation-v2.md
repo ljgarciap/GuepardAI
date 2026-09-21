@@ -2,7 +2,7 @@
 
 **Date**: 2026-09-21
 **Requested by**: Luis
-**Status**: Draft
+**Status**: AI Architect validated (`docs/ai/contracts/artistic-generation-v2-adr.md`) — ready for Architect design + PM task breakdown
 **Project**: GuepardAI
 
 ## Problem
@@ -172,6 +172,19 @@ class ComposeCanvasTool(BaseAgentTool):
   selects the most relevant signature(s) as few-shot exemplars, and prompts a new
   versioned key `prompt_compose_canvas_v1` (seeded in `utils/seed.py`, following the
   project's prompt-versioning convention — never edits an existing `prompt_*` key).
+- Calls `providers.llm_provider.generate_premium_json()` — **not**
+  `generate_json(..., specialization="design")`, which is confirmed dead code for
+  routing purposes (`docs/ai/contracts/deck-design-brief-adr.md`). Live-validated,
+  single call, in `docs/ai/contracts/artistic-generation-v2-adr.md`: one call is
+  sufficient to produce a complete, on-contract `canvas_elements` list — resolves the
+  design doc's "one call vs. two" open question.
+- The prompt **must enumerate the exact per-type field names** `paint_custom_canvas()`
+  and `render_canvas_element()` read (`path`/`size`/`weight`/`content`, not a
+  paraphrase) — live-validated proof that an unconstrained schema description
+  produces confident, valid, but silently off-contract JSON (see the ADR's Round 1).
+  Must also explicitly forbid inventing `image`/icon sources: no icon glyph library
+  exists in this system; the validated fallback is representing motifs with `shape`
+  primitives only.
 - Writes its result directly to `PresentationSlide.planning_json["art_director"]
   ["canvas_elements"]` (the exact field `render_agent.py` and `premium_pdf.html`
   already read per Finding 1b) and unconditionally sets `layout_slug="custom_canvas"`.
@@ -210,9 +223,15 @@ v1 and v2 — everything else in this spec is new code reached only from the
       for any existing `'visual_dna' | 'artistic' | 'knowledge'` job (regression test).
 
 **Phase 1 — Composer**
-- [ ] AI Architect live-validation ADR exists in `docs/ai/contracts/` for
-      `prompt_compose_canvas_v1` before this phase is implemented (mandatory gate, not
-      optional).
+- [x] AI Architect live-validation ADR exists in `docs/ai/contracts/` for the composer
+      touchpoint before this phase is implemented — done:
+      `docs/ai/contracts/artistic-generation-v2-adr.md` (2026-09-21). Channel decided
+      (`generate_premium_json()`), one-call shape confirmed sufficient, exact field
+      vocabulary validated against both renderers.
+- [ ] `prompt_compose_canvas_v1` (implementation) enumerates the per-type field names
+      literally, per the ADR's Round 1 finding — a schema described only conceptually
+      is not acceptable, it must be tested to reproduce the ADR's Round 2 result
+      (zero off-contract keys) before this criterion is met.
 - [ ] Given a metric-heavy slide and Embonor's mined grammar, `ComposeCanvasTool`'s
       output `canvas_elements` includes at least one element referencing the mined
       donut/icon-center pattern (not a generic bar/card layout) — spot-checked visually,
@@ -230,13 +249,26 @@ v1 and v2 — everything else in this spec is new code reached only from the
       speculatively here.
 - [ ] No existing element type's rendering (`text`/`image`/`typo_substitution`/
       `shape`/`decorator`/`line`/`gradient_overlay`) changes behavior for v1 jobs.
+- [ ] `premium_pdf.html`'s `render_canvas_element` macro gains `text-align` support
+      (found missing entirely while validating Touchpoint B — `painter.py`'s PPTX path
+      already supports left/center via `align`; the two renderers must not silently
+      diverge on the same `canvas_elements` payload).
 
 **Phase 3 — QA bias audit**
-- [ ] AI Architect runs a batch of real `v2_artistic` `canvas_elements` output through
-      the existing `ScoreFidelityTool` judge and reports the score distribution and
-      rejection reasons in an ADR.
-- [ ] If bias toward "safe" compositions is confirmed, a new versioned judge prompt
-      exists for v2 (never an in-place edit of the v1 judge prompt).
+- [x] Live audit run, 2026-09-21 — bias **confirmed**, not merely checked:
+      `docs/ai/contracts/artistic-generation-v2-adr.md`. Identical brand/image signals,
+      only composition description varied: "safe grid" scored 0.95, "bold asymmetric"
+      scored 0.68, with the judge's own reasoning citing boldness itself as a brand-fit
+      penalty. Also found structurally: `ScoreFidelityTool`'s `slides_context` never
+      includes `canvas_elements` at all — the judge is composition-blind, v1 and v2 alike.
+- [ ] A versioned `prompt_score_fidelity_v2_artistic` ships as a **Phase 1 prerequisite**
+      (not a parallel/lagging workstream) for any `v2_artistic` job that isn't a
+      manually-reviewed pilot batch — never an in-place edit of the v1 judge prompt.
+- [ ] `ScoreFidelityTool`'s `slides_context` builder is extended, for `v2_artistic`
+      jobs only, to summarize `canvas_elements` (element count/type mix; any element
+      whose `x + w` or `y + h` exceeds 100 — a real geometry defect) — a reworded
+      prompt alone doesn't fix a judge that never receives the geometry it's meant to
+      evaluate.
 
 **Phase 4 — Rollout**
 - [ ] A `v2_artistic` job is reachable only from an explicitly separate nav
@@ -273,10 +305,8 @@ v1 and v2 — everything else in this spec is new code reached only from the
   `art_director_service.py`, or `painter.py` for `engine_version="v1"` jobs — the whole
   point of the isolation constraint (Luis, 2026-09-21).
 - Video ingestion (Harry Potter sample's `.mp4` files) — explicit non-goal.
-- Resolving whether `ComposeCanvasTool` is one LLM call or two (planning pass +
-  canvas_elements pass) — left to the AI Architect's live validation in Phase 1, per the
-  design doc; this spec fixes the tool's contract (inputs/outputs/DB writes), not its
-  internal call count.
+- ~~Resolving whether `ComposeCanvasTool` is one LLM call or two~~ — resolved by live
+  validation: one call (`docs/ai/contracts/artistic-generation-v2-adr.md`).
 - Mining `PPT_Template_Core.pptx` before Phase 0 — inventory happens during Phase 0, not
   before.
 - Any change to `PresentationReview`/rating, portfolio management, or auth/tenancy —
@@ -288,13 +318,24 @@ v1 and v2 — everything else in this spec is new code reached only from the
 
 - [Luis] Any additional reference decks worth adding before Phase 0 starts?
   (Carried over from the design doc, still unanswered.)
-- [AI Architect] One composer call vs. two — decide during Phase 1's live validation.
-- [AI Architect] Whether `MineLayoutGrammarTool`'s clustering/naming call needs
-  `specialization="design"` (Anthropic) or is provider-agnostic — decide alongside
-  Phase 1's validation since both are new touchpoints reviewed together.
 - [Architect] Exact PDF shape-equivalent extraction approach for the Embonor sample
   (image+text-region detection library choice) — not resolved here; flagged in the
   design doc as "new work, not an assumed extension."
+- [Architect] How to sequence Phase 3's now-confirmed judge-bias fix relative to
+  Phase 1 implementation start — the ADR recommends treating it as a Phase 1
+  prerequisite (at minimum for anything beyond a manually-reviewed pilot batch), which
+  changes the design doc's original "Phases run in AI-Architect-then-implement order
+  but aren't otherwise blocking" framing. Needs an explicit Architect call, not an
+  Analyst one.
+
+Resolved by AI Architect live validation (`docs/ai/contracts/artistic-generation-v2-adr.md`,
+2026-09-21) — no longer open:
+- Composer provider/channel: `generate_premium_json()`, not `specialization="design"`.
+- One composer call vs. two: one call, validated sufficient.
+- Mining touchpoint provider: `generate_json(..., specialization="general")` — no
+  premium channel needed for classification.
+- QA judge bias: confirmed (not merely a risk), with a measured example (0.95 vs 0.68
+  for identical signals, differing only in composition boldness described in text).
 
 ## References
 
@@ -312,3 +353,5 @@ v1 and v2 — everything else in this spec is new code reached only from the
 - `backend/agents/orchestrator.py` — `run_design_and_render()` (:372), the exact
   integration point for `engine_version` routing
 - `GuepardAI/Insumos/` — the 4 reference files
+- `docs/ai/contracts/artistic-generation-v2-adr.md` — AI Architect live validation of
+  both new touchpoints plus the Phase 3 QA bias audit (2026-09-21)

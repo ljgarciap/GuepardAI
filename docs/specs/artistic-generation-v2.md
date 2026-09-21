@@ -2,7 +2,7 @@
 
 **Date**: 2026-09-21
 **Requested by**: Luis
-**Status**: AI Architect validated (`docs/ai/contracts/artistic-generation-v2-adr.md`) — ready for Architect design + PM task breakdown
+**Status**: Approved — Architect design + PM task breakdown done; ready for Backend Dev to start Phase 0
 **Project**: GuepardAI
 
 ## Problem
@@ -355,3 +355,104 @@ Resolved by AI Architect live validation (`docs/ai/contracts/artistic-generation
 - `GuepardAI/Insumos/` — the 4 reference files
 - `docs/ai/contracts/artistic-generation-v2-adr.md` — AI Architect live validation of
   both new touchpoints plus the Phase 3 QA bias audit (2026-09-21)
+
+---
+
+## Architect decision (2026-09-21)
+
+Resolves the two `[Architect]`-tagged open questions above, using the AI Architect's
+ADR as input. Design/data model/tool contracts above stand as written by the Analyst —
+nothing here changes them.
+
+### PDF shape-equivalent extraction (Phase 0)
+
+Extend, don't invent: `services/ingestion/visual_dna_service.py::extract_pdf_dna()`
+already opens a PDF with `fitz` (PyMuPDF — already a project dependency,
+`requirements.txt:22`, already imported in 4 service files) and walks
+`page.get_text("dict")["blocks"]` for font/color extraction. Phase 0's PDF path reuses
+the exact same primitives, extended to capture geometry:
+
+- **Text regions**: `page.get_text("dict")["blocks"]` — each block already carries a
+  `bbox` (x0/y0/x1/y1 in PDF points, real geometry PyMuPDF provides for free, unused by
+  `extract_pdf_dna()` today since it only needed font/color, not position). Normalize to
+  page-width/height percentages and classify role with the same heuristics
+  `template_analyzer.py::_infer_role()` already uses (top-fraction → title,
+  small-area → footnote) — reused, not reimplemented per-format.
+- **Image regions**: `page.get_image_rects(xref)` per entry from `page.get_images(full=True)`
+  — real per-image bbox. Note: `extract_pdf_dna()`'s existing image extraction ("BULLETPROOF
+  XREF EXTRACTION") only needs image *presence* for the asset library today; mining needs
+  *geometry*, so this is genuinely new code alongside the existing function, not a copy of it.
+- **Vector/decorative regions** (the ribbon band, donut-ring strokes Embonor's deck
+  actually uses): `page.get_drawings()` — returns each vector path's `rect` and
+  fill/stroke color. Filter near-invisible fills with the existing `_is_neutral()`
+  helper to avoid anti-aliasing noise.
+- New function: `services/templates/template_analyzer.py::analyze_pdf_template(pdf_path,
+  config)`, returning the same `SlideProfile`-shaped structure the PPTX path already
+  produces (or a `PageProfile` sibling dataclass if `SlideProfile`'s PPTX-only fields
+  don't fit cleanly — Backend Dev's call at implementation time, not fixed here) so
+  `MineLayoutGrammarTool` consumes one uniform shape regardless of source format, never
+  branching on file type downstream of Phase 0.
+- No new dependency, no new library research needed — this was the open risk in the
+  design doc ("new work, not an assumed extension"); it's now scoped to extending an
+  already-proven, already-imported library along a pattern this codebase already runs
+  in production ingestion.
+
+### Phase 3 sequencing relative to Phase 1
+
+`ComposeCanvasTool` (`agents/compose_canvas.py`, new) and the judge fix
+(`agents/qa_validator.py` + a new `prompt_score_fidelity_v2_artistic` in `utils/seed.py`)
+touch disjoint files — PM may schedule them **in parallel** (different Backend Devs, if
+capacity allows) or sequentially; either is fine for implementation order.
+
+The one hard gate, per the AI Architect's escalation: `engine_version="v2_artistic"`
+must not reach real batch/rollout usage (Phase 4) until both the versioned judge
+prompt AND the `slides_context` `canvas_elements` summary (element count/type mix,
+out-of-bounds geometry check) are merged and validated — a reworded prompt alone,
+without the geometry actually reaching the judge, doesn't close the finding. A
+manually-reviewed pilot (Luis reviewing a handful of decks directly, QA's automatic
+retry score not the acceptance signal) is fine before that gate — same shape as
+Synthesis Studio v2's own elicitation method, already proven in this project.
+
+## PM task breakdown
+
+Sequencing: Phase 0 first (nothing downstream has real data without it). Phase 1 and
+Phase 3 can run in parallel once Phase 0 produces at least one brand's
+`BrandLayoutGrammar`. Phase 2 follows Phase 1 (needs real composer output to know what
+new element types, if any, are actually missing). Phase 4 is gated on Phase 1 + Phase 3
+both landing, per the Architect decision above.
+
+**Phase 0 — Backend Dev**
+- [ ] `BrandLayoutGrammar` model + `IngestionJob.ingestion_type` gains `'layout_grammar'`
+- [ ] `analyze_pdf_template()` in `template_analyzer.py` (PDF geometry extraction, per
+      Architect decision above)
+- [ ] `MineLayoutGrammarTool` (`BaseAgentTool`, `generate_json(specialization="general")`)
+- [ ] Run mining over all 4 Insumos brands; inventory `PPT_Template_Core.pptx`
+- [ ] Regression test: `'layout_grammar'` addition doesn't affect existing ingestion types
+
+**Phase 1 — Backend Dev**
+- [ ] `GenerationJob.engine_version` column (default `NULL`/`"v1"`)
+- [ ] `ComposeCanvasTool` (`BaseAgentTool`, `generate_premium_json()`), prompt
+      `prompt_compose_canvas_v1` with the literal field vocabulary from the ADR
+- [ ] Orchestrator branch in `run_design_and_render()` (`agents/orchestrator.py:372`)
+- [ ] Unit test: `ComposeCanvasTool` never invoked for `v1`/`NULL` jobs
+
+**Phase 2 — Backend Dev** (after Phase 1 produces real output)
+- [ ] Add any new element type(s) Phase 0/1 actually surfaced to `paint_custom_canvas()`
+      and `render_canvas_element()`
+- [ ] Fix `premium_pdf.html` canvas-text alignment gap (found during ADR validation)
+
+**Phase 3 — Backend Dev** (parallel with Phase 1, per Architect decision)
+- [ ] `prompt_score_fidelity_v2_artistic` (new versioned key, `utils/seed.py`)
+- [ ] Extend `ScoreFidelityTool`'s `slides_context` builder with a `canvas_elements`
+      summary for `v2_artistic` jobs
+- [ ] Re-run the ADR's bias test against the new prompt; confirm the score gap closes
+
+**Phase 4 — Frontend Dev + Backend Dev** (gated on Phase 1 + Phase 3)
+- [ ] Isolated nav entry/route for `v2_artistic` generation
+- [ ] Batch generation UI for v1-vs-v2 side-by-side comparison
+
+**Tech Writer** — architecture doc update (`docs/architecture/GuepardAI-overview.md`)
+once Phase 1 lands; runs in parallel with dev work per standing convention.
+
+Next: Backend Dev starts Phase 0 (and, in parallel where capacity allows, Phase 3);
+Senior Reviewer review happens per-phase as each lands, not held for the whole feature.

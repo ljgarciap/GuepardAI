@@ -44,6 +44,7 @@ class TextTarget:
     width: int = 0           # EMU (cells: column width × row height)
     height: int = 0          # EMU
     top: int = 0             # EMU (cells/group children: containing shape's top)
+    left: int = 0            # EMU (cells: table's left + cumulative column widths)
 
 
 def collect_text_targets(slide, max_group_depth: int = 3) -> Tuple[List[TextTarget], int]:
@@ -94,6 +95,7 @@ def _walk(shape, prefix: str, depth: int, max_depth: int, targets: List[TextTarg
             width=int(shape.width or 0),
             height=int(shape.height or 0),
             top=int(shape.top or 0),
+            left=int(shape.left or 0),
         ))
         return 0
 
@@ -108,6 +110,12 @@ def _walk_table(shape, key: str, targets: List[TextTarget]) -> int:
         return 1
 
     top = int(shape.top or 0)
+    left = int(shape.left or 0)
+    # Cumulative column widths give a real left offset per cell. Row offset for
+    # `top` is NOT computed (kept as the table's own top, matching pre-existing
+    # behavior) — Template Merge's role inference never used it for cells, and
+    # changing it now would be an unrelated behavior change to a shipped feature.
+    column_widths = [int(col.width or 0) for col in table.columns]
     for r_idx, row in enumerate(table.rows):
         for c_idx, cell in enumerate(row.cells):
             try:
@@ -116,6 +124,7 @@ def _walk_table(shape, key: str, targets: List[TextTarget]) -> int:
                     continue
                 width = int(table.columns[c_idx].width or 0)
                 height = int(row.height or 0)
+                cell_left = left + sum(column_widths[:c_idx])
                 targets.append(TextTarget(
                     key=f"{key}:r{r_idx}c{c_idx}",
                     text_frame=cell.text_frame,
@@ -126,6 +135,7 @@ def _walk_table(shape, key: str, targets: List[TextTarget]) -> int:
                     width=width,
                     height=height,
                     top=top,
+                    left=cell_left,
                 ))
             except Exception as exc:
                 logger.warning(

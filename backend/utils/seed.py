@@ -1251,6 +1251,26 @@ Write content for exactly ONE slide. Use COMPANY DATA as your primary source.
                 "key": "deck_brief_field_max_chars",
                 "value": "400",
                 "description": "deck_brief_service: longitud máxima de tone_note/opening_closing_hint antes de inyectarse en prompts (mismo criterio que strategic_context[:400] en content_service.py)."
+            },
+
+            # ─────────────────────────────────────────────────────
+            # ARTISTIC GENERATION ENGINE V2 — BRAND GRAMMAR MINING (Phase 0)
+            # docs/specs/artistic-generation-v2.md
+            # ─────────────────────────────────────────────────────
+            {
+                "key": "layout_mining_min_shape_area_pct",
+                "value": "0.3",
+                "description": "Grammar mining (v2): image/vector regions smaller than this fraction (%) of page area are skipped as decorative noise (anti-aliasing specks, tiny bullet glyphs)."
+            },
+            {
+                "key": "layout_mining_max_shape_area_pct",
+                "value": "85.0",
+                "description": "Grammar mining (v2): image/vector regions larger than this fraction (%) of page area are skipped as full-bleed backgrounds, not a reusable slot."
+            },
+            {
+                "key": "layout_mining_cluster_tolerance_pct",
+                "value": "4.0",
+                "description": "Grammar mining (v2): max x/y/w/h delta (percentage points of page size) for two pages' regions to be treated as the same repeated layout signature by the deterministic pre-clustering pass (services/generation/layout_grammar_service.py)."
             }
 ]
 

@@ -287,16 +287,40 @@ class BrandPremiumVisualPattern(Base):
     updated_at      = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
 
+class BrandLayoutGrammar(Base):
+    """
+    Artistic Generation Engine v2 (Brand Grammar Mining) — mined, named layout
+    signatures for a brand's real source decks. Kept separate from BrandVisualDna
+    for the same reason as BrandPremiumVisualPattern: derived visual data gets its
+    own table so the existing pipelines keep their existing contracts untouched.
+    One row per (brand_id, source_filename), same granularity as BrandVisualDna
+    and BrandPremiumVisualPattern.
+    See docs/specs/artistic-generation-v2.md for the signatures_json shape.
+    """
+    __tablename__ = "brand_layout_grammar"
+
+    id               = Column(Integer, primary_key=True, index=True)
+    brand_id         = Column(Integer, ForeignKey("brands.id"), index=True)
+    source_filename  = Column(String, index=True, nullable=False)
+
+    signatures_json  = Column(JSONB, nullable=True)   # list[LayoutSignature]
+    mining_summary   = Column(Text, nullable=True)
+    raw_extraction   = Column(JSONB, nullable=True)   # pre-clustering geometry, audit trail
+
+    created_at       = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at       = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
 # ============================================================
 # TABLA EXISTENTE: ingestion_jobs (actualizada)
-# ingestion_type valid: 'visual_dna' | 'artistic' | 'knowledge'
+# ingestion_type valid: 'visual_dna' | 'artistic' | 'knowledge' | 'layout_grammar'
 # ============================================================
 class IngestionJob(Base):
     __tablename__ = "ingestion_jobs"
 
     id             = Column(Integer, primary_key=True, index=True)
     client_name    = Column(String, index=True)
-    ingestion_type = Column(String, index=True)  # 'visual_dna' | 'artistic' | 'knowledge'
+    ingestion_type = Column(String, index=True)  # 'visual_dna' | 'artistic' | 'knowledge' | 'layout_grammar'
 
     status         = Column(String, default="pending")  # pending | processing | completed | error
     current_step   = Column(Text, default="Initialized.")

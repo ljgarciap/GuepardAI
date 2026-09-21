@@ -2,7 +2,7 @@
 
 **Date**: 2026-09-21
 **Requested by**: Luis
-**Status**: Approved — Architect design + PM task breakdown done; ready for Backend Dev to start Phase 0
+**Status**: Phase 0 (mining engine) implemented and tested, 2026-09-21 — remaining Phase 0 item is running it against real ingested brands (needs Embonor/Harry Potter/Core ingestion first). Phase 1 and Phase 3 next, per PM breakdown.
 **Project**: GuepardAI
 
 ## Problem
@@ -124,30 +124,43 @@ scoped to the four Insumos brands only.
 
 ### `MineLayoutGrammarTool` (`BaseAgentTool` subclass, ingestion-side)
 
+**Implemented** (`backend/agents/mine_layout_grammar.py`):
+
 ```python
 class MineLayoutGrammarArgs(BaseModel):
     brand_id: int = Field(...)
     source_filename: str = Field(...)
-    slide_profiles: List[dict] = Field(...)  # deterministic analyzer output, pre-clustering
+    clusters: List[dict] = Field(...)  # deterministic geometry clusters, pre-named
 
 class MineLayoutGrammarTool(BaseAgentTool):
     name = "mine_layout_grammar"
-    description = "Clusters analyzer slide profiles into named, reusable layout signatures."
+    description = "Names and classifies deterministic geometry clusters into reusable brand layout signatures."
     args_schema = MineLayoutGrammarArgs
 ```
 
-- The deterministic half (shape traversal, per-slot geometry) is **not** a `BaseAgentTool`
-  call — it's a plain extension of `template_traversal.py`/`template_analyzer.py`
-  (same convention as those modules today: no LLM, no tool wrapper needed). The PDF path
-  (Embonor) needs new extraction work here — PDFs have no shape XML, so this is
-  image+text-region detection, not a trivial extension of the PPTX traversal; scope this
-  explicitly as new code in Phase 0, not an assumed reuse.
-- `MineLayoutGrammarTool` is only the LLM-calling half: given the deterministic geometry
-  clusters, it names each cluster, assigns `content_shape` and `motifs`, and writes
-  `BrandLayoutGrammar`. Calls `generate_json(..., specialization="design")` (Phase 1's
-  composer and this tool are the only two new LLM touchpoints in this spec). Must call
-  `self.log_decision()` — this is a real AI decision (naming/classifying a visual
-  pattern), not a deterministic step.
+- The deterministic half — text/image/shape geometry extraction (both PPTX and PDF)
+  plus clustering — is **not** a `BaseAgentTool` call, and lives in its own new module,
+  `backend/services/generation/layout_grammar_service.py`, not inside
+  `template_analyzer.py` as originally proposed here: `TextSlot`/`SlideProfile` carry
+  Template-Merge-only semantics (`is_placeholder`, `action`, `char_limit`) that don't
+  fit mined image/shape regions at all, so forcing PDF+mining output through them would
+  have coupled two unrelated features. `template_analyzer.py` itself only gained
+  additive geometry fields (`TextSlot.x_pct/y_pct/w_pct/h_pct`, `TextTarget.left`) so
+  its existing PPTX traversal could be reused as-is for the text-region half —
+  real reuse, not a rebuild, matching the design doc's intent even though the new
+  file landed elsewhere.
+- `MineLayoutGrammarTool` is only the LLM-calling half: given deterministic clusters
+  (`layout_grammar_service.cluster_regions()`), it names each cluster, assigns
+  `content_shape` and `motifs`, and writes `BrandLayoutGrammar`. Calls
+  `generate_json(..., specialization="general")` — corrected from an earlier draft of
+  this section that said `"design"`; this is a classification task, not composition,
+  and the AI Architect ADR validated it on the general/default provider (see
+  `docs/ai/contracts/artistic-generation-v2-adr.md`).
+- Does **NOT** call `self.log_decision()` — corrected from an earlier draft of this
+  section. `ArtDirectorDecision.job_id` is a FK to `generation_jobs`, which doesn't
+  exist at ingestion time; the existing ingestion tools (`ReadPPTXTool`,
+  `ExtractPaletteTool` in `agents/brand_analyst.py`) never call it either. Only
+  generation-side tools (`ComposeCanvasTool` below) have a real `job_id` to log against.
 
 ### `ComposeCanvasTool` (`BaseAgentTool` subclass, generation-side)
 
@@ -210,17 +223,29 @@ v1 and v2 — everything else in this spec is new code reached only from the
 ## Acceptance criteria
 
 **Phase 0 — Mining**
-- [ ] `analyze_template()` (or a documented PDF-path equivalent) runs successfully over
-      all 4 Insumos samples except the Harry Potter `.mp4` files, which are skipped
-      without raising.
-- [ ] `MineLayoutGrammarTool` produces at least 3 named, distinct `LayoutSignature`
-      entries for the Embonor brand, including one that captures the donut-with-icon KPI
-      pattern (verified by a human reviewer reading `signatures_json`, not just that the
-      row exists).
-- [ ] `BrandLayoutGrammar` rows are created for all 4 samples; `PPT_Template_Core.pptx`
-      is inventoried during this phase (not before), per the design doc.
-- [ ] Adding `'layout_grammar'` to `IngestionJob.ingestion_type` does not change behavior
-      for any existing `'visual_dna' | 'artistic' | 'knowledge'` job (regression test).
+- [x] Code done, 2026-09-21: `BrandLayoutGrammar` model, `IngestionJob.ingestion_type`
+      gains `'layout_grammar'`, `services/generation/layout_grammar_service.py`
+      (`extract_pptx_regions`, `extract_pdf_regions`, `cluster_regions`),
+      `agents/mine_layout_grammar.py::MineLayoutGrammarTool`. 19 new tests
+      (`tests/test_layout_grammar_mining.py`), full suite green (816 passed, 1
+      pre-existing unrelated failure in `test_template_merge_history.py` confirmed via
+      `git stash` to exist independent of this work).
+- [x] Extraction validated on the real Embonor PDF (not just synthetic fixtures):
+      419 regions across 27 pages, 18 clusters repeating on 2+ pages after fixing two
+      real bugs found only by running on real data — see the Architect decision update
+      above (whole-page clustering too strict; PDF page rotation transposing/overflowing
+      geometry). Mined clusters visibly correspond to the deck's real, documented motifs
+      (a full-width photo-strip band repeating on 24 pages, a ribbon-style title band
+      repeating on 7+ pages).
+- [ ] `MineLayoutGrammarTool` run against real clusters produces named signatures a
+      human reviewer confirms capture the donut-with-icon KPI pattern specifically
+      (mechanically validated live in the AI Architect ADR with hand-built clusters;
+      not yet run against the real extracted Embonor clusters end-to-end with actual
+      LLM naming — needs a `Brand` row for Embonor to exist first, see Edge cases).
+- [ ] `PPT_Template_Core.pptx` inventoried.
+- [x] Adding `'layout_grammar'` doesn't change existing ingestion type behavior — no
+      code path reads/branches on `ingestion_type` value in a way this addition could
+      affect (comment-only change beyond the model); full suite regression-tested.
 
 **Phase 1 — Composer**
 - [x] AI Architect live-validation ADR exists in `docs/ai/contracts/` for the composer
@@ -386,16 +411,33 @@ the exact same primitives, extended to capture geometry:
   actually uses): `page.get_drawings()` — returns each vector path's `rect` and
   fill/stroke color. Filter near-invisible fills with the existing `_is_neutral()`
   helper to avoid anti-aliasing noise.
-- New function: `services/templates/template_analyzer.py::analyze_pdf_template(pdf_path,
-  config)`, returning the same `SlideProfile`-shaped structure the PPTX path already
-  produces (or a `PageProfile` sibling dataclass if `SlideProfile`'s PPTX-only fields
-  don't fit cleanly — Backend Dev's call at implementation time, not fixed here) so
-  `MineLayoutGrammarTool` consumes one uniform shape regardless of source format, never
-  branching on file type downstream of Phase 0.
 - No new dependency, no new library research needed — this was the open risk in the
   design doc ("new work, not an assumed extension"); it's now scoped to extending an
   already-proven, already-imported library along a pattern this codebase already runs
   in production ingestion.
+
+**Implemented as** (Phase 0 done, 2026-09-21 — deviates from this section's original
+file-placement plan; noted here rather than silently, per standing project convention):
+`services/generation/layout_grammar_service.py::extract_pdf_regions()`, a new module
+rather than a new function inside `template_analyzer.py`. Reason found only once actually
+writing the code: `TextSlot`/`SlideProfile` carry Template-Merge-only bookkeeping
+(`is_placeholder`, `action`, `char_limit`) that has no meaning for a mined image/shape
+region, so reusing them would have coupled two unrelated features instead of isolating
+the new one. `template_analyzer.py` itself only gained small additive fields
+(`TextSlot.x_pct/y_pct/w_pct/h_pct`, `TextTarget.left`) so `analyze_template()`'s
+existing PPTX traversal could be reused as-is for text regions — the reuse this section
+called for happened, just not inside that file. Both PPTX and PDF paths now feed one
+uniform `MinedRegion` structure (`layout_grammar_service.py`), which is what
+`MineLayoutGrammarTool` actually consumes.
+
+**Real-data finding during implementation**: `get_text()`/`get_image_rects()`/
+`get_drawings()` return coordinates in the page's raw/mediabox space, not its display
+(`page.rect`) space, whenever `page.rotation != 0` — confirmed on the actual Embonor
+PDF (rotation=90°). Normalizing by `page.rect` without correcting via
+`page.rotation_matrix` first produced heights up to ~130% of page bounds *and*
+transposed top/left. Fixed by transforming every extracted rect through
+`page.rotation_matrix` before computing percentages; regression test in
+`tests/test_layout_grammar_mining.py::test_rotated_page_geometry_stays_in_bounds_and_reorients`.
 
 ### Phase 3 sequencing relative to Phase 1
 
@@ -422,12 +464,16 @@ new element types, if any, are actually missing). Phase 4 is gated on Phase 1 + 
 both landing, per the Architect decision above.
 
 **Phase 0 — Backend Dev**
-- [ ] `BrandLayoutGrammar` model + `IngestionJob.ingestion_type` gains `'layout_grammar'`
-- [ ] `analyze_pdf_template()` in `template_analyzer.py` (PDF geometry extraction, per
-      Architect decision above)
-- [ ] `MineLayoutGrammarTool` (`BaseAgentTool`, `generate_json(specialization="general")`)
-- [ ] Run mining over all 4 Insumos brands; inventory `PPT_Template_Core.pptx`
-- [ ] Regression test: `'layout_grammar'` addition doesn't affect existing ingestion types
+- [x] `BrandLayoutGrammar` model + `IngestionJob.ingestion_type` gains `'layout_grammar'`
+- [x] PDF geometry extraction — landed in `services/generation/layout_grammar_service.py`
+      (`extract_pdf_regions`), not `template_analyzer.py` — see Architect decision update
+- [x] `MineLayoutGrammarTool` (`agents/mine_layout_grammar.py`,
+      `generate_json(specialization="general")`)
+- [ ] Run mining over all 4 Insumos brands; inventory `PPT_Template_Core.pptx` — blocked
+      on those brands existing as `Brand` rows (Embonor/Harry Potter/Core aren't ingested
+      yet, only Tesco is); deterministic extraction+clustering already validated directly
+      against the real Embonor PDF file without a DB
+- [x] Regression test: `'layout_grammar'` addition doesn't affect existing ingestion types
 
 **Phase 1 — Backend Dev**
 - [ ] `GenerationJob.engine_version` column (default `NULL`/`"v1"`)

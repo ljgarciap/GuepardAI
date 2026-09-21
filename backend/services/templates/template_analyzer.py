@@ -55,6 +55,13 @@ class TextSlot:
     placeholder_type: Optional[str] = None
     action: str = "rewrite" # "preserve" | "adapt" | "rewrite"
     kind: str = "shape"     # "shape" | "group_child" | "cell"
+    # Percent-of-slide geometry (0-100), added for Artistic Generation Engine v2
+    # grammar mining (docs/specs/artistic-generation-v2.md). None when slide
+    # dimensions are unavailable. Template Merge itself never reads these.
+    x_pct: Optional[float] = None
+    y_pct: Optional[float] = None
+    w_pct: Optional[float] = None
+    h_pct: Optional[float] = None
 
 
 @dataclass
@@ -100,7 +107,7 @@ def analyze_template(
 
         for target in targets:
             try:
-                slot = _build_slot(target, slide_idx, int(slide_h), int(slide_area), config)
+                slot = _build_slot(target, slide_idx, int(slide_w), int(slide_h), int(slide_area), config)
                 if slot is None:
                     profile.preserved_shapes += 1
                     continue
@@ -126,6 +133,7 @@ def analyze_template(
 def _build_slot(
     target: TextTarget,
     slide_idx: int,
+    slide_width_emu: int,
     slide_height_emu: int,
     slide_area_emu: int,
     config: TemplateMergeConfig,
@@ -146,6 +154,7 @@ def _build_slot(
     role = _infer_role(target, slide_height_emu, slide_area_emu, config)
     char_limit = _estimate_char_limit(target, role, existing_text, config)
     action = _infer_action(target.is_placeholder, role, existing_text, config)
+    x_pct, y_pct, w_pct, h_pct = _geometry_pct(target, slide_width_emu, slide_height_emu)
 
     return TextSlot(
         slide_idx=slide_idx,
@@ -158,7 +167,30 @@ def _build_slot(
         placeholder_type=_placeholder_type_str(target),
         action=action,
         kind=target.kind,
+        x_pct=x_pct,
+        y_pct=y_pct,
+        w_pct=w_pct,
+        h_pct=h_pct,
     )
+
+
+def _geometry_pct(
+    target: TextTarget, slide_width_emu: int, slide_height_emu: int
+) -> "tuple[Optional[float], Optional[float], Optional[float], Optional[float]]":
+    """EMU geometry -> percent-of-slide (0-100), matching canvas_elements' coordinate
+    space (docs/specs/artistic-generation-v2.md) so mined slots need no conversion
+    downstream. None when slide dimensions are missing/zero."""
+    if not slide_width_emu or not slide_height_emu:
+        return None, None, None, None
+    try:
+        return (
+            round(target.left / slide_width_emu * 100, 2),
+            round(target.top / slide_height_emu * 100, 2),
+            round(target.width / slide_width_emu * 100, 2),
+            round(target.height / slide_height_emu * 100, 2),
+        )
+    except (TypeError, ZeroDivisionError):
+        return None, None, None, None
 
 
 def _area_within_bounds(

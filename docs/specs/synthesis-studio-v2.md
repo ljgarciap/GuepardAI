@@ -2,7 +2,7 @@
 
 **Date**: 2026-09-20
 **Requested by**: Luis
-**Status**: Phase 1 + Phase 2's Finding 5 done (5 findings fixed, shipped and re-verified against real production data across 2 re-measurement rounds); Quick Win 4 and 1 Architect decision (Finding 2 Option (b)) still open
+**Status**: Phase 1 + Phase 2's Finding 5 + Quick Win 4 all done (6 fixes shipped and re-verified against real production data); only 1 Architect decision (Finding 2 Option (b)) still open
 **Project**: GuepardAI
 **Assessment**: `docs/designs/synthesis-studio-v2-assessment.md` (2026-07-08, verdict + 3 levers)
 **Owner of this document**: `synthesis-studio-analyst` agent
@@ -114,14 +114,18 @@ worth watching in a future round, not a regression from this fix (canvas_element
 rendering itself is confirmed correct per Finding 1b; this is a content/composition
 call by the LLM, the same class of judgment call the Analyst/Art Director always make).
 
-**Interaction with Quick Win 4 (still open)**: this run also had more slides than
-usual fall through to `layout_slug=None` (Art Director skipped providing an
-override), which routes through the Outline's `composition_*` vocabulary and mostly
-collapses to `composition_split` in the PPTX painter (the known, still-open gap).
-Fixing Quick Win 4 would make the *effective* rendered variety match the *decided*
-variety more closely — now more visible/valuable given Finding 5's fix, since the
-Analyst/Art Director are actively trying to diversify and Quick Win 4 silently
-flattens some of that effort back down.
+**Interaction with Quick Win 4 [FIXED]**: this run also had more slides than usual
+fall through to `layout_slug=None` (Art Director skipped providing an override),
+which routes through the Outline's `composition_*` vocabulary — `GRAMMAR_TO_PAINTER`
+had no bare key for `composition_hero` (fell to the `composition_split` default;
+`composition_split`/`composition_pillars`/`composition_quote` already worked, two by
+an explicit key, one by coincidence). Added `composition_hero`→itself and
+`composition_split`→itself explicitly (no longer relying on the `.get()` default
+matching by accident). Regression tests:
+`tests/test_painter_bridge_grammar_mapping.py::TestGrammarToPainterRecognizesOutlineVocabularyFallback`.
+Fixed the same day Finding 5 made it more visible — the Analyst/Art Director now
+actively try to diversify, so this fallback path silently flattening some of that
+effort back to `composition_split` would have undercut it.
 
 ## Detail inventory (mark → root cause → lever)
 
@@ -311,18 +315,8 @@ automatically on next boot via the existing dispatch mechanism — no manual ste
    done (Finding 2).
 2. ~~Register a data alignment for stale premium pattern data~~ — done (Finding 4).
 3. ~~Build the real `canvas_elements` builder for `custom_canvas`~~ — done (Finding 1b).
-4. **PPTX path's `layout_slug=None` fallback** (`render_agent.py`, ~10-20% of
-   slides where the Analyst call didn't set a slug) reads
-   `content_json["layout_type"]` — the Outline's `composition_*` vocabulary — and
-   feeds it straight to `GRAMMAR_TO_PAINTER`, which has no bare `composition_*`
-   keys either (only the values these keys map *to*). Smaller than Finding 1
-   (fewer slides hit this path) but the same bug shape; worth a one-line
-   `GRAMMAR_TO_PAINTER` addition (`composition_hero`→itself, etc.) the next time
-   this file is touched. **Still open — bumped up in priority**: Finding 5's
-   diversity fix makes the Analyst/Art Director actively try to spread across all
-   5 layouts, but this gap silently flattens some of that effort back into
-   `composition_split` whenever no override is returned. Fixing Finding 5 without
-   this one leaves real diversification effort partially wasted at render time.
+4. ~~PPTX path's `layout_slug=None` fallback missing `composition_hero`~~ — done,
+   same day Finding 5 made it more visible (see Finding 5's write-up above).
 
 ## Acceptance criteria
 

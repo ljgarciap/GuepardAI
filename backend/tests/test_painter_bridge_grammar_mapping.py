@@ -64,3 +64,35 @@ class TestGrammarToPainterRecognizesAnalystVocabulary:
         # text/image/typo_substitution), la mitigación quedó obsoleta — ver
         # docs/specs/synthesis-studio-v2.md, Finding 1b.
         assert GRAMMAR_TO_PAINTER["custom_canvas"] == "custom_canvas"
+
+
+# El vocabulario real y completo de prompt_content_outline_v3 ("Allowed layout_type
+# values") — DISTINTO del vocabulario del Analyst de arriba. render_agent.py's PPTX
+# branch cae a content_json["layout_type"] (este vocabulario) cuando el Art Director
+# no fija slide.layout_slug (~10-20% de las slides, Synthesis Studio v2 Quick Win 4).
+OUTLINE_VOCABULARY = [
+    "composition_hero", "composition_split", "composition_quote",
+    "composition_pillars", "data_grid_cards",
+]
+
+
+@pytest.mark.unit
+class TestGrammarToPainterRecognizesOutlineVocabularyFallback:
+
+    @pytest.mark.parametrize("outline_value", OUTLINE_VOCABULARY)
+    def test_every_outline_value_resolves_to_something_the_painter_dispatches(self, outline_value):
+        painted_as = GRAMMAR_TO_PAINTER.get(outline_value, "composition_split")
+        assert painted_as in PAINTER_DISPATCH_VALUES
+
+    def test_composition_hero_no_longer_silently_becomes_split(self):
+        # El hallazgo puntual de Quick Win 4: antes de este fix,
+        # "composition_hero" no era una key real y caía al default
+        # "composition_split" — una slide de portada/hero se pintaba como un
+        # split genérico.
+        assert GRAMMAR_TO_PAINTER["composition_hero"] == "composition_hero"
+
+    def test_distinct_outline_values_produce_distinct_painted_layouts(self):
+        painted = {v: GRAMMAR_TO_PAINTER.get(v, "composition_split") for v in OUTLINE_VOCABULARY}
+        assert len(set(painted.values())) == len(OUTLINE_VOCABULARY), (
+            f"Valores del Outline Generator colapsando al mismo layout pintado: {painted}"
+        )

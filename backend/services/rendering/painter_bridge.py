@@ -70,6 +70,21 @@ GRAMMAR_TO_PAINTER = {
     # just text/image/typo_substitution), the mitigation is obsolete — see
     # docs/specs/synthesis-studio-v2.md, Finding 1b.
     "custom_canvas":        "custom_canvas",
+
+    # Vocabulario real del Outline Generator (prompt_content_outline_v3,
+    # "Allowed layout_type values") — render_agent.py's PPTX branch falls back
+    # to content_json["layout_type"] (this vocabulary) whenever the Art
+    # Director doesn't set slide.layout_slug (~10-20% of slides). Before this
+    # entry, "composition_hero" fell through to the "composition_split"
+    # default (wrong — a hero/cover slide rendered as a generic split).
+    # "composition_split"/"composition_pillars"/"composition_quote" already
+    # matched GammaPainter.render_slides()'s own dispatch strings by
+    # coincidence (composition_pillars/composition_quote were already keys
+    # above; composition_split only "worked" because it happens to equal the
+    # .get() call's own default) — added explicitly here so none of the 4
+    # depend on an accident. Synthesis Studio v2, Quick Win 4.
+    "composition_hero":     "composition_hero",
+    "composition_split":    "composition_split",
 }
 
 

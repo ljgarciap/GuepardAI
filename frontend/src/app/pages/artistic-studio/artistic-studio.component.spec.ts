@@ -10,7 +10,7 @@ describe('ArtisticStudioComponent — Artistic Generation Engine v2 (Phase 4)', 
 
   beforeEach(async () => {
     serviceSpy = jasmine.createSpyObj('ArtisticV2Service', [
-      'getEligibleBrands', 'generate', 'generateV1', 'getGenerationStatus',
+      'getEligibleBrands', 'generate', 'generateV1', 'getGenerationStatus', 'downloadPortfolio',
     ]);
     serviceSpy.getEligibleBrands.and.returnValue(of({ brands: [{ id: 1, name: 'Tesco' }, { id: 5, name: 'Embonor' }] }));
 
@@ -94,9 +94,35 @@ describe('ArtisticStudioComponent — Artistic Generation Engine v2 (Phase 4)', 
     expect(component.v2.jobId).toBeNull();
   });
 
-  it('downloadUrl() returns null until the job is complete', () => {
+  it('download() does nothing without a jobId', () => {
     fixture.detectChanges();
-    expect(component.downloadUrl(component.v1)).toBeNull();
+    component.download('v1');
+    expect(serviceSpy.downloadPortfolio).not.toHaveBeenCalled();
+  });
+
+  it('download() fetches the file as an authenticated blob, not a raw link navigation', () => {
+    // Real bug found live (Luis): "supposedly finished but wouldn't let me
+    // download". The download route requires a Bearer token
+    // (Depends(get_current_user)) — a plain <a href> is a raw browser
+    // navigation that never carries the Authorization header the auth
+    // interceptor attaches to HttpClient calls, so it 401s with no visible
+    // error. Must go through the service's authenticated HttpClient call.
+    serviceSpy.downloadPortfolio.and.returnValue(of(new Blob(['x'])));
+    component.v1.jobId = 100;
+
+    component.download('v1');
+
+    expect(serviceSpy.downloadPortfolio).toHaveBeenCalledWith(100);
+  });
+
+  it('download() surfaces an error on the right column when the blob fetch fails', () => {
+    serviceSpy.downloadPortfolio.and.returnValue(throwError(() => new Error('401')));
+    component.v2.jobId = 200;
+
+    component.download('v2');
+
+    expect(component.v2.error).toBeTruthy();
+    expect(component.v1.error).toBeNull();
   });
 
   // --- DOM-level regression coverage for the real bug found live (Luis) ---
@@ -139,13 +165,14 @@ describe('ArtisticStudioComponent — Artistic Generation Engine v2 (Phase 4)', 
     expect(fixture.nativeElement.textContent).toContain('boom');
   });
 
-  it('DOM: shows the download link once a column completes', fakeAsync(() => {
+  it('DOM: shows the download button once a column completes, and it triggers an authenticated fetch (not a link)', fakeAsync(() => {
     serviceSpy.generateV1.and.returnValue(of({ job_id: 100, status: 'pending' }));
     serviceSpy.generate.and.returnValue(new Subject());
     serviceSpy.getGenerationStatus.and.returnValue(of({
       id: 100, status: 'completed', progress: 100, current_step: 'Done', qa_forced: false,
       download_url: '/api/generation/download/100',
     }));
+    serviceSpy.downloadPortfolio.and.returnValue(of(new Blob(['x'])));
 
     fixture.detectChanges();
     component.prompt = 'Growth strategy';
@@ -153,8 +180,14 @@ describe('ArtisticStudioComponent — Artistic Generation Engine v2 (Phase 4)', 
     tick(2000); // pollColumn() polls on a 2s interval() — the first tick fires the first poll
     fixture.detectChanges();
 
-    const link = fixture.nativeElement.querySelector('.success-box a.btn-primary');
-    expect(link).withContext('download link must render once status is completed').not.toBeNull();
+    const button: HTMLButtonElement | null = fixture.nativeElement.querySelector('.success-box button.btn-primary');
+    expect(button).withContext('download button must render once status is completed').not.toBeNull();
+    // No [href]/anchor — a raw link navigation would never carry the auth
+    // interceptor's Bearer token (the actual bug this fix closes).
+    expect(fixture.nativeElement.querySelector('.success-box a')).toBeNull();
+
+    button!.click();
+    expect(serviceSpy.downloadPortfolio).toHaveBeenCalledWith(100);
   }));
 
   it('hasStarted is false before any generation and true as soon as isRunning flips on', () => {

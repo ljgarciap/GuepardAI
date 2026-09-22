@@ -182,8 +182,6 @@
   font-size: 0.9rem;
 }
 
-.success-box a.btn-primary {
-  text-decoration: none;
-  text-align: center;
+.success-box button.btn-primary {
   width: fit-content;
 }

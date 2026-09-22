@@ -7,7 +7,7 @@ import {
   EligibleBrand,
   GenerationStatus,
 } from '../../services/artistic-v2.service';
-import { environment } from '../../../environments/environment';
+import { triggerBlobDownload } from '../../utils/download.util';
 
 /**
  * artistic-studio.component.ts — Artistic Generation Engine v2 (Phase 4).
@@ -40,7 +40,6 @@ function freshColumn(): ColumnState {
 })
 export class ArtisticStudioComponent implements OnInit {
   private artisticV2 = inject(ArtisticV2Service);
-  private baseUrl = environment.baseUrl;
 
   eligibleBrands: EligibleBrand[] = [];
   selectedBrandId: number | null = null;
@@ -141,8 +140,20 @@ export class ArtisticStudioComponent implements OnInit {
     else this.v2Poll = sub;
   }
 
-  downloadUrl(column: ColumnState): string | null {
-    return column.status?.download_url ? this.baseUrl + column.status.download_url : null;
+  // The download route needs a Bearer token (Depends(get_current_user)) — a
+  // plain <a href> is a raw browser navigation that never carries the
+  // Authorization header the auth interceptor attaches to HttpClient calls,
+  // so it 401s with no visible error (the real bug Luis hit: "supposedly
+  // finished but wouldn't let me download"). GeneratorComponent already
+  // solves this correctly (authenticated blob fetch, then a synthetic
+  // download) — same fix here.
+  download(which: 'v1' | 'v2') {
+    const column = which === 'v1' ? this.v1 : this.v2;
+    if (!column.jobId) return;
+    this.artisticV2.downloadPortfolio(column.jobId).subscribe({
+      next: (blob) => triggerBlobDownload(blob, `presentation_${which}_${column.jobId}.pptx`),
+      error: () => { column.error = 'Download failed. Please try again.'; },
+    });
   }
 
   reset() {

@@ -61,7 +61,7 @@
         <div class="error-box" *ngIf="v1.error">{{ v1.error }}</div>
         <div class="success-box" *ngIf="v1.status?.status === 'completed'">
           <p>Generation complete.</p>
-          <a class="btn-primary" *ngIf="downloadUrl(v1)" [href]="downloadUrl(v1)!" target="_blank">Download</a>
+          <button class="btn-primary" (click)="download('v1')">Download</button>
         </div>
       </div>
     </div>
@@ -80,7 +80,7 @@
         <div class="error-box" *ngIf="v2.error">{{ v2.error }}</div>
         <div class="success-box" *ngIf="v2.status?.status === 'completed'">
           <p>Generation complete.</p>
-          <a class="btn-primary" *ngIf="downloadUrl(v2)" [href]="downloadUrl(v2)!" target="_blank">Download</a>
+          <button class="btn-primary" (click)="download('v2')">Download</button>
         </div>
       </div>
     </div>

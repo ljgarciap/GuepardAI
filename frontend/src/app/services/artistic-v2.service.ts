@@ -70,4 +70,14 @@ export class ArtisticV2Service {
   generateV1(req: ArtisticV2GenerateRequest): Observable<{ job_id: number; status: string }> {
     return this.http.post<{ job_id: number; status: string }>(`${this.apiUrl}/presentations/generate`, req);
   }
+
+  // The download route requires a Bearer token (Depends(get_current_user)) —
+  // a plain <a href> is a raw browser navigation that never carries the
+  // Authorization header the auth interceptor attaches to HttpClient calls,
+  // so it 401s silently. GeneratorComponent already solves this correctly
+  // (BrandService.downloadPortfolio + triggerBlobDownload) — same fix here,
+  // duplicated rather than imported to keep this service self-contained.
+  downloadPortfolio(jobId: number): Observable<Blob> {
+    return this.http.get(`${this.apiUrl}/generation/download/${jobId}`, { responseType: 'blob' });
+  }
 }

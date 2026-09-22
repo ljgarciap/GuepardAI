@@ -1,0 +1,78 @@
+<div class="page-container">
+  <div class="control-toolbar glass-panel">
+    <div class="toolbar-header">
+      <h1 class="page-title">ARTISTIC STUDIO</h1>
+      <span class="page-subtitle">ENGINE V2 · BRAND GRAMMAR MINING · BETA</span>
+    </div>
+
+    <p class="intro-copy">
+      Composes each slide directly from the brand's own mined layout grammar instead of
+      picking from a fixed template menu. Generates the same prompt with both engines side
+      by side so you can compare before deciding whether to switch.
+    </p>
+
+    <div class="toolbar-actions" *ngIf="!isLoadingBrands">
+      <div class="control-group">
+        <label>BRAND (mined grammar required)</label>
+        <select [(ngModel)]="selectedBrandId" class="enterprise-select" [disabled]="eligibleBrands.length === 0">
+          <option *ngFor="let brand of eligibleBrands" [ngValue]="brand.id">{{ brand.name }}</option>
+        </select>
+        <p class="empty-hint" *ngIf="eligibleBrands.length === 0">
+          No brand has mined layout grammar yet — run Phase 0 grammar mining for a brand before it appears here.
+        </p>
+      </div>
+
+      <div class="control-group prompt-group">
+        <label>PROMPT</label>
+        <textarea [(ngModel)]="prompt" rows="2" placeholder="Describe the presentation to generate..."></textarea>
+      </div>
+
+      <button class="btn-primary" [disabled]="!canGenerate" (click)="generateBoth()">
+        Generate &amp; Compare
+      </button>
+      <button class="btn-secondary" (click)="reset()" *ngIf="v1.jobId || v2.jobId">
+        New Comparison
+      </button>
+    </div>
+
+    <p class="load-error" *ngIf="loadError">{{ loadError }}</p>
+  </div>
+
+  <div class="comparison-grid" *ngIf="v1.jobId || v2.jobId">
+    <div class="engine-column glass-panel">
+      <div class="engine-header">
+        <h3>v1 — Classic</h3>
+        <span class="engine-badge">grammar_type enum</span>
+      </div>
+
+      <ng-container *ngTemplateOutlet="columnBody; context: { column: v1 }"></ng-container>
+    </div>
+
+    <div class="engine-column glass-panel v2-column">
+      <div class="engine-header">
+        <h3>v2 — Artistic</h3>
+        <span class="engine-badge engine-badge-v2">mined brand grammar</span>
+      </div>
+
+      <ng-container *ngTemplateOutlet="columnBody; context: { column: v2 }"></ng-container>
+    </div>
+  </div>
+</div>
+
+<ng-template #columnBody let-column="column">
+  <div class="column-body">
+    <div class="progress-track" *ngIf="column.isRunning">
+      <div class="progress-fill" [style.width.%]="column.status?.progress || 0"></div>
+    </div>
+    <p class="current-step" *ngIf="column.isRunning">{{ column.status?.current_step || 'Initializing...' }}</p>
+
+    <div class="error-box" *ngIf="column.error">{{ column.error }}</div>
+
+    <div class="success-box" *ngIf="column.status?.status === 'completed'">
+      <p>Generation complete.</p>
+      <a class="btn-primary" *ngIf="downloadUrl(column)" [href]="downloadUrl(column)!" target="_blank">
+        Download
+      </a>
+    </div>
+  </div>
+</ng-template>

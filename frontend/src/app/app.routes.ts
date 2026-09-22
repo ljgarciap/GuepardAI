@@ -4,6 +4,7 @@ import { BrandHubComponent } from './pages/brand-hub/brand-hub.component';
 import { BrandManagerComponent } from './pages/brand-manager/brand-manager.component';
 import { AssetLibraryComponent } from './pages/asset-library/asset-library.component';
 import { TemplateMergeComponent } from './pages/template-merge/template-merge.component';
+import { ArtisticStudioComponent } from './pages/artistic-studio/artistic-studio.component';
 import { AdminComponent } from './pages/admin/admin.component';
 import { LoginComponent } from './pages/login/login.component';
 import { RegisterComponent } from './pages/register/register.component';
@@ -20,6 +21,7 @@ export const routes: Routes = [
   { path: 'account', component: AccountComponent, title: 'Account', canActivate: [authGuard, tosGuard] },
   { path: '', component: GeneratorComponent, title: 'AI Generator Studio', canActivate: [authGuard, tosGuard] },
   { path: 'template-merge', component: TemplateMergeComponent, title: 'Template Merge Studio', canActivate: [authGuard, tosGuard] },
+  { path: 'artistic-studio', component: ArtisticStudioComponent, title: 'Artistic Studio (v2)', canActivate: [authGuard, tosGuard] },
   { path: 'brands', component: BrandHubComponent, title: 'Intelligence Hub', canActivate: [authGuard, tosGuard] },
   { path: 'directory', component: BrandManagerComponent, title: 'Brand Directory Master', canActivate: [authGuard, tosGuard] },
   { path: 'library', component: AssetLibraryComponent, title: 'Strategic Asset Library', canActivate: [authGuard, tosGuard] },

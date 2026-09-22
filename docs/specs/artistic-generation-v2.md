@@ -2,11 +2,17 @@
 
 **Date**: 2026-09-21
 **Requested by**: Luis
-**Status**: Phases 0, 1, 2, and 3 fully done (2026-09-21/22) — 178 real mined
-signatures across 4 brands, composer validated against them with no new element type
-needed, `premium_pdf.html`'s text-align/width gap fixed. Phase 4's rollout gate
-(Phase 1 + Phase 3 both landed) is clear. Only Phase 4 itself remains: isolated
-nav/route + batch v1-vs-v2 comparison UI, not started.
+**Status**: All 5 phases done (2026-09-21/22). `/artistic-studio` is live: an isolated
+Angular route + component fires a v1 job and a `v2_artistic` job for the same
+brand/prompt side by side. Backend: `routers/artistic_v2.py` (new, isolated) reuses the
+existing Celery task and status routes unchanged. 178 real mined signatures across 4
+brands (Phase 0), composer validated against them with no new element type needed
+(Phase 2), the confirmed QA judge bias closed (Phase 3). Full backend suite green
+throughout (855 passed, 1 pre-existing unrelated failure); frontend build + full Karma
+suite green (207/207). Remaining, non-blocking: Tech Writer's architecture doc update,
+and an actual in-browser visual check (no browser-automation tool was available this
+session — validated via build/test/code-review only, flagged explicitly rather than
+claimed).
 **Project**: GuepardAI
 
 ## Problem
@@ -374,12 +380,21 @@ v1 and v2 — everything else in this spec is new code reached only from the
       passed, same 1 pre-existing unrelated failure).
 
 **Phase 4 — Rollout**
-- [ ] A `v2_artistic` job is reachable only from an explicitly separate nav
-      entry/route — no shared component is edited in place to "become" v2.
-- [ ] Batch generation lets Luis compare v1 vs. v2 output for the same prompt/brand
-      side by side before any promote/retire decision.
-- [ ] Full existing backend test suite (`pytest tests/`) passes unmodified after the
-      `engine_version` column is added — proves the isolation constraint held.
+- [x] **Done, 2026-09-22.** `/artistic-studio` — new Angular route, new
+      `ArtisticStudioComponent`, new sidebar entry ("Artistic Studio", BETA badge),
+      registered independently in `app.routes.ts`. `GeneratorComponent` (v1's Synthesis
+      Studio) is not touched by any file in this phase.
+- [x] Batch comparison: one prompt + one brand fires both a v1 job
+      (`POST /api/presentations/generate`, unmodified) and a v2 job
+      (`POST /api/artistic-v2/generate`, new) side by side, each in its own column with
+      independent polling and its own download link once complete.
+- [x] Full backend suite green throughout (855 passed as of this phase, same 1
+      pre-existing unrelated failure) — `engine_version` never changed v1 behavior.
+- [x] Frontend: `npx ng build` production build succeeds; full Karma suite green
+      (207/207, 8 new for `ArtisticStudioComponent`). **Not** visually verified in an
+      actual browser this session (no browser-automation tool available) — validated via
+      build success, full test suite, and template/service code review only. Flagging
+      this limitation explicitly rather than claiming a visual check that didn't happen.
 
 ## Edge cases and error scenarios
 
@@ -590,12 +605,20 @@ truly parallel, but both landed independently as the Architect decision allowed)
 **Rollout gate now clear**: per the Architect decision above, Phase 4 was blocked until
 both Phase 1 and Phase 3 landed — both are done as of this session.
 
-**Phase 4 — Frontend Dev + Backend Dev** (gated on Phase 1 + Phase 3)
-- [ ] Isolated nav entry/route for `v2_artistic` generation
-- [ ] Batch generation UI for v1-vs-v2 side-by-side comparison
+**Phase 4 — Frontend Dev + Backend Dev — done, 2026-09-22**
+- [x] Backend: `routers/artistic_v2.py` (new — `GET /eligible-brands`,
+      `POST /generate`), registered in `main.py` via `include_router()`, per the
+      project's routing convention. Reuses the existing Celery task and status/slides
+      routes unchanged — `engine_version` on the job row is the entire integration
+      surface, as designed. 5 new backend tests (`tests/test_artistic_v2_routes.py`).
+- [x] Frontend: `ArtisticV2Service` (new, self-contained — doesn't import
+      `BrandService`), `ArtisticStudioComponent` (new route `/artistic-studio`, new
+      sidebar entry), 8 new Karma tests.
 
 **Tech Writer** — architecture doc update (`docs/architecture/GuepardAI-overview.md`)
-once Phase 1 lands; runs in parallel with dev work per standing convention.
+still outstanding; not done as part of this session's dev work.
 
-Next: Backend Dev starts Phase 0 (and, in parallel where capacity allows, Phase 3);
-Senior Reviewer review happens per-phase as each lands, not held for the whole feature.
+**All 5 phases of this spec are now done.** Remaining follow-ups, none blocking:
+Tech Writer's architecture doc update, and an actual in-browser visual check of
+`/artistic-studio` (validated this session via build success + full test suites +
+code review only — no browser-automation tool was available to look at it directly).

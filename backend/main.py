@@ -142,6 +142,7 @@ from routers.config import router as config_router
 from routers.prompt_favorites import router as prompt_favorites_router
 from routers.tenants import router as tenants_router
 from routers.tos import router as tos_router
+from routers.artistic_v2 import router as artistic_v2_router
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(template_merge_router)
@@ -155,6 +156,7 @@ app.include_router(config_router)
 app.include_router(prompt_favorites_router)
 app.include_router(tenants_router)
 app.include_router(tos_router)
+app.include_router(artistic_v2_router)
 
 
 # ──────────────────────────────────────────────

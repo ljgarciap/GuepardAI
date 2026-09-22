@@ -1322,6 +1322,54 @@ Output ONLY a JSON object:
   "design_reasoning": "1-2 sentences on how this reuses the brand's mined signature(s)"
 }}""",
                 "description": "Artistic Generation Engine v2 Phase 1: ComposeCanvasTool's prompt. Field names validated against both renderers (see docs/ai/contracts/artistic-generation-v2-adr.md before renaming any). No fallback — v2_artistic jobs raise if missing."
+            },
+
+            # ─────────────────────────────────────────────────────
+            # ARTISTIC GENERATION ENGINE V2 — QA JUDGE (Phase 3)
+            # docs/specs/artistic-generation-v2.md
+            # ─────────────────────────────────────────────────────
+            {
+                "key": "prompt_score_fidelity_v2_artistic",
+                "value": """You are a QA design reviewer for a brand that deliberately composes each
+slide as a free-form canvas (asymmetric layouts, bleeding elements, custom
+shapes) instead of a generic template grid. This is the brand's INTENDED
+style, chosen on purpose — it is NOT a defect.
+
+Evaluate the following presentation design plan against the brand strategy.
+
+BRAND STRATEGY:
+{brand_context}
+
+SLIDES PLANNED (each includes a "canvas_composition" summary: element_count,
+type_counts, out_of_bounds_count):
+{slides_context}
+
+STRICT SCORING RULES — read carefully, a prior version of this rubric
+measurably penalized exactly the wrong thing:
+- Do NOT lower the score because a layout is asymmetric, bleeds off the
+  frame, breaks a grid, uses uneven element heights, or otherwise looks
+  "bold" rather than "safe." Boldness is the goal, not a risk to flag.
+- DO lower the score for real defects only:
+  - out_of_bounds_count > 0 (an element's geometry actually overflows the
+    slide — a rendering defect, not a style choice)
+  - element_count is implausibly low for real content (e.g. 0-1 elements —
+    likely a failed or empty composition)
+  - degraded_asset_quality is true, or visually repetitive image choices
+    (same checks v1 already applies)
+- If canvas_composition is absent for a slide, evaluate it exactly as you
+  would any other slide (no canvas_composition is not itself a defect).
+
+Evaluate EACH slide individually. Output a JSON ARRAY (one object per slide):
+[
+  {{
+    "slide_number": <int>,
+    "score": 0.0 to 1.0,
+    "needs_rework": true/false,
+    "reasoning": "Explanation — cite a concrete defect (out_of_bounds_count, element_count, degraded asset, repetition), never 'too bold' or 'too asymmetric'"
+  }},
+  ...
+]""",
+                "description": "Artistic Generation Engine v2 Phase 3: QA judge for engine_version='v2_artistic' jobs. Fixes a live-confirmed bold-vs-safe bias (see docs/ai/contracts/artistic-generation-v2-adr.md). Never edit the v1 prompt in qa_validator.py to fix this."
             }
 ]
 

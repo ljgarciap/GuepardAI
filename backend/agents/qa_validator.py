@@ -10,6 +10,39 @@ import models
 # mock global de conftest sobre providers.llm_provider surta efecto siempre
 from providers import llm_provider
 
+def _summarize_canvas_elements(canvas_elements) -> Dict[str, Any]:
+    """
+    Artistic Generation Engine v2 (docs/specs/artistic-generation-v2.md, Phase 3):
+    compact geometry summary for the judge — element count/type mix and a real
+    defect check (x+w or y+h exceeding the 0-100 canvas), not the raw element
+    list. Never raises on malformed elements — a summary this is advisory input
+    to a QA judge, not itself a validator.
+    """
+    if not isinstance(canvas_elements, list):
+        return {"element_count": 0, "type_counts": {}, "out_of_bounds_count": 0}
+
+    type_counts: Dict[str, int] = {}
+    out_of_bounds = 0
+    for el in canvas_elements:
+        if not isinstance(el, dict):
+            continue
+        el_type = str(el.get("type", "unknown"))
+        type_counts[el_type] = type_counts.get(el_type, 0) + 1
+        try:
+            x, y = float(el.get("x", 0)), float(el.get("y", 0))
+            w, h = float(el.get("w", el.get("size", 0)) or 0), float(el.get("h", el.get("size", 0)) or 0)
+            if x + w > 100.5 or y + h > 100.5:
+                out_of_bounds += 1
+        except (TypeError, ValueError):
+            continue  # line/gradient elements use x1/y1/x2/y2, not x/y/w/h — not a defect signal here
+
+    return {
+        "element_count": len(canvas_elements),
+        "type_counts": type_counts,
+        "out_of_bounds_count": out_of_bounds,
+    }
+
+
 def _resolve_assigned_asset(db, img_val):
     """
     Resuelve el BrandAsset detrás de PresentationSlide.assigned_image, que puede
@@ -153,6 +186,13 @@ class ScoreFidelityTool(BaseAgentTool):
                 "strategy": essence.art_direction_note if essence else "Corporate standard"
             }
 
+            # Artistic Generation Engine v2 (docs/specs/artistic-generation-v2.md,
+            # Phase 3): v2_artistic jobs get their own judge prompt + a
+            # canvas_elements summary in slides_context. Never == "v1" check —
+            # NULL/unset jobs (every job before engine_version existed) fall
+            # through to the exact v1 path below, unmodified.
+            is_v2_artistic = bool(job.engine_version == "v2_artistic")
+
             slides_context = []
             for s in slides:
                 ad_plan = s.planning_json.get("art_director", {}) if s.planning_json else {}
@@ -166,14 +206,26 @@ class ScoreFidelityTool(BaseAgentTool):
                         "category": asset_rec.category,
                         "description": (asset_rec.description or "")[:80],
                     }
-                slides_context.append({
+                slide_context = {
                     "number": s.slide_number,
                     "title": s.title,
                     "layout_selected": s.layout_slug,
                     "assigned_image": image_context,
                     "degraded_asset_quality": bool(ad_plan.get("degraded")),
                     "planning_reasoning": ad_plan.get("reasoning", "")
-                })
+                }
+                if is_v2_artistic:
+                    # AI Architect ADR finding (docs/ai/contracts/artistic-generation-v2-adr.md):
+                    # the judge is structurally composition-blind — canvas_elements
+                    # never reached slides_context for ANY job, v1 or v2. A reworded
+                    # prompt alone doesn't fix that; the geometry has to actually
+                    # arrive. Summarized, not raw: element count/type mix and a real
+                    # defect check (geometry exceeding the 0-100 canvas), not the full
+                    # element list (keeps the prompt payload bounded).
+                    slide_context["canvas_composition"] = _summarize_canvas_elements(
+                        ad_plan.get("canvas_elements", [])
+                    )
+                slides_context.append(slide_context)
 
             # Runtime threshold from system_configs
             try:
@@ -181,29 +233,45 @@ class ScoreFidelityTool(BaseAgentTool):
             except (TypeError, ValueError):
                 pass
 
-            prompt = f"""
-            You are a strict QA Brand Validator.
-            Evaluate the following presentation design plan against the brand strategy.
+            if is_v2_artistic:
+                prompt_cfg = db.query(models.SystemConfig).filter(
+                    models.SystemConfig.key == "prompt_score_fidelity_v2_artistic"
+                ).first()
+                if not prompt_cfg:
+                    import logging as _log
+                    _log.getLogger(__name__).warning(
+                        f"[ScoreFidelityTool] prompt_score_fidelity_v2_artistic not seeded for job {job_id}. "
+                        f"Auto-passing all slides (same fail-open behavior as an LLM call failure)."
+                    )
+                    return []
+                prompt = prompt_cfg.value.format(
+                    brand_context=json.dumps(brand_context),
+                    slides_context=json.dumps(slides_context),
+                )
+            else:
+                prompt = f"""
+                You are a strict QA Brand Validator.
+                Evaluate the following presentation design plan against the brand strategy.
 
-            BRAND STRATEGY:
-            {json.dumps(brand_context)}
+                BRAND STRATEGY:
+                {json.dumps(brand_context)}
 
-            SLIDES PLANNED:
-            {json.dumps(slides_context)}
+                SLIDES PLANNED:
+                {json.dumps(slides_context)}
 
-            Evaluate EACH slide individually. Penalize visually repetitive image choices
-            and slides whose degraded_asset_quality is true.
-            Output a JSON ARRAY (one object per slide):
-            [
-              {{
-                "slide_number": <int>,
-                "score": 0.0 to 1.0,
-                "needs_rework": true/false,
-                "reasoning": "Explanation"
-              }},
-              ...
-            ]
-            """
+                Evaluate EACH slide individually. Penalize visually repetitive image choices
+                and slides whose degraded_asset_quality is true.
+                Output a JSON ARRAY (one object per slide):
+                [
+                  {{
+                    "slide_number": <int>,
+                    "score": 0.0 to 1.0,
+                    "needs_rework": true/false,
+                    "reasoning": "Explanation"
+                  }},
+                  ...
+                ]
+                """
 
             try:
                 raw = llm_provider.generate_json(prompt, specialization="general")

@@ -2,12 +2,12 @@
 
 **Date**: 2026-09-21
 **Requested by**: Luis
-**Status**: Phase 0 and Phase 1 implemented and tested, 2026-09-21. Remaining Phase 0
-item: running mining against real ingested brands (needs Embonor/Harry Potter/Core
-ingestion first — deterministic extraction already validated directly against the real
-Embonor file). Phase 3 (QA judge fix) next — was scoped to run in parallel with Phase 1,
-not done yet. Phase 2 (renderer extensions) waits on whatever new element types real
-mining surfaces.
+**Status**: Phases 0, 1, and 3 implemented and tested, 2026-09-21. Phase 4's rollout
+gate (Phase 1 + Phase 3 both landed) is now clear. Remaining work: Phase 0's real-brand
+mining run (needs Embonor/Harry Potter/Core ingested — deterministic extraction already
+validated against the real Embonor file), Phase 2 (renderer extensions, waits on real
+mining to reveal what's actually needed), and Phase 4 itself (isolated nav/route +
+batch comparison UI, not started).
 **Project**: GuepardAI
 
 ## Problem
@@ -317,14 +317,22 @@ v1 and v2 — everything else in this spec is new code reached only from the
       scored 0.68, with the judge's own reasoning citing boldness itself as a brand-fit
       penalty. Also found structurally: `ScoreFidelityTool`'s `slides_context` never
       includes `canvas_elements` at all — the judge is composition-blind, v1 and v2 alike.
-- [ ] A versioned `prompt_score_fidelity_v2_artistic` ships as a **Phase 1 prerequisite**
-      (not a parallel/lagging workstream) for any `v2_artistic` job that isn't a
-      manually-reviewed pilot batch — never an in-place edit of the v1 judge prompt.
-- [ ] `ScoreFidelityTool`'s `slides_context` builder is extended, for `v2_artistic`
-      jobs only, to summarize `canvas_elements` (element count/type mix; any element
-      whose `x + w` or `y + h` exceeds 100 — a real geometry defect) — a reworded
-      prompt alone doesn't fix a judge that never receives the geometry it's meant to
-      evaluate.
+- [x] `prompt_score_fidelity_v2_artistic` shipped, 2026-09-21 (`utils/seed.py`) — never
+      an in-place edit of the v1 judge prompt, which is untouched in `qa_validator.py`.
+- [x] `ScoreFidelityTool`'s `slides_context` builder extended, for `v2_artistic` jobs
+      only, with a `canvas_composition` summary (`_summarize_canvas_elements()`:
+      element count/type mix, `out_of_bounds_count` for any element whose `x+w`/`y+h`
+      exceeds the canvas) — `v1` jobs get the exact same `slides_context` shape as
+      before, byte-for-byte (unit-tested).
+- [x] Bias re-test against the new prompt, live (real dev DB, real `generate_json`
+      call, same brand/image signals as the ADR's original test, only composition
+      description + a real `canvas_elements` payload added): **gap closed** —
+      safe-grid scored 1.0, bold-asymmetric scored 1.0 (was 0.95 vs 0.68). New
+      reasoning cites concrete checks (`out_of_bounds_count`, `element_count`,
+      `degraded_asset_quality`) and explicitly credits "the deliberate asymmetric
+      canvas style" as meeting brand guidelines rather than penalizing it.
+- [x] 10 new tests (`tests/test_qa_validator_v2_artistic.py`); full suite green (846
+      passed, same 1 pre-existing unrelated failure).
 
 **Phase 4 — Rollout**
 - [ ] A `v2_artistic` job is reachable only from an explicitly separate nav
@@ -527,11 +535,17 @@ both landing, per the Architect decision above.
       and `render_canvas_element()`
 - [ ] Fix `premium_pdf.html` canvas-text alignment gap (found during ADR validation)
 
-**Phase 3 — Backend Dev** (parallel with Phase 1, per Architect decision)
-- [ ] `prompt_score_fidelity_v2_artistic` (new versioned key, `utils/seed.py`)
-- [ ] Extend `ScoreFidelityTool`'s `slides_context` builder with a `canvas_elements`
-      summary for `v2_artistic` jobs
-- [ ] Re-run the ADR's bias test against the new prompt; confirm the score gap closes
+**Phase 3 — Backend Dev — done, 2026-09-21** (ran after Phase 1 in this session, not
+truly parallel, but both landed independently as the Architect decision allowed)
+- [x] `prompt_score_fidelity_v2_artistic` (`utils/seed.py`)
+- [x] `ScoreFidelityTool`'s `slides_context` builder extended with `canvas_composition`
+      (`_summarize_canvas_elements()`, `agents/qa_validator.py`) for `v2_artistic` jobs
+- [x] Re-ran the ADR's bias test against the new prompt, live: gap closed (1.0 vs 1.0,
+      was 0.95 vs 0.68)
+- [x] 10 new tests (`tests/test_qa_validator_v2_artistic.py`)
+
+**Rollout gate now clear**: per the Architect decision above, Phase 4 was blocked until
+both Phase 1 and Phase 3 landed — both are done as of this session.
 
 **Phase 4 — Frontend Dev + Backend Dev** (gated on Phase 1 + Phase 3)
 - [ ] Isolated nav entry/route for `v2_artistic` generation

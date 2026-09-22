@@ -3,12 +3,12 @@
 **Date**: 2026-09-21
 **Requested by**: Luis
 **Status**: Phases 0, 1, and 3 fully done, 2026-09-21 (including the real-brand mining
-run — 178 signatures across Tesco/Embonor/PPT Template Core/Harry Potter DC).
-Phase 4's rollout gate (Phase 1 + Phase 3 both landed) is clear. Remaining: Phase 2
-(renderer extensions — real mining used only existing text/shape/decorator element
-types, so nothing new has been required yet; revisit once Phase 1 runs against these
-real signatures instead of a hand-built exemplar) and Phase 4 itself (isolated
-nav/route + batch comparison UI, not started).
+run — 178 signatures across Tesco/Embonor/PPT Template Core/Harry Potter DC). Phase 2
+checked against 4 real, diverse composer runs on those real signatures: no new
+`canvas_elements` type is needed, only a small pre-existing text-alignment gap remains
+open. Phase 4's rollout gate (Phase 1 + Phase 3 both landed) is clear. Remaining:
+the `premium_pdf.html` text-align fix, and Phase 4 itself (isolated nav/route + batch
+comparison UI, not started).
 **Project**: GuepardAI
 
 ## Problem
@@ -322,17 +322,27 @@ v1 and v2 — everything else in this spec is new code reached only from the
       function, not a `BaseAgentTool` method).
 
 **Phase 2 — Rendering**
-- [ ] Any new `canvas_elements` element type Phase 0 surfaces (e.g. donut-with-icon,
-      photo-strip band) is added to `paint_custom_canvas()` and `premium_pdf.html`'s
-      `render_canvas_element()` macro, each in its own try/except (matching the existing
-      Finding 1b dispatch pattern) — driven by what mining actually found, not spec'd
-      speculatively here.
-- [ ] No existing element type's rendering (`text`/`image`/`typo_substitution`/
-      `shape`/`decorator`/`line`/`gradient_overlay`) changes behavior for v1 jobs.
+- [x] **Checked against real signatures, 2026-09-21 — no new element type needed.** Ran
+      `compose_canvas_for_job()` (real DB, real `generate_premium_json` calls, no hand-built
+      exemplars) across 4 diverse real cases: Embonor `metric_comparison` (mined signature
+      included `region_type: "image"`/`"shape"` slots from an actual pie-chart-adjacent
+      layout), Embonor `cover`, Harry Potter DC `quote`, PPT Template Core `narrative`.
+      In every case the composer approximated the mined motif entirely with existing
+      `text`/`shape`/`line`/`gradient_overlay` primitives (colored circles for icon/pie
+      motifs, a real CSS `linear-gradient(...)` for a hero cover) — zero off-contract
+      fields, zero invented image sources, across all 4. This item is done, not
+      speculative: **no `canvas_elements` type addition is needed** given what real
+      mining actually produced. Revisit only if a future mined brand's motifs genuinely
+      can't be approximated this way (e.g. a true data-driven chart with many precise
+      slice angles) — not before that's observed.
+- [x] No existing element type's rendering changed — Phase 2 made no renderer edits at
+      all, so this is true by construction (nothing to regress).
 - [ ] `premium_pdf.html`'s `render_canvas_element` macro gains `text-align` support
       (found missing entirely while validating Touchpoint B — `painter.py`'s PPTX path
       already supports left/center via `align`; the two renderers must not silently
-      diverge on the same `canvas_elements` payload).
+      diverge on the same `canvas_elements` payload). Still open — a real, if minor, gap;
+      not exercised by any of the 4 real composer runs above (none requested centered
+      text), so it hasn't caused a visible defect yet, but it will the first time one does.
 
 **Phase 3 — QA bias audit**
 - [x] Live audit run, 2026-09-21 — bias **confirmed**, not merely checked:
@@ -556,10 +566,12 @@ both landing, per the Architect decision above.
       (named in `design_reasoning`), `ArtDirectorDecision` logged, test rows cleaned up.
       Full suite green (836 passed, same 1 pre-existing unrelated failure).
 
-**Phase 2 — Backend Dev** (after Phase 1 produces real output)
-- [ ] Add any new element type(s) Phase 0/1 actually surfaced to `paint_custom_canvas()`
-      and `render_canvas_element()`
-- [ ] Fix `premium_pdf.html` canvas-text alignment gap (found during ADR validation)
+**Phase 2 — Backend Dev** — checked against real signatures, 2026-09-21
+- [x] No new element type needed — validated across 4 real, diverse composer runs
+      (Embonor metric/cover, Harry Potter quote, PPT Template Core narrative). No
+      renderer code changes made or required.
+- [ ] Fix `premium_pdf.html` canvas-text alignment gap (found during ADR validation) —
+      still open, small, standalone task; not blocking anything else in this feature.
 
 **Phase 3 — Backend Dev — done, 2026-09-21** (ran after Phase 1 in this session, not
 truly parallel, but both landed independently as the Architect decision allowed)

@@ -45,7 +45,14 @@ class DesignManifest(BaseModel):
 
 class PainterAgencyBranding(BaseModel):
     name: str
-    logo_path: str
+    # Optional: a brand with no ingested logo asset yet (BrandAsset with
+    # category="logos") legitimately has none — both call sites
+    # (agents/render_agent.py, services/rendering/layout_engine.py) already
+    # compute this as None in that case, and painter.py's apply_branding()
+    # already skips drawing the logo when it's falsy. The strict `str` type
+    # here was the only thing turning "no logo yet" into a hard pipeline
+    # crash instead of a plain "no logo drawn" render.
+    logo_path: Optional[str] = None
     client_name: str
     email: str
 

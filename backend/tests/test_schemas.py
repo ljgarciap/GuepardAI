@@ -1,4 +1,6 @@
-from schemas.presentation import ContentManifest, ContentManifestSlide, RenderManifest, PainterSlideData
+import pytest
+
+from schemas.presentation import ContentManifest, ContentManifestSlide, RenderManifest, PainterSlideData, PainterAgencyBranding
 
 def test_content_manifest():
     slide = ContentManifestSlide(
@@ -31,3 +33,21 @@ def test_render_manifest():
     )
     assert len(manifest.slides) == 1
     assert manifest.slides[0].tag == "INTRODUCTION"
+
+
+@pytest.mark.unit
+def test_painter_agency_branding_allows_no_logo():
+    # Real pipeline failure this regresses: agents/render_agent.py and
+    # services/rendering/layout_engine.py both compute logo_path as None
+    # when a brand has no ingested BrandAsset with category="logos" yet —
+    # a real, valid state, not an error. logo_path used to be a required
+    # `str`, so Pydantic construction raised a ValidationError and crashed
+    # the whole render step for that brand (confirmed live against a real
+    # brand with layout grammar mined but no logo asset ingested: "Input
+    # should be a valid string [type=string_type, input_value=None]").
+    # painter.py's apply_branding() already treats a falsy logo_path as
+    # "skip drawing the logo," so this only needed to stop crashing first.
+    branding = PainterAgencyBranding(
+        name="Agency", logo_path=None, client_name="Client", email="a@b.com"
+    )
+    assert branding.logo_path is None

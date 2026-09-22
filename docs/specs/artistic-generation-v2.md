@@ -2,12 +2,13 @@
 
 **Date**: 2026-09-21
 **Requested by**: Luis
-**Status**: Phases 0, 1, and 3 implemented and tested, 2026-09-21. Phase 4's rollout
-gate (Phase 1 + Phase 3 both landed) is now clear. Remaining work: Phase 0's real-brand
-mining run (needs Embonor/Harry Potter/Core ingested — deterministic extraction already
-validated against the real Embonor file), Phase 2 (renderer extensions, waits on real
-mining to reveal what's actually needed), and Phase 4 itself (isolated nav/route +
-batch comparison UI, not started).
+**Status**: Phases 0, 1, and 3 fully done, 2026-09-21 (including the real-brand mining
+run — 178 signatures across Tesco/Embonor/PPT Template Core/Harry Potter DC).
+Phase 4's rollout gate (Phase 1 + Phase 3 both landed) is clear. Remaining: Phase 2
+(renderer extensions — real mining used only existing text/shape/decorator element
+types, so nothing new has been required yet; revisit once Phase 1 runs against these
+real signatures instead of a hand-built exemplar) and Phase 4 itself (isolated
+nav/route + batch comparison UI, not started).
 **Project**: GuepardAI
 
 ## Problem
@@ -261,12 +262,35 @@ v1 and v2 — everything else in this spec is new code reached only from the
       geometry). Mined clusters visibly correspond to the deck's real, documented motifs
       (a full-width photo-strip band repeating on 24 pages, a ribbon-style title band
       repeating on 7+ pages).
-- [ ] `MineLayoutGrammarTool` run against real clusters produces named signatures a
-      human reviewer confirms capture the donut-with-icon KPI pattern specifically
-      (mechanically validated live in the AI Architect ADR with hand-built clusters;
-      not yet run against the real extracted Embonor clusters end-to-end with actual
-      LLM naming — needs a `Brand` row for Embonor to exist first, see Edge cases).
-- [ ] `PPT_Template_Core.pptx` inventoried.
+- [x] **Done, 2026-09-21** — mining run for real against all 4 samples (`Brand` rows
+      created: Tesco id=1 — already existed —, Embonor id=5, PPT Template Core id=6,
+      Harry Potter DC Template id=7), real LLM calls (fell through Mistral's known
+      403 to `gemini-flash-latest`, consistent with every other ADR in this repo),
+      persisted to `brand_layout_grammar`:
+
+      | Brand | File | Signatures |
+      |---|---|---|
+      | Tesco | `Tesco Style.pptx` | 24 |
+      | Tesco | `Tesco Style_2.pptx` | 28 |
+      | Embonor | `201504_Presentacion-Corporativa-2015-Q4.pdf.pdf` | 41 |
+      | PPT Template Core | `PPT_Template_Core.pptx` | 54 |
+      | Harry Potter DC Template | `Harry Potter y DC template.pptx` | 31 |
+
+      Human review confirms Embonor's donut/pie-chart KPI pattern specifically: named
+      `packaging-flavors-channels-trio-charts` (motifs `three-pie-charts`,
+      `category-breakdown`, confidence 0.75, pages 11 & 16) and
+      `three-column-center-badges` (motifs `three-column`/`badge-icons`, confidence
+      0.75, pages 5/11/16) — not a generic bar/card fallback. Also correctly named
+      the ribbon band (`red-banner-wide`/`red-banner-medium-width`, confidence
+      0.85-0.9) and the photo-strip banner (`footer-brand-banner`, confidence 0.95)
+      the design doc originally flagged by eye. Harry Potter's 3 `.mp4` files were
+      never touched (PPTX text-slot extraction only reaches text frames) — video
+      stayed out of scope without any special-casing needed.
+- [x] `PPT_Template_Core.pptx` inventoried: 51 slides, 20104100×11309350 EMU,
+      shape mix dominated by pictures (354) and placeholders (307) — a generic
+      corporate template library, not a single distinctive brand grammar like
+      Embonor's. Mining still produced 54 real, sensibly-named signatures from it
+      (e.g. `full-bleed-background-break`, `right-half-feature-panel`).
 - [x] Adding `'layout_grammar'` doesn't change existing ingestion type behavior — no
       code path reads/branches on `ingestion_type` value in a way this addition could
       affect (comment-only change beyond the model); full suite regression-tested.
@@ -502,17 +526,19 @@ Phase 3 can run in parallel once Phase 0 produces at least one brand's
 new element types, if any, are actually missing). Phase 4 is gated on Phase 1 + Phase 3
 both landing, per the Architect decision above.
 
-**Phase 0 — Backend Dev**
+**Phase 0 — Backend Dev — done, 2026-09-21**
 - [x] `BrandLayoutGrammar` model + `IngestionJob.ingestion_type` gains `'layout_grammar'`
 - [x] PDF geometry extraction — landed in `services/generation/layout_grammar_service.py`
       (`extract_pdf_regions`), not `template_analyzer.py` — see Architect decision update
 - [x] `MineLayoutGrammarTool` (`agents/mine_layout_grammar.py`,
       `generate_json(specialization="general")`)
-- [ ] Run mining over all 4 Insumos brands; inventory `PPT_Template_Core.pptx` — blocked
-      on those brands existing as `Brand` rows (Embonor/Harry Potter/Core aren't ingested
-      yet, only Tesco is); deterministic extraction+clustering already validated directly
-      against the real Embonor PDF file without a DB
+- [x] Ran mining over all 4 Insumos samples for real (`Brand` rows created for Embonor,
+      PPT Template Core, Harry Potter DC Template; Tesco already existed) — 178
+      signatures total, human-confirmed to correctly name Embonor's donut/pie-chart
+      KPI pattern specifically. `PPT_Template_Core.pptx` inventoried (51 slides).
 - [x] Regression test: `'layout_grammar'` addition doesn't affect existing ingestion types
+
+**Phase 0 is fully done.**
 
 **Phase 1 — Backend Dev — done, 2026-09-21**
 - [x] `GenerationJob.engine_version` column (`NULL` default, schema-reconciled

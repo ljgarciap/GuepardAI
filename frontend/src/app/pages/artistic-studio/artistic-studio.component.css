@@ -139,6 +139,12 @@
   min-height: 60px;
 }
 
+.queued-state {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
 .progress-track {
   height: 6px;
   border-radius: 3px;

@@ -74,6 +74,15 @@ export class ArtisticStudioComponent implements OnInit {
     return !!this.selectedBrandId && this.prompt.trim().length > 0 && !this.v1.isRunning && !this.v2.isRunning;
   }
 
+  // Drives the comparison grid's visibility. Deliberately NOT jobId-based —
+  // jobId is only set once the initial POST resolves, so gating on it left
+  // the grid (and any error message) invisible until then, or forever on a
+  // failed request. See the template comment for the real bug this fixes.
+  get hasStarted(): boolean {
+    return this.v1.isRunning || this.v2.isRunning || !!this.v1.jobId || !!this.v2.jobId
+      || !!this.v1.error || !!this.v2.error;
+  }
+
   generateBoth() {
     if (!this.canGenerate || !this.selectedBrandId) return;
 

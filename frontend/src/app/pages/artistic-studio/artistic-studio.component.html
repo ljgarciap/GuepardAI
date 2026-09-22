@@ -30,7 +30,7 @@
       <button class="btn-primary" [disabled]="!canGenerate" (click)="generateBoth()">
         Generate &amp; Compare
       </button>
-      <button class="btn-secondary" (click)="reset()" *ngIf="v1.jobId || v2.jobId">
+      <button class="btn-secondary" (click)="reset()" *ngIf="hasStarted">
         New Comparison
       </button>
     </div>
@@ -38,14 +38,32 @@
     <p class="load-error" *ngIf="loadError">{{ loadError }}</p>
   </div>
 
-  <div class="comparison-grid" *ngIf="v1.jobId || v2.jobId">
+  <!--
+    Gated on hasStarted (isRunning OR jobId OR error), never on jobId alone:
+    jobId is only set once the POST resolves, so gating on it left the whole
+    grid — including error messages — invisible for however long the request
+    took, or forever if it failed outright. Real bug found live (Luis, not
+    caught by any test — every test here stubbed the service so the request
+    always "resolved" instantly).
+  -->
+  <div class="comparison-grid" *ngIf="hasStarted">
     <div class="engine-column glass-panel">
       <div class="engine-header">
         <h3>v1 — Classic</h3>
         <span class="engine-badge">grammar_type enum</span>
       </div>
-
-      <ng-container *ngTemplateOutlet="columnBody; context: { column: v1 }"></ng-container>
+      <div class="column-body">
+        <p class="queued-state" *ngIf="v1.isRunning && !v1.status">Starting...</p>
+        <div class="progress-track" *ngIf="v1.isRunning && v1.status">
+          <div class="progress-fill" [style.width.%]="v1.status.progress || 0"></div>
+        </div>
+        <p class="current-step" *ngIf="v1.isRunning && v1.status">{{ v1.status.current_step }}</p>
+        <div class="error-box" *ngIf="v1.error">{{ v1.error }}</div>
+        <div class="success-box" *ngIf="v1.status?.status === 'completed'">
+          <p>Generation complete.</p>
+          <a class="btn-primary" *ngIf="downloadUrl(v1)" [href]="downloadUrl(v1)!" target="_blank">Download</a>
+        </div>
+      </div>
     </div>
 
     <div class="engine-column glass-panel v2-column">
@@ -53,26 +71,18 @@
         <h3>v2 — Artistic</h3>
         <span class="engine-badge engine-badge-v2">mined brand grammar</span>
       </div>
-
-      <ng-container *ngTemplateOutlet="columnBody; context: { column: v2 }"></ng-container>
+      <div class="column-body">
+        <p class="queued-state" *ngIf="v2.isRunning && !v2.status">Starting...</p>
+        <div class="progress-track" *ngIf="v2.isRunning && v2.status">
+          <div class="progress-fill" [style.width.%]="v2.status.progress || 0"></div>
+        </div>
+        <p class="current-step" *ngIf="v2.isRunning && v2.status">{{ v2.status.current_step }}</p>
+        <div class="error-box" *ngIf="v2.error">{{ v2.error }}</div>
+        <div class="success-box" *ngIf="v2.status?.status === 'completed'">
+          <p>Generation complete.</p>
+          <a class="btn-primary" *ngIf="downloadUrl(v2)" [href]="downloadUrl(v2)!" target="_blank">Download</a>
+        </div>
+      </div>
     </div>
   </div>
 </div>
-
-<ng-template #columnBody let-column="column">
-  <div class="column-body">
-    <div class="progress-track" *ngIf="column.isRunning">
-      <div class="progress-fill" [style.width.%]="column.status?.progress || 0"></div>
-    </div>
-    <p class="current-step" *ngIf="column.isRunning">{{ column.status?.current_step || 'Initializing...' }}</p>
-
-    <div class="error-box" *ngIf="column.error">{{ column.error }}</div>
-
-    <div class="success-box" *ngIf="column.status?.status === 'completed'">
-      <p>Generation complete.</p>
-      <a class="btn-primary" *ngIf="downloadUrl(column)" [href]="downloadUrl(column)!" target="_blank">
-        Download
-      </a>
-    </div>
-  </div>
-</ng-template>

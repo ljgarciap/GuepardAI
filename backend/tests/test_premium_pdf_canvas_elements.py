@@ -94,3 +94,35 @@ class TestCanvasElementRendering:
                 {"x": 10, "y": 10, "size": 20, "type": "text", "content": f"marker-{pattern_type}"},
             ]))
             assert f"marker-{pattern_type}" in html
+
+    # -------------------------------------------------------------------
+    # Text width/align — painter.py's PPTX path always sizes the text box
+    # from w/h and applies center alignment via `align`; this macro
+    # previously ignored both (docs/ai/contracts/artistic-generation-v2-adr.md).
+    # -------------------------------------------------------------------
+
+    def test_text_element_with_w_gets_a_width_style(self):
+        html = _render(_base_slide(canvas_elements=[
+            {"x": 5, "y": 8, "w": 90, "h": 12, "type": "text", "content": "Sized"},
+        ]))
+        assert "width: 90.0%" in html or "width: 90%" in html
+
+    def test_text_element_without_w_has_no_width_style(self):
+        # v1's existing premium canvas_elements can omit w entirely and rely on
+        # shrink-to-fit sizing — must not regress to width:0%.
+        html = _render(_base_slide(canvas_elements=[
+            {"x": 5, "y": 8, "size": 20, "type": "text", "content": "Unsized"},
+        ]))
+        assert "width: 0%" not in html
+
+    def test_text_align_center_produces_center_text_align(self):
+        html = _render(_base_slide(canvas_elements=[
+            {"x": 5, "y": 8, "w": 90, "h": 12, "type": "text", "content": "Centered", "align": "center"},
+        ]))
+        assert "text-align: center" in html
+
+    def test_text_without_align_defaults_to_left(self):
+        html = _render(_base_slide(canvas_elements=[
+            {"x": 5, "y": 8, "w": 90, "h": 12, "type": "text", "content": "Left aligned"},
+        ]))
+        assert "text-align: left" in html

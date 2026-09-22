@@ -348,7 +348,17 @@
     {% if el.type == 'typo_substitution' or el.type == 'image' %}
         <img class="canvas-element" src="{{ el.path }}" style="left: {{ el.x|num(0) }}%; top: {{ el.y|num(0) }}%; width: {{ el.size|default(el.w, true)|num(20) }}%; height: {{ el.h|default('auto') }}; opacity: {{ el.opacity|num(1) }}; z-index: {{ el.z_index|num(10)|int }};">
     {% elif el.type == 'text' %}
-        <div class="canvas-element" style="left: {{ el.x|num(0) }}%; top: {{ el.y|num(0) }}%; font-size: {{ el.size|num(24) }}px; color: {{ el.color|default('var(--brand-text)') }}; font-weight: {{ 'bold' if (el.weight == 'bold' or el.bold) else 'normal' }}; opacity: {{ el.opacity|num(1) }}; z-index: {{ el.z_index|num(10)|int }};">{{ el.content|default(el.text) }}</div>
+        {#
+          width/text-align: painter.py's PPTX path (_paint_canvas_text) always sizes
+          the text box from el.w/el.h and applies center alignment via el.align — this
+          macro previously ignored both, so the two renderers diverged on the exact
+          same canvas_elements payload (docs/ai/contracts/artistic-generation-v2-adr.md).
+          width only applies when el.w is actually set: this macro is also v1's shared
+          premium custom_canvas path, and some existing v1 text elements rely on
+          shrink-to-fit sizing (no w given) — forcing width:0% on those would be a
+          regression, not a fix.
+        #}
+        <div class="canvas-element" style="left: {{ el.x|num(0) }}%; top: {{ el.y|num(0) }}%; {% if el.w is defined and el.w %}width: {{ el.w|num(0) }}%;{% endif %} {% if el.h is defined and el.h %}height: {{ el.h|num(0) }}%;{% endif %} font-size: {{ el.size|num(24) }}px; color: {{ el.color|default('var(--brand-text)') }}; font-weight: {{ 'bold' if (el.weight == 'bold' or el.bold) else 'normal' }}; text-align: {{ 'center' if el.align == 'center' else 'left' }}; opacity: {{ el.opacity|num(1) }}; z-index: {{ el.z_index|num(10)|int }};">{{ el.content|default(el.text) }}</div>
     {% elif el.type == 'shape' or el.type == 'decorator' %}
         {% set is_circle = el.shape in ('circle', 'ellipse', 'oval') %}
         {% set size = el.size|default(el.w, true)|num(20) %}

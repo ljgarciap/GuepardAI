@@ -2,13 +2,11 @@
 
 **Date**: 2026-09-21
 **Requested by**: Luis
-**Status**: Phases 0, 1, and 3 fully done, 2026-09-21 (including the real-brand mining
-run — 178 signatures across Tesco/Embonor/PPT Template Core/Harry Potter DC). Phase 2
-checked against 4 real, diverse composer runs on those real signatures: no new
-`canvas_elements` type is needed, only a small pre-existing text-alignment gap remains
-open. Phase 4's rollout gate (Phase 1 + Phase 3 both landed) is clear. Remaining:
-the `premium_pdf.html` text-align fix, and Phase 4 itself (isolated nav/route + batch
-comparison UI, not started).
+**Status**: Phases 0, 1, 2, and 3 fully done (2026-09-21/22) — 178 real mined
+signatures across 4 brands, composer validated against them with no new element type
+needed, `premium_pdf.html`'s text-align/width gap fixed. Phase 4's rollout gate
+(Phase 1 + Phase 3 both landed) is clear. Only Phase 4 itself remains: isolated
+nav/route + batch v1-vs-v2 comparison UI, not started.
 **Project**: GuepardAI
 
 ## Problem
@@ -337,12 +335,19 @@ v1 and v2 — everything else in this spec is new code reached only from the
       slice angles) — not before that's observed.
 - [x] No existing element type's rendering changed — Phase 2 made no renderer edits at
       all, so this is true by construction (nothing to regress).
-- [ ] `premium_pdf.html`'s `render_canvas_element` macro gains `text-align` support
-      (found missing entirely while validating Touchpoint B — `painter.py`'s PPTX path
-      already supports left/center via `align`; the two renderers must not silently
-      diverge on the same `canvas_elements` payload). Still open — a real, if minor, gap;
-      not exercised by any of the 4 real composer runs above (none requested centered
-      text), so it hasn't caused a visible defect yet, but it will the first time one does.
+- [x] **Fixed, 2026-09-22.** `premium_pdf.html`'s `render_canvas_element` macro's
+      `text` branch gains `text-align` (from `el.align`, same `"center"` vs. default-left
+      binary `painter.py` already supports — not a superset, kept the two renderers'
+      capability sets in sync) and `width`/`height` (from `el.w`/`el.h`) — the macro
+      previously ignored `w`/`h` for text entirely, which meant `text-align: center`
+      would have had no visible effect even if added alone (an absolutely-positioned
+      div with no explicit width shrinks to its content, so centering inside it is a
+      no-op). `width`/`height` only render when `el.w`/`el.h` are actually present —
+      this macro is also v1's shared premium `custom_canvas` path, and some existing
+      v1 text elements rely on shrink-to-fit sizing (no `w` given); forcing `width: 0%`
+      on those would have been a regression, not a fix. 4 new tests
+      (`tests/test_premium_pdf_canvas_elements.py`); full suite green (850 passed, same
+      1 pre-existing unrelated failure).
 
 **Phase 3 — QA bias audit**
 - [x] Live audit run, 2026-09-21 — bias **confirmed**, not merely checked:
@@ -566,12 +571,12 @@ both landing, per the Architect decision above.
       (named in `design_reasoning`), `ArtDirectorDecision` logged, test rows cleaned up.
       Full suite green (836 passed, same 1 pre-existing unrelated failure).
 
-**Phase 2 — Backend Dev** — checked against real signatures, 2026-09-21
+**Phase 2 — Backend Dev — done, 2026-09-22**
 - [x] No new element type needed — validated across 4 real, diverse composer runs
       (Embonor metric/cover, Harry Potter quote, PPT Template Core narrative). No
       renderer code changes made or required.
-- [ ] Fix `premium_pdf.html` canvas-text alignment gap (found during ADR validation) —
-      still open, small, standalone task; not blocking anything else in this feature.
+- [x] Fixed `premium_pdf.html` canvas-text alignment gap (`templates/premium_pdf.html`)
+      — `text-align` + conditional `width`/`height`, 4 new tests, full suite green.
 
 **Phase 3 — Backend Dev — done, 2026-09-21** (ran after Phase 1 in this session, not
 truly parallel, but both landed independently as the Architect decision allowed)

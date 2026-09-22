@@ -40,14 +40,25 @@ def list_eligible_brands(
     current_user: models.User = Depends(get_current_user),
 ):
     """
-    Brands with at least one mined BrandLayoutGrammar row (Phase 0) — the only
-    valid targets for a v2_artistic job. compose_canvas_for_job() raises
-    loudly if a brand has no mined grammar (docs/specs/artistic-generation-v2.md
-    edge cases) rather than silently falling back to v1 — this endpoint lets
-    the UI prevent that case instead of surfacing it as a failed job.
+    Brands with at least one mined BrandLayoutGrammar row (Phase 0) AND at
+    least a BrandVisualDna row — i.e. brands that can actually complete a
+    real generation, not just brands used to test mining in isolation.
+
+    Found live: a brand mined for Phase 0 testing but never run through the
+    real v1 ingestion pipeline (no BrandVisualDna/BrandAsset at all) passes
+    compose_canvas_for_job() fine (it only needs BrandLayoutGrammar) but then
+    crashes deep in the shared render step — first on PainterAgencyBranding's
+    logo_path (fixed separately), then on a bare `brand_dna.primary_color`
+    access with brand_dna=None. That second one is a pre-existing assumption
+    throughout the render pipeline (v1 and v2 alike: every real brand has a
+    BrandVisualDna) that's out of scope to chase through every call site
+    here — the correct fix at this layer is to never offer a brand that
+    can't satisfy it in the first place.
     """
     query = db.query(models.Brand.id, models.Brand.name).join(
         models.BrandLayoutGrammar, models.BrandLayoutGrammar.brand_id == models.Brand.id
+    ).join(
+        models.BrandVisualDna, models.BrandVisualDna.brand_id == models.Brand.id
     ).distinct()
 
     tenant_ids = tenant_brand_ids_filter(db, current_user)
@@ -73,6 +84,22 @@ def generate_artistic_v2(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This brand has no mined layout grammar yet — run grammar mining "
                    "(Artistic Engine v2, Phase 0) before generating with it.",
+        )
+
+    # A brand can have mined grammar but never have gone through real v1
+    # ingestion (e.g. a Phase 0 mining-only test brand) — the shared render
+    # step assumes every brand has a BrandVisualDna row and crashes deep in
+    # the pipeline otherwise. Same fail-fast reasoning as the grammar check
+    # above: catch it here, not as an opaque mid-pipeline error.
+    has_visual_dna = db.query(models.BrandVisualDna).filter(
+        models.BrandVisualDna.brand_id == request.brand_id
+    ).first()
+    if not has_visual_dna:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This brand has mined layout grammar but was never run through "
+                   "brand ingestion (no visual DNA) — it can't complete a real "
+                   "generation yet, v1 or v2.",
         )
 
     style_dna = None

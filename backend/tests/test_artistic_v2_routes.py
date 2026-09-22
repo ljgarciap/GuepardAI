@@ -57,6 +57,23 @@ class TestEligibleBrands:
         brand_ids = [b["id"] for b in resp.json()["brands"]]
         assert brand_ids.count(sample_brand.id) == 1
 
+    def test_excludes_a_brand_with_mined_grammar_but_no_visual_dna(self, client, db_session):
+        # Real bug found live: a brand mined for Phase 0 testing but never
+        # run through real v1 ingestion has no BrandVisualDna at all — it
+        # passes compose_canvas_for_job() fine but crashes deep in the
+        # shared render step. Must never be offered as a generation target.
+        mining_only_brand = models.Brand(name="MiningOnlyBrand", about="x", core_value="x")
+        db_session.add(mining_only_brand)
+        db_session.flush()
+        db_session.add(models.BrandLayoutGrammar(
+            brand_id=mining_only_brand.id, source_filename="d.pptx", signatures_json=[{"name": "x"}],
+        ))
+        db_session.flush()
+
+        resp = client.get("/api/artistic-v2/eligible-brands")
+        brand_ids = [b["id"] for b in resp.json()["brands"]]
+        assert mining_only_brand.id not in brand_ids
+
 
 @pytest.mark.integration
 class TestGenerateArtisticV2:
@@ -67,6 +84,21 @@ class TestGenerateArtisticV2:
         })
         assert resp.status_code == 400
         assert "no mined layout grammar" in resp.json()["detail"]
+
+    def test_rejects_brand_with_grammar_but_no_visual_dna(self, client, db_session):
+        mining_only_brand = models.Brand(name="MiningOnlyBrand2", about="x", core_value="x")
+        db_session.add(mining_only_brand)
+        db_session.flush()
+        db_session.add(models.BrandLayoutGrammar(
+            brand_id=mining_only_brand.id, source_filename="d.pptx", signatures_json=[{"name": "x"}],
+        ))
+        db_session.flush()
+
+        resp = client.post("/api/artistic-v2/generate", json={
+            "brand_id": mining_only_brand.id, "prompt": "test prompt",
+        })
+        assert resp.status_code == 400
+        assert "visual DNA" in resp.json()["detail"]
 
     def test_creates_job_with_engine_version_v2_artistic(self, client, db_session, sample_brand):
         db_session.add(models.BrandLayoutGrammar(

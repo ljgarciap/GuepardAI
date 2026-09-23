@@ -163,6 +163,33 @@ class TestComposeCanvasForJob:
         assert slide.planning_json["art_director"]["canvas_elements"] == fake_response["canvas_elements"]
         assert slide.planning_json["art_director"]["engine_version"] == "v2_artistic"
 
+    def test_applies_deterministic_overlap_correction_to_the_llm_response(self, db_session, sample_brand, sample_job):
+        # Real defect: a live 2-retry test still left slides with a title
+        # wrapping into the body below it — compose_canvas_for_job() must
+        # correct this itself, not just hope the LLM avoided it.
+        self._seed_prompt(db_session)
+        db_session.add(models.BrandLayoutGrammar(
+            brand_id=sample_brand.id, source_filename="deck.pdf", signatures_json=[{"name": "x"}],
+        ))
+        slide = _slide(job_id=sample_job.id, slide_number=1)
+        db_session.add(slide)
+        db_session.flush()
+
+        fake_response = {
+            "canvas_elements": [
+                {"type": "text", "x": 4.1, "y": 11.83, "w": 13.83, "h": 13.34, "size": 48, "content": "CLIENTE"},
+                {"type": "text", "x": 4.1, "y": 28, "w": 50, "h": 10, "size": 32, "content": "Relevancia en Cada Punto de Contacto"},
+            ],
+            "design_reasoning": "x",
+        }
+        with patch("providers.llm_provider.generate_premium_json", return_value=fake_response):
+            compose_canvas_for_job(db_session, sample_job.id)
+
+        from agents.qa_validator import _summarize_canvas_elements
+        stored = slide.planning_json["art_director"]["canvas_elements"]
+        assert stored != fake_response["canvas_elements"]  # actually corrected, not passed through
+        assert _summarize_canvas_elements(stored)["overlapping_text_pairs"] == 0
+
         db_session.flush()  # autoflush=False in this test harness — the ArtDirectorDecision add() is pending
         decision = db_session.query(models.ArtDirectorDecision).filter(
             models.ArtDirectorDecision.job_id == sample_job.id,

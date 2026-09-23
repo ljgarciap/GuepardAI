@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 
 import models
 from providers import llm_provider
+from services.generation.canvas_layout_correction import auto_correct_overlaps
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,14 @@ def compose_canvas_for_job(db: Session, job_id: int, qa_feedback: Optional[Dict[
 
         raw = llm_provider.generate_premium_json(prompt)
         canvas_elements = raw.get("canvas_elements", []) if isinstance(raw, dict) else []
+        # Deterministic correction, not another LLM round-trip: a live 2-retry
+        # test still left 4/17 slides with the same title-wraps-into-body
+        # defect — asking the LLM to self-correct via feedback text doesn't
+        # reliably work. This expands any text element's declared h to its
+        # real estimated wrapped height and pushes down whatever was stacked
+        # below it in the same column, fixing the geometry before it's ever
+        # rendered instead of hoping the next attempt gets it right.
+        canvas_elements = auto_correct_overlaps(canvas_elements)
         design_reasoning = raw.get("design_reasoning", "") if isinstance(raw, dict) else ""
         if isinstance(design_reasoning, dict):
             design_reasoning = json.dumps(design_reasoning)

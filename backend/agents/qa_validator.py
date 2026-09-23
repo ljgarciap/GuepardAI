@@ -10,19 +10,31 @@ import models
 # mock global de conftest sobre providers.llm_provider surta efecto siempre
 from providers import llm_provider
 
+def _rects_overlap(a, b, tolerance: float = 1.0) -> bool:
+    """AABB overlap test with a small tolerance (percentage points) so
+    intentional edge-touching (e.g. two cards sharing a border) isn't
+    flagged — only real, visible overlap counts."""
+    ax0, ay0, ax1, ay1 = a
+    bx0, by0, bx1, by1 = b
+    return (ax0 + tolerance) < bx1 and (bx0 + tolerance) < ax1 and \
+           (ay0 + tolerance) < by1 and (by0 + tolerance) < ay1
+
+
 def _summarize_canvas_elements(canvas_elements) -> Dict[str, Any]:
     """
     Artistic Generation Engine v2 (docs/specs/artistic-generation-v2.md, Phase 3):
-    compact geometry summary for the judge — element count/type mix and a real
-    defect check (x+w or y+h exceeding the 0-100 canvas), not the raw element
-    list. Never raises on malformed elements — a summary this is advisory input
-    to a QA judge, not itself a validator.
+    compact geometry summary for the judge — element count/type mix and real
+    defect checks (geometry exceeding the 0-100 canvas; overlapping text
+    elements — "textos solapados" found in the first real visual review),
+    not the raw element list. Never raises on malformed elements — this
+    summary is advisory input to a QA judge, not itself a validator.
     """
     if not isinstance(canvas_elements, list):
-        return {"element_count": 0, "type_counts": {}, "out_of_bounds_count": 0}
+        return {"element_count": 0, "type_counts": {}, "out_of_bounds_count": 0, "overlapping_text_pairs": 0}
 
     type_counts: Dict[str, int] = {}
     out_of_bounds = 0
+    text_rects = []
     for el in canvas_elements:
         if not isinstance(el, dict):
             continue
@@ -33,11 +45,19 @@ def _summarize_canvas_elements(canvas_elements) -> Dict[str, Any]:
             w, h = float(el.get("w", el.get("size", 0)) or 0), float(el.get("h", el.get("size", 0)) or 0)
             if x + w > 100.5 or y + h > 100.5:
                 out_of_bounds += 1
+            if el_type == "text":
+                text_rects.append((x, y, x + w, y + h))
         except (TypeError, ValueError):
             continue  # line/gradient elements use x1/y1/x2/y2, not x/y/w/h — not a defect signal here
 
+    overlapping_text_pairs = sum(
+        1 for i in range(len(text_rects)) for j in range(i + 1, len(text_rects))
+        if _rects_overlap(text_rects[i], text_rects[j])
+    )
+
     return {
         "element_count": len(canvas_elements),
+        "overlapping_text_pairs": overlapping_text_pairs,
         "type_counts": type_counts,
         "out_of_bounds_count": out_of_bounds,
     }

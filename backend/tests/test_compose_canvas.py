@@ -17,6 +17,7 @@ import models
 from services.generation.canvas_composer_service import (
     _infer_content_shape,
     _select_exemplars,
+    _load_brand_colors,
     compose_canvas_for_job,
 )
 from agents.compose_canvas import ComposeCanvasTool
@@ -124,12 +125,12 @@ class TestComposeCanvasForJob:
 
     def test_raises_when_prompt_not_seeded(self, db_session, sample_brand, sample_job):
         # In a full-suite run an earlier app-boot test may have already run the
-        # real seed_data() and committed this key durably — delete it within
-        # this session's transaction so it's genuinely absent here; rollback
-        # restores it afterward.
+        # real seed_data() and committed both keys durably — delete both (v2 is
+        # tried first, with a fallback to v1) within this session's transaction
+        # so they're genuinely absent here; rollback restores them afterward.
         db_session.query(models.SystemConfig).filter(
-            models.SystemConfig.key == "prompt_compose_canvas_v1"
-        ).delete()
+            models.SystemConfig.key.in_(["prompt_compose_canvas_v1", "prompt_compose_canvas_v2"])
+        ).delete(synchronize_session=False)
         db_session.flush()
         with pytest.raises(RuntimeError, match="prompt_compose_canvas_v1"):
             compose_canvas_for_job(db_session, sample_job.id)
@@ -230,3 +231,58 @@ class TestComposeCanvasTool:
             result = tool.run(job_id=sample_job.id)
 
         assert result == {"status": "success", "slides_processed": 1}
+
+
+# ---------------------------------------------------------------------------
+# _load_brand_colors — real bug: the composer never received actual brand
+# colors at all, only mined geometry (which is color-less for text-only
+# mined brands too) — it was inventing an unrelated palette every time.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestLoadBrandColors:
+
+    def test_uses_the_brand_s_real_visual_dna_colors(self, db_session, sample_brand):
+        # sample_brand fixture already flushes a BrandVisualDna row — set its
+        # colors directly via a fresh query to avoid relying on relationship shape.
+        dna = db_session.query(models.BrandVisualDna).filter(
+            models.BrandVisualDna.brand_id == sample_brand.id
+        ).first()
+        dna.primary_color = "#E4022C"
+        dna.secondary_color = "#111111"
+        db_session.flush()
+
+        colors = _load_brand_colors(db_session, sample_brand.id)
+        assert colors["primary"] == "#E4022C"
+        assert colors["secondary"] == "#111111"
+
+    def test_falls_back_to_defaults_when_brand_has_no_visual_dna(self, db_session):
+        brand = models.Brand(name="NoDnaBrand", about="x", core_value="x")
+        db_session.add(brand)
+        db_session.flush()
+
+        colors = _load_brand_colors(db_session, brand.id)
+        assert colors["primary"] == "#0052A3"
+        assert colors["background"] == "#FFFFFF"
+
+    def test_compose_canvas_for_job_includes_brand_colors_in_the_prompt(self, db_session, sample_brand, sample_job):
+        _upsert_config(
+            db_session, "prompt_compose_canvas_v1",
+            "colors={brand_colors} shape={content_shape}",
+        )
+        dna = db_session.query(models.BrandVisualDna).filter(
+            models.BrandVisualDna.brand_id == sample_brand.id
+        ).first()
+        dna.primary_color = "#ABCDEF"
+        db_session.add(models.BrandLayoutGrammar(
+            brand_id=sample_brand.id, source_filename="d.pptx", signatures_json=[{"name": "x"}],
+        ))
+        slide = _slide(job_id=sample_job.id, slide_number=1)
+        db_session.add(slide)
+        db_session.flush()
+
+        with patch("providers.llm_provider.generate_premium_json", return_value={"canvas_elements": []}) as mock_premium:
+            compose_canvas_for_job(db_session, sample_job.id)
+
+        prompt_sent = mock_premium.call_args[0][0]
+        assert "#ABCDEF" in prompt_sent

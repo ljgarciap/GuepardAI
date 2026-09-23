@@ -68,7 +68,37 @@ class TestSummarizeCanvasElements:
         assert summary["out_of_bounds_count"] == 0
 
     def test_non_list_input_returns_empty_summary(self):
-        assert _summarize_canvas_elements(None) == {"element_count": 0, "type_counts": {}, "out_of_bounds_count": 0}
+        assert _summarize_canvas_elements(None) == {
+            "element_count": 0, "type_counts": {}, "out_of_bounds_count": 0, "overlapping_text_pairs": 0,
+        }
+
+    def test_overlapping_text_elements_flagged(self):
+        # Real defect found in Luis's first visual review ("textos solapados").
+        elements = [
+            {"type": "text", "x": 10, "y": 10, "w": 30, "h": 10, "content": "A"},
+            {"type": "text", "x": 20, "y": 12, "w": 30, "h": 10, "content": "B"},  # overlaps A
+        ]
+        summary = _summarize_canvas_elements(elements)
+        assert summary["overlapping_text_pairs"] == 1
+
+    def test_adjacent_non_overlapping_text_not_flagged(self):
+        elements = [
+            {"type": "text", "x": 0, "y": 0, "w": 20, "h": 10, "content": "A"},
+            {"type": "text", "x": 20, "y": 0, "w": 20, "h": 10, "content": "B"},  # shares an edge, doesn't overlap
+        ]
+        summary = _summarize_canvas_elements(elements)
+        assert summary["overlapping_text_pairs"] == 0
+
+    def test_text_overlapping_a_shape_not_counted_as_text_overlap(self):
+        # Deliberate: a shape behind a text element (e.g. a colored band
+        # behind a title) is a normal, valid layering pattern, not a defect —
+        # only text-vs-text overlap is checked.
+        elements = [
+            {"type": "shape", "x": 0, "y": 0, "w": 100, "h": 20, "shape": "rect"},
+            {"type": "text", "x": 10, "y": 5, "w": 50, "h": 10, "content": "Title"},
+        ]
+        summary = _summarize_canvas_elements(elements)
+        assert summary["overlapping_text_pairs"] == 0
 
     def test_line_element_without_x_y_w_h_not_a_false_positive(self):
         # line elements use x1/y1/x2/y2, not x/y/w/h — must not crash or false-flag

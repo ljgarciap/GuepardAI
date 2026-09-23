@@ -52,13 +52,21 @@ def compose_canvas_for_job(db: Session, job_id: int, qa_feedback: Optional[Dict[
     if not job:
         raise ValueError(f"GenerationJob {job_id} not found")
 
+    # v2 first, fallback to v1 — same prompt-versioning convention as every
+    # other prompt_* key in this project (utils/seed.py never overwrites an
+    # existing key, so an old deployed DB keeps v1 until it re-seeds v2).
     prompt_cfg = db.query(models.SystemConfig).filter(
-        models.SystemConfig.key == "prompt_compose_canvas_v1"
+        models.SystemConfig.key == "prompt_compose_canvas_v2"
     ).first()
     if not prompt_cfg:
-        raise RuntimeError("prompt_compose_canvas_v1 is not seeded — run utils/seed.py")
+        prompt_cfg = db.query(models.SystemConfig).filter(
+            models.SystemConfig.key == "prompt_compose_canvas_v1"
+        ).first()
+    if not prompt_cfg:
+        raise RuntimeError("prompt_compose_canvas_v1/_v2 is not seeded — run utils/seed.py")
 
     all_signatures = _load_brand_signatures(db, job.brand_id)
+    brand_colors = _load_brand_colors(db, job.brand_id)
 
     slides = db.query(models.PresentationSlide).filter(
         models.PresentationSlide.job_id == job_id,
@@ -80,6 +88,7 @@ def compose_canvas_for_job(db: Session, job_id: int, qa_feedback: Optional[Dict[
             slide_title=slide.title or "",
             slide_content=json.dumps(slide.content_json or {}),
             qa_feedback=feedback or "None — first attempt.",
+            brand_colors=json.dumps(brand_colors),
         )
 
         raw = llm_provider.generate_premium_json(prompt)
@@ -113,6 +122,29 @@ def compose_canvas_for_job(db: Session, job_id: int, qa_feedback: Optional[Dict[
         processed += 1
 
     return processed
+
+
+def _load_brand_colors(db: Session, brand_id: int) -> Dict[str, str]:
+    """
+    Real bug found in Luis's first visual review of a generated deck: the
+    composer never received the brand's actual colors at all (only mined
+    geometry, which for text-only-mined brands carries no color data either)
+    — it was inventing an unrelated palette from scratch every time. Same
+    field names and fallback defaults as art_director_service.py's v1 brand
+    context (services/generation/art_director_service.py), so v1 and v2
+    agree on what "the brand's colors" means.
+    """
+    dna = db.query(models.BrandVisualDna).filter(models.BrandVisualDna.brand_id == brand_id).first()
+    colors = {
+        "primary": (dna.primary_color if dna else None) or "#0052A3",
+        "secondary": (dna.secondary_color if dna else None) or "#EE1C2E",
+        "background": (dna.background_color if dna else None) or "#FFFFFF",
+        "text_main": (dna.text_main_color if dna else None) or "#111111",
+        "text_on_dark": (dna.text_on_dark if dna else None) or "#FFFFFF",
+    }
+    if dna and dna.accent_color:
+        colors["accent"] = dna.accent_color
+    return colors
 
 
 def _load_brand_signatures(db: Session, brand_id: int) -> List[dict]:

@@ -18,8 +18,9 @@ from unittest.mock import patch
 
 import pytest
 
+
 import models
-from agents.qa_validator import ScoreFidelityTool, _summarize_canvas_elements
+from agents.qa_validator import ScoreFidelityTool, _summarize_canvas_elements, _estimate_text_height_pct
 
 
 def _upsert_config(db_session, key: str, value: str):
@@ -106,6 +107,52 @@ class TestSummarizeCanvasElements:
         summary = _summarize_canvas_elements(elements)
         assert summary["element_count"] == 1
         assert summary["out_of_bounds_count"] == 0
+
+    def test_wrapped_title_overlapping_body_is_detected(self):
+        # Real defect found in Luis's SECOND visual review, after the color/
+        # decoration fix: a long title (size 44, w=84%) wraps to 2 lines but
+        # only declares h=8 (one line's worth) — the declared box doesn't
+        # overlap the body text below it, but the REAL rendered text does.
+        # Exact geometry from a real generated slide (job 40, slide 2).
+        elements = [
+            {"type": "text", "x": 8, "y": 18, "w": 84, "h": 8, "size": 44,
+             "content": "El Nuevo Paradigma del Retail y Fidelización"},
+            {"type": "text", "x": 8, "y": 33, "w": 84, "h": 5.5, "size": 18,
+             "content": "La lealtad moderna evoluciona de simples descuentos hacia experiencias personalizadas de valor continuo."},
+        ]
+        summary = _summarize_canvas_elements(elements)
+        assert summary["overlapping_text_pairs"] == 1
+
+    def test_short_title_that_fits_on_one_line_not_flagged(self):
+        elements = [
+            {"type": "text", "x": 8, "y": 5, "w": 84, "h": 8, "size": 32, "content": "Short Title"},
+            {"type": "text", "x": 8, "y": 20, "w": 84, "h": 5, "size": 18, "content": "Body text well below the title."},
+        ]
+        summary = _summarize_canvas_elements(elements)
+        assert summary["overlapping_text_pairs"] == 0
+
+
+# ---------------------------------------------------------------------------
+# _estimate_text_height_pct
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestEstimateTextHeightPct:
+
+    def test_longer_text_estimates_more_height(self):
+        short = _estimate_text_height_pct("Short", 24, 50)
+        long = _estimate_text_height_pct("A much longer piece of text that will wrap across several lines", 24, 50)
+        assert long > short
+
+    def test_missing_inputs_return_zero(self):
+        assert _estimate_text_height_pct("", 24, 50) == 0.0
+        assert _estimate_text_height_pct("text", 0, 50) == 0.0
+        assert _estimate_text_height_pct("text", 24, 0) == 0.0
+
+    def test_narrower_box_estimates_more_height_for_same_text(self):
+        wide = _estimate_text_height_pct("Some reasonably long text content here", 24, 90)
+        narrow = _estimate_text_height_pct("Some reasonably long text content here", 24, 20)
+        assert narrow > wide
 
 
 # ---------------------------------------------------------------------------

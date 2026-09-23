@@ -1,4 +1,5 @@
 import json
+import math
 import os
 from typing import Any, Dict, List
 from pydantic import BaseModel, Field
@@ -9,6 +10,38 @@ import models
 # Import del módulo (no del símbolo): el lookup en call-time permite que el
 # mock global de conftest sobre providers.llm_provider surta efecto siempre
 from providers import llm_provider
+
+# Standard 16:9 widescreen deck size in points (13.333in x 7.5in @ 72pt/in) —
+# canvas_elements coordinates are percent-of-slide, this converts a percent
+# width/a font-pt size into a real character/line estimate.
+_SLIDE_WIDTH_PT = 960.0
+_SLIDE_HEIGHT_PT = 540.0
+# Same factors template_analyzer.py's typographic budget already uses for the
+# inverse calculation (box size -> char budget) — reused here for text ->
+# real rendered size, not reinvented.
+_CHAR_WIDTH_FACTOR = 0.55
+_LINE_HEIGHT_FACTOR = 1.25
+
+
+def _estimate_text_height_pct(content: str, size_pt: float, w_pct: float) -> float:
+    """
+    Real defect found in Luis's second visual review, after the color/
+    decoration fixes: a long title wraps to 2 lines, but the composer
+    declares `h` sized for one line — the geometric overlap check trusted
+    that declared h, so it never caught the title's second line rendering
+    directly on top of the body text below it. This estimates the REAL
+    wrapped height from content length + font size + box width, the same
+    way a renderer actually would, so the overlap check isn't fooled by an
+    optimistic h the LLM can't reliably predict on its own.
+    """
+    if not content or not size_pt or not w_pct:
+        return 0.0
+    box_width_pt = w_pct / 100.0 * _SLIDE_WIDTH_PT
+    chars_per_line = max(1.0, box_width_pt / (size_pt * _CHAR_WIDTH_FACTOR))
+    lines = max(1, math.ceil(len(content) / chars_per_line))
+    height_pt = lines * size_pt * _LINE_HEIGHT_FACTOR
+    return height_pt / _SLIDE_HEIGHT_PT * 100.0
+
 
 def _rects_overlap(a, b, tolerance: float = 1.0) -> bool:
     """AABB overlap test with a small tolerance (percentage points) so
@@ -46,7 +79,11 @@ def _summarize_canvas_elements(canvas_elements) -> Dict[str, Any]:
             if x + w > 100.5 or y + h > 100.5:
                 out_of_bounds += 1
             if el_type == "text":
-                text_rects.append((x, y, x + w, y + h))
+                content = str(el.get("content", el.get("text", "")) or "")
+                size = float(el.get("size", 24) or 24)
+                estimated_h = _estimate_text_height_pct(content, size, w)
+                real_h = max(h, estimated_h)
+                text_rects.append((x, y, x + w, y + real_h))
         except (TypeError, ValueError):
             continue  # line/gradient elements use x1/y1/x2/y2, not x/y/w/h — not a defect signal here
 

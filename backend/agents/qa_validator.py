@@ -251,6 +251,7 @@ class ScoreFidelityTool(BaseAgentTool):
             is_v2_artistic = bool(job.engine_version == "v2_artistic")
 
             slides_context = []
+            deterministic_overlap_by_slide: Dict[int, int] = {}
             for s in slides:
                 ad_plan = s.planning_json.get("art_director", {}) if s.planning_json else {}
                 image_context = None
@@ -279,9 +280,16 @@ class ScoreFidelityTool(BaseAgentTool):
                     # arrive. Summarized, not raw: element count/type mix and a real
                     # defect check (geometry exceeding the 0-100 canvas), not the full
                     # element list (keeps the prompt payload bounded).
-                    slide_context["canvas_composition"] = _summarize_canvas_elements(
-                        ad_plan.get("canvas_elements", [])
-                    )
+                    composition_summary = _summarize_canvas_elements(ad_plan.get("canvas_elements", []))
+                    slide_context["canvas_composition"] = composition_summary
+                    # Real gap found live: the judge prompt DOES tell the LLM to
+                    # penalize overlapping_text_pairs > 0, but a live rejection
+                    # test showed it can still score a slide 1.0 while its own
+                    # reasoning lists other checks and simply never mentions this
+                    # one — an LLM instruction is not a guarantee. Overlap is a
+                    # deterministic geometry fact, so it gets a deterministic
+                    # override below instead of staying opinion-dependent.
+                    deterministic_overlap_by_slide[s.slide_number] = composition_summary.get("overlapping_text_pairs", 0)
                 slides_context.append(slide_context)
 
             # Runtime threshold from system_configs
@@ -393,13 +401,24 @@ class ScoreFidelityTool(BaseAgentTool):
                     if flag_overridden:
                         llm_flag_overridden_any = True
 
+                    reasoning_text = str(item.get("reasoning", ""))
+                    overlap_count = deterministic_overlap_by_slide.get(slide_num, 0)
+                    deterministic_override = overlap_count > 0 and not needs_rework
+                    if deterministic_override:
+                        needs_rework = True
+                        reasoning_text += (
+                            f" [Deterministic override: {overlap_count} overlapping text pair(s) "
+                            f"detected geometrically — forced rework regardless of judge score.]"
+                        )
+
                     results.append({
                         "slide_number": slide_num,
                         "score": score,
                         "needs_rework": needs_rework,
-                        "reasoning": str(item.get("reasoning", "")),
+                        "reasoning": reasoning_text,
                         "llm_flag": llm_flag,
                         "llm_flag_overridden": flag_overridden,
+                        "deterministic_overlap_override": deterministic_override,
                     })
                     if needs_rework:
                         any_rework = True

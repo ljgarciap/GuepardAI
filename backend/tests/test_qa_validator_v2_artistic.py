@@ -240,3 +240,83 @@ class TestScoreFidelityEngineVersionRouting:
 
         prompt_sent = mock_llm_calls["generate_json"].call_args[0][0]
         assert "canvas_composition" not in prompt_sent
+
+
+@pytest.mark.unit
+class TestDeterministicOverlapOverride:
+    """
+    Real gap found live (job 41, slide 4): the v2 judge prompt tells the LLM
+    to penalize overlapping_text_pairs > 0, but a real judge call scored the
+    slide 1.0 and its own reasoning listed other checks while never
+    mentioning overlap at all — an LLM instruction is advisory, not a
+    guarantee. Overlap is a deterministic geometry fact (already computed by
+    _summarize_canvas_elements), so it forces needs_rework regardless of
+    what the judge scores, the same way ValidateBrandTool's deterministic
+    checks are authoritative over ScoreFidelityTool's subjective judgment.
+    """
+
+    def test_overlap_forces_rework_even_when_judge_scores_perfect(self, mock_llm_calls, db_session, sample_brand, sample_job):
+        sample_job.engine_version = "v2_artistic"
+        _upsert_config(db_session, "prompt_score_fidelity_v2_artistic",
+                       "BRAND: {brand_context}\nSLIDES: {slides_context}\nOutput a JSON ARRAY.")
+        slide = _slide(job_id=sample_job.id, planning_json={
+            "art_director": {"reasoning": "x", "canvas_elements": [
+                {"type": "text", "x": 4, "y": 11, "w": 14, "h": 13, "size": 48, "content": "CLIENTE"},
+                {"type": "text", "x": 4, "y": 28, "w": 50, "h": 10, "size": 32, "content": "Relevancia en Cada Punto"},
+            ]}
+        })
+        db_session.add(slide)
+        db_session.flush()
+        # Exactly what the real judge returned live: a perfect score, reasoning
+        # that never mentions overlap.
+        mock_llm_calls["generate_json"].return_value = [
+            {"slide_number": 1, "score": 1.0, "needs_rework": False,
+             "reasoning": "0 out-of-bounds elements, and zero asset defects."}
+        ]
+
+        tool = ScoreFidelityTool()
+        with patch("agents.qa_validator.SessionLocal", return_value=db_session):
+            results = tool.run(job_id=sample_job.id)
+
+        assert results[0]["needs_rework"] is True
+        assert results[0]["deterministic_overlap_override"] is True
+        assert "Deterministic override" in results[0]["reasoning"]
+
+    def test_no_override_when_no_overlap_and_judge_already_passed(self, mock_llm_calls, db_session, sample_brand, sample_job):
+        sample_job.engine_version = "v2_artistic"
+        _upsert_config(db_session, "prompt_score_fidelity_v2_artistic",
+                       "BRAND: {brand_context}\nSLIDES: {slides_context}\nOutput a JSON ARRAY.")
+        slide = _slide(job_id=sample_job.id, planning_json={
+            "art_director": {"reasoning": "x", "canvas_elements": [
+                {"type": "text", "x": 4, "y": 11, "w": 50, "h": 10, "size": 24, "content": "Short label"},
+            ]}
+        })
+        db_session.add(slide)
+        db_session.flush()
+        mock_llm_calls["generate_json"].return_value = [
+            {"slide_number": 1, "score": 1.0, "needs_rework": False, "reasoning": "Clean, no defects."}
+        ]
+
+        tool = ScoreFidelityTool()
+        with patch("agents.qa_validator.SessionLocal", return_value=db_session):
+            results = tool.run(job_id=sample_job.id)
+
+        assert results[0]["needs_rework"] is False
+        assert results[0]["deterministic_overlap_override"] is False
+
+    def test_override_does_not_apply_to_v1_jobs(self, mock_llm_calls, db_session, sample_brand, sample_job):
+        # v1 has no canvas_composition at all — deterministic_overlap_by_slide
+        # stays empty, so this can never fire for a v1/NULL engine_version job.
+        assert sample_job.engine_version is None
+        slide = _slide(job_id=sample_job.id)
+        db_session.add(slide)
+        db_session.flush()
+        mock_llm_calls["generate_json"].return_value = [
+            {"slide_number": 1, "score": 1.0, "needs_rework": False, "reasoning": "fine"}
+        ]
+
+        tool = ScoreFidelityTool()
+        with patch("agents.qa_validator.SessionLocal", return_value=db_session):
+            results = tool.run(job_id=sample_job.id)
+
+        assert results[0]["needs_rework"] is False
